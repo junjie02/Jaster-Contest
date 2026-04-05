@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import json
+import queue
 import re
 import threading
-from http.server import HTTPServer, SimpleHTTPRequestHandler
+from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Callable
 
@@ -12,36 +13,38 @@ class SSEBroadcaster:
     """Thread-safe SSE client registry and broadcaster."""
 
     def __init__(self) -> None:
-        self._clients: list[Callable[[], None] | None] = []
+        self._clients: list[queue.Queue[bytes | None]] = []
         self._lock = threading.Lock()
         self._latest_tree: dict | None = None
 
-    def add_client(self) -> Callable[[], None]:
-        """Register a client and return an unregister function."""
+    def add_client(self) -> tuple[queue.Queue[bytes | None], Callable[[], None]]:
+        """Register a client and return its event queue plus an unregister function."""
+        client_queue: queue.Queue[bytes | None] = queue.Queue()
+        with self._lock:
+            self._clients.append(client_queue)
 
         def unregister() -> None:
             with self._lock:
-                self._clients.remove(unregister)
+                if client_queue in self._clients:
+                    self._clients.remove(client_queue)
 
-        with self._lock:
-            self._clients.append(unregister)
-        return unregister
+        return client_queue, unregister
 
     def broadcast(self, event_type: str, data: dict) -> None:
         """Send event to all connected SSE clients."""
         self._latest_tree = data
-        dead = []
         with self._lock:
-            for client in self._clients:
-                try:
-                    client()
-                except Exception:
-                    dead.append(client)
-            for d in dead:
-                self._clients.remove(d)
+            clients = list(self._clients)
+        payload = self._encode_event(event_type, data)
+        for client_queue in clients:
+            client_queue.put(payload)
 
     def latest_tree(self) -> dict | None:
         return self._latest_tree
+
+    @staticmethod
+    def _encode_event(event_type: str, data: dict) -> bytes:
+        return f"event: {event_type}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n".encode()
 
 
 class SSEHandler(SimpleHTTPRequestHandler):
@@ -78,20 +81,24 @@ class SSEHandler(SimpleHTTPRequestHandler):
         if not broadcaster:
             return
 
-        unregister = broadcaster.add_client()
+        client_queue, unregister = broadcaster.add_client()
 
         try:
             latest = broadcaster.latest_tree()
             if latest:
-                self.wfile.write(
-                    f"event: tree_update\ndata: {json.dumps(latest, ensure_ascii=False)}\n\n".encode()
-                )
+                self.wfile.write(broadcaster._encode_event("tree_update", latest))
+                self.wfile.flush()
             while True:
-                if not broadcaster._clients:
+                try:
+                    payload = client_queue.get(timeout=15)
+                except queue.Empty:
+                    self.wfile.write(b": keep-alive\n\n")
+                    self.wfile.flush()
+                    continue
+                if payload is None:
                     break
-                import time
-
-                time.sleep(0.5)
+                self.wfile.write(payload)
+                self.wfile.flush()
         except (BrokenPipeError, ConnectionResetError):
             pass
         finally:
@@ -183,6 +190,6 @@ def start_server(broadcaster: SSEBroadcaster, host: str = "0.0.0.0", port: int =
                 return str(web_dir / "index.html")
             return str(web_dir / path.lstrip("/"))
 
-    httpd = HTTPServer((host, port), Handler)
+    httpd = ThreadingHTTPServer((host, port), Handler)
     print(f"[*] SSE server running on http://{host}:{port}", flush=True)
     httpd.serve_forever()
