@@ -9,11 +9,11 @@
 - 找到未确定的敏感利用点时，可基于ctf中flag常见位置进行测试。
 
 ## 输出结构
-- summary：string，简短字符串
+- summary：string，针对latest execution的简短字符串
 - done：bool，是否完成侦察
-- key_findings：list[string]，从上次执行结果中发现的关键线索列表
-- next_action_hint：string，下一步行动建议
-- result_type：string，上次执行结果的分类，取值：ok | error | redirect | sensitive_file_found | directory_listing | auth_page | waf_blocked | interesting_js | git_leak
+- key_findings：list[string]，从latest execution中发现的关键线索列表
+- next_action_hint：string，针对latest execution下一步行动建议
+- result_type：string，针对latest execution的分类，取值：ok | error | redirect | sensitive_file_found | directory_listing | auth_page | waf_blocked | interesting_js | git_leak
 - action：dict
   kind：string，"skill" | "builder" | "finish"
   goal：string
