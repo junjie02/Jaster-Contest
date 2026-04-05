@@ -1,0 +1,8 @@
+{
+  "name": "port_scan",
+  "summary": "使用 nmap 做端口、服务和基础脚本侦察。",
+  "use_when": "需要快速确认开放端口和服务时使用。",
+  "command_mode": "argv",
+  "bin": "nmap"
+}
+

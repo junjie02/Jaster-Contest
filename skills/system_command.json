@@ -1,0 +1,8 @@
+{
+  "name": "system_command",
+  "summary": "执行单条清晰、边界明确的系统命令。",
+  "use_when": "需要读文件、查目录、筛字符串、看归档或环境信息时使用。",
+  "command_mode": "shell",
+  "bin": "bash"
+}
+

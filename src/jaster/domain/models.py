@@ -1,0 +1,248 @@
+from __future__ import annotations
+
+from enum import Enum
+from typing import Any, Literal
+
+from pydantic import BaseModel, ConfigDict, Field
+
+
+class NodeKind(str, Enum):
+    target = "target"
+    asset = "asset"
+    entry = "entry"
+    weakness = "weakness"
+    technique = "technique"
+    hypothesis = "hypothesis"
+
+
+class NodeStatus(str, Enum):
+    unexplored = "unexplored"
+    exploring = "exploring"
+    success = "success"
+    failed = "failed"
+
+
+class EdgeRelation(str, Enum):
+    dependency = "dependency"
+    evidence = "evidence"
+    hypothesis = "hypothesis"
+
+
+class ArtifactRef(BaseModel):
+    kind: str
+    path: str
+
+
+class Observation(BaseModel):
+    source: str
+    summary: str = ""
+    details: dict[str, Any] = Field(default_factory=dict)
+    artifacts: list[ArtifactRef] = Field(default_factory=list)
+
+
+class ExecutionResult(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    success: bool
+    summary: str = ""
+    findings: list[str] = Field(default_factory=list)
+    flag_candidates: list[str] = Field(default_factory=list)
+    artifacts: list[ArtifactRef] = Field(default_factory=list)
+    stdout: str = ""
+    stderr: str = ""
+    exit_code: int = 0
+    command: str = ""
+    script_path: str = ""
+
+
+class GlobalFacts(BaseModel):
+    flags: list[str] = Field(default_factory=list)
+    credentials: list[str] = Field(default_factory=list)
+    services: list[str] = Field(default_factory=list)
+    artifacts: list[str] = Field(default_factory=list)
+
+
+class TreeNodeSnapshot(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    key: str
+    parent_key: str = ""
+    title: str
+    kind: NodeKind
+    locator: str
+    status: NodeStatus = NodeStatus.unexplored
+    priority: int = 0
+    value: str = ""
+    reason: str = ""
+    how: str = ""
+    evidence: list[str] = Field(default_factory=list)
+
+
+class TreeEdgeSnapshot(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    from_key: str
+    to_key: str
+    relation: EdgeRelation = EdgeRelation.dependency
+    reason: str = ""
+    how: str = ""
+
+
+class AttackTreeSnapshot(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    selected_node_key: str = ""
+    selected_path_keys: list[str] = Field(default_factory=list)
+    frontier_keys: list[str] = Field(default_factory=list)
+    nodes: list[TreeNodeSnapshot] = Field(default_factory=list)
+    edges: list[TreeEdgeSnapshot] = Field(default_factory=list)
+    facts: GlobalFacts = Field(default_factory=GlobalFacts)
+
+
+class NodePatch(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    parent_key: str
+    title: str
+    kind: NodeKind
+    locator: str
+    priority: int = 0
+    value: str = ""
+    reason: str = ""
+    how: str = ""
+    evidence: list[str] = Field(default_factory=list)
+    status: NodeStatus = NodeStatus.unexplored
+
+
+class NodeUpdatePatch(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    key: str
+    status: NodeStatus | None = None
+    priority: int | None = None
+    value: str | None = None
+    reason: str | None = None
+    how: str | None = None
+    evidence: list[str] | None = None
+
+
+class EdgePatch(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    from_key: str
+    to_key: str
+    relation: EdgeRelation = EdgeRelation.dependency
+    reason: str = ""
+    how: str = ""
+
+
+class TreePatch(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    add_nodes: list[NodePatch] = Field(default_factory=list)
+    update_nodes: list[NodeUpdatePatch] = Field(default_factory=list)
+    add_edges: list[EdgePatch] = Field(default_factory=list)
+    selected_node_key: str | None = None
+
+
+class ActionPlan(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    kind: Literal["skill", "builder", "finish"]
+    goal: str
+    expected_result: str = ""
+    skill_name: str | None = None
+    skill_args: dict[str, Any] = Field(default_factory=dict)
+    builder_task: str | None = None
+
+
+class AvailableSkill(BaseModel):
+    name: str
+    summary: str
+    use_when: str = ""
+
+
+class ReconInput(BaseModel):
+    objective: str
+    tree: AttackTreeSnapshot
+    recent_observations: list[Observation] = Field(default_factory=list)
+    latest_execution: ExecutionResult | None = None
+    available_skills: list[AvailableSkill] = Field(default_factory=list)
+
+
+class ReconOutput(BaseModel):
+    summary: str
+    done: bool = False
+    action: ActionPlan
+    tree_patch: TreePatch = Field(default_factory=TreePatch)
+
+
+class StrategyInput(BaseModel):
+    objective: str
+    tree: AttackTreeSnapshot
+    recent_observations: list[Observation] = Field(default_factory=list)
+    latest_execution: ExecutionResult | None = None
+    last_reflection: str = ""
+
+
+class StrategyOutput(BaseModel):
+    summary: str
+    selected_node_key: str = ""
+    action: ActionPlan
+    flag_candidates: list[str] = Field(default_factory=list)
+    goal_reached: bool = False
+    tree_patch: TreePatch = Field(default_factory=TreePatch)
+
+
+class ReflectionInput(BaseModel):
+    objective: str
+    tree: AttackTreeSnapshot
+    recent_observations: list[Observation] = Field(default_factory=list)
+    latest_execution: ExecutionResult | None = None
+    last_strategy: str = ""
+
+
+class ReflectionOutput(BaseModel):
+    summary: str
+    next_focus_key: str = ""
+    halt: bool = False
+    flag_candidates: list[str] = Field(default_factory=list)
+    tree_patch: TreePatch = Field(default_factory=TreePatch)
+
+
+class BuilderInput(BaseModel):
+    task: str
+
+
+class BuilderOutput(BaseModel):
+    summary: str
+    script: str
+
+
+class SubmissionInput(BaseModel):
+    candidates: list[str] = Field(default_factory=list)
+    recent_observations: list[Observation] = Field(default_factory=list)
+    submitted_flags: list[str] = Field(default_factory=list)
+
+
+class SubmissionOutput(BaseModel):
+    should_submit: bool
+    flag: str | None = None
+    reason: str
+
+
+class ChallengeSpec(BaseModel):
+    target: str
+    target_type: Literal["http", "tcp"] = "http"
+    description: str = ""
+    zone: str = "zone1"
+
+
+class RunState(BaseModel):
+    run_id: str
+    challenge: ChallengeSpec
+    tree: AttackTreeSnapshot
+    observations: list[Observation] = Field(default_factory=list)
+    submitted_flags: list[str] = Field(default_factory=list)
+    rounds_completed: int = 0
+
