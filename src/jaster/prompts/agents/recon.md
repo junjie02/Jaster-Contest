@@ -19,23 +19,23 @@
   skill_args：dict
   builder_task：string|null
 - tree_patch：dict
-  add_nodes：list[dict]
+  add_nodes：list[dict] #当发现高价值节点时加入节点
     parent_key：string
     title：string
     kind：string，"target" | "asset" | "entry" | "weakness" | "technique" | "hypothesis"
     locator：string
     priority：int
     value：string
-    reason：string
+    reason：string 入树理由
     how：string
     evidence：list[string]
     status：string，"unexplored" | "exploring" | "success" | "failed"
-  update_nodes：list[dict]
+  update_nodes：list[dict] #调整节点的优先级
     key：string
     status：string|null，"unexplored" | "exploring" | "success" | "failed"
     priority：int|null
     value：string|null
-    reason：string|null 入树理由
+    reason：string|null 更新理由
     how：string|null
     evidence：list[string]|null
 
