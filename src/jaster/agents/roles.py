@@ -53,10 +53,9 @@ class SubmissionAgent(JsonAgent[SubmissionInput, SubmissionOutput]):
 def build_agents(prompt_root: Path, llm: OpenAIChatClient) -> dict[str, JsonAgent]:
     prompts = PromptLibrary(prompt_root)
     return {
-        "recon": ReconAgent(llm, prompts, prompt_root),
-        "strategy": StrategyAgent(llm, prompts, prompt_root),
-        "reflection": ReflectionAgent(llm, prompts, prompt_root),
-        "builder": BuilderAgent(llm, prompts, prompt_root),
-        "submission": SubmissionAgent(llm, prompts, prompt_root),
+        "recon": ReconAgent(llm, prompts),
+        "strategy": StrategyAgent(llm, prompts),
+        "reflection": ReflectionAgent(llm, prompts),
+        "builder": BuilderAgent(llm, prompts),
+        "submission": SubmissionAgent(llm, prompts),
     }
-

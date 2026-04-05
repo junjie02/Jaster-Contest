@@ -1,3 +1,2 @@
-Zone guidance:
-- Bias toward chained exploitation, pivots, and stateful multi-step paths.
-
+区域指引：
+- 侧重链式利用、横向渗透（支点跳转）以及有状态的多步利用路径。

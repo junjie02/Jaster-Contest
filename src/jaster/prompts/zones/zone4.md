@@ -1,3 +1,2 @@
-Zone guidance:
-- Bias toward identity relationships, Kerberos or AD paths, credential flow, and privilege paths.
-
+区域指引：
+- 侧重身份关联关系、Kerberos 或活动目录（AD）利用路径、凭证流转流程，以及权限提升路径。

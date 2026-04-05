@@ -1,3 +1,2 @@
-Zone guidance:
-- Bias toward component fingerprints, versions, CVE mapping, and exploit preconditions.
-
+区域指引：
+- 侧重识别组件指纹、版本号、CVE 对应关系，以及漏洞利用的前置条件。

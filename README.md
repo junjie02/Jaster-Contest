@@ -16,14 +16,18 @@ Jaster is a clean pentest-agent runtime centered on a shared global attack tree.
 python -m venv .venv
 source .venv/bin/activate
 pip install -e .[dev]
-set -a
-source .env
-set +a
 jaster run --target http://example.com
 ```
 
 ## Environment
 
+- `.env` in the project root is loaded automatically by the CLI
 - `OPENAI_API_KEY`
 - `OPENAI_BASE_URL` optional, defaults to `https://api.openai.com/v1`
 - `OPENAI_MODEL` optional, defaults to `gpt-4o-mini`
+- `OPENAI_REASONING_SPLIT` optional, useful for providers such as MiniMax that support `reasoning_split`
+- `JASTER_DATA_DIR` optional, defaults to `./data`
+- `JASTER_MAX_RECON_STEPS` optional, defaults to `3`
+- `JASTER_MAX_ROUNDS` optional, defaults to `12`
+- `JASTER_HTTP_TIMEOUT` optional, defaults to `120`
+- `JASTER_LLM_MAX_RETRIES` optional, defaults to `3`

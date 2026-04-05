@@ -4,7 +4,6 @@ import json
 import subprocess
 import sys
 from pathlib import Path
-from typing import Any
 
 from jaster.domain import ArtifactRef, BuilderOutput, ExecutionResult, Observation
 
@@ -54,4 +53,3 @@ class BuilderExecutor:
             exit_code=completed.returncode,
             script_path=str(script_path),
         )
-

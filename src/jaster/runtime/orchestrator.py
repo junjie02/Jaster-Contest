@@ -33,6 +33,7 @@ class JasterOrchestrator:
         prompt_root: Path,
         skills_dir: Path,
         llm: OpenAIChatClient,
+        verbose: bool = True,
     ) -> None:
         self.store = store
         self.prompt_root = prompt_root
@@ -40,17 +41,24 @@ class JasterOrchestrator:
         self.skill_executor = SkillExecutor(self.skill_catalog)
         self.builder_executor = BuilderExecutor()
         self.agents = build_agents(prompt_root, llm)
+        self.verbose = verbose
 
     def run(self, challenge: ChallengeSpec, *, max_recon_steps: int = 3, max_rounds: int = 12) -> RunState:
         run_id = self.store.new_run_id()
         tree = AttackTree.bootstrap(challenge.target)
         state = RunState(run_id=run_id, challenge=challenge, tree=tree.snapshot())
         self.store.create(state)
+        self._log(f"[*] Run created: {run_id}")
+        self._log(
+            f"[*] Target: {challenge.target} | type={challenge.target_type} | zone={challenge.zone}"
+        )
+        self._log(f"[*] Run dir: {self.store.run_dir(run_id)}")
 
         latest_execution: ExecutionResult | None = None
         last_reflection = ""
 
         for recon_index in range(1, max_recon_steps + 1):
+            self._log(f"[*] Recon step {recon_index}/{max_recon_steps}: calling LLM")
             recon_out = self.agents["recon"].run(
                 challenge.zone,
                 ReconInput(
@@ -61,6 +69,11 @@ class JasterOrchestrator:
                     available_skills=self.skill_catalog.list_available(),
                 ),
             )
+            self._log(f"    Summary: {recon_out.summary or '(empty)'}")
+            self._log(
+                f"    Action: {recon_out.action.kind}"
+                + (f" | skill={recon_out.action.skill_name}" if recon_out.action.skill_name else "")
+            )
             tree.apply_patch(recon_out.tree_patch)
             latest_execution = self._execute_action(
                 run_id=run_id,
@@ -68,6 +81,10 @@ class JasterOrchestrator:
                 action=recon_out.action,
                 observations=state.observations[-6:],
                 latest_execution=latest_execution,
+            )
+            self._log(
+                f"    Result: {'OK' if latest_execution.success else 'FAIL'}"
+                f" | {latest_execution.summary or '(no summary)'}"
             )
             state.observations.append(_execution_to_observation("recon", latest_execution))
             tree.merge_facts(_facts_from_execution(latest_execution))
@@ -78,9 +95,11 @@ class JasterOrchestrator:
                 {"phase": "recon", "recon": recon_out.model_dump(), "execution": latest_execution.model_dump()},
             )
             if recon_out.done or recon_out.action.kind == "finish":
+                self._log("[*] Recon complete")
                 break
 
         for round_index in range(1, max_rounds + 1):
+            self._log(f"[*] Main round {round_index}/{max_rounds}: strategy")
             strategy_out = self.agents["strategy"].run(
                 challenge.zone,
                 StrategyInput(
@@ -92,6 +111,14 @@ class JasterOrchestrator:
                 ),
             )
             selected_key = strategy_out.selected_node_key or (state.tree.frontier_keys[0] if state.tree.frontier_keys else "")
+            self._log(f"    Summary: {strategy_out.summary or '(empty)'}")
+            self._log(
+                f"    Selected node: {selected_key or '(none)'}"
+            )
+            self._log(
+                f"    Action: {strategy_out.action.kind}"
+                + (f" | skill={strategy_out.action.skill_name}" if strategy_out.action.skill_name else "")
+            )
             if selected_key:
                 tree.set_selected_node(selected_key)
             strategy_out.tree_patch.selected_node_key = selected_key or strategy_out.tree_patch.selected_node_key
@@ -103,9 +130,14 @@ class JasterOrchestrator:
                 observations=state.observations[-8:],
                 latest_execution=latest_execution,
             )
+            self._log(
+                f"    Execution: {'OK' if latest_execution.success else 'FAIL'}"
+                f" | {latest_execution.summary or '(no summary)'}"
+            )
             state.observations.append(_execution_to_observation("strategy", latest_execution))
             tree.merge_facts(_facts_from_execution(latest_execution))
 
+            self._log(f"[*] Main round {round_index}/{max_rounds}: reflection")
             reflection_out = self.agents["reflection"].run(
                 challenge.zone,
                 ReflectionInput(
@@ -117,6 +149,8 @@ class JasterOrchestrator:
                 ),
             )
             last_reflection = reflection_out.summary
+            self._log(f"    Summary: {reflection_out.summary or '(empty)'}")
+            self._log(f"    Next focus: {reflection_out.next_focus_key or '(unchanged)'}")
             tree.apply_patch(reflection_out.tree_patch)
             if reflection_out.next_focus_key:
                 tree.set_selected_node(reflection_out.next_focus_key)
@@ -124,6 +158,7 @@ class JasterOrchestrator:
             candidates = _merge_flag_candidates(strategy_out.flag_candidates, latest_execution.flag_candidates, reflection_out.flag_candidates)
             submission_out = None
             if candidates:
+                self._log(f"[*] Main round {round_index}/{max_rounds}: submission candidates={len(candidates)}")
                 submission_out = self.agents["submission"].run(
                     challenge.zone,
                     SubmissionInput(
@@ -132,9 +167,15 @@ class JasterOrchestrator:
                         submitted_flags=state.submitted_flags,
                     ),
                 )
+                self._log(
+                    f"    Submit: {'YES' if submission_out.should_submit else 'NO'}"
+                    + (f" | flag={submission_out.flag}" if submission_out.flag else "")
+                )
                 if submission_out.should_submit and submission_out.flag and submission_out.flag not in state.submitted_flags:
                     state.submitted_flags.append(submission_out.flag)
                     tree.merge_facts(GlobalFacts(flags=[submission_out.flag]))
+            else:
+                self._log(f"[*] Main round {round_index}/{max_rounds}: submission skipped")
 
             state.rounds_completed += 1
             state.tree = tree.snapshot()
@@ -151,7 +192,11 @@ class JasterOrchestrator:
             )
             self.store.save_state(state)
             if strategy_out.goal_reached or reflection_out.halt:
+                self._log("[*] Run stopping: goal reached or reflection requested halt")
                 break
+        self._log(
+            f"[*] Run finished: rounds={state.rounds_completed} | submitted_flags={len(state.submitted_flags)}"
+        )
         return state
 
     def _execute_action(
@@ -165,14 +210,22 @@ class JasterOrchestrator:
     ) -> ExecutionResult:
         run_dir = self.store.run_dir(run_id)
         work_dir = run_dir / "artifacts" / f"step-{len(list((run_dir / 'rounds').glob('*.json'))) + 1:03d}"
+        self._log(f"    Work dir: {work_dir}")
         if action.kind == "finish":
+            self._log(f"    Finish action: {action.goal}")
             return ExecutionResult(success=True, summary=action.goal)
         if action.kind == "skill":
+            self._log(
+                f"    Running skill: {action.skill_name or '(unknown)'}"
+                + (f" | args={action.skill_args}" if action.skill_args else "")
+            )
             return self.skill_executor.run(action.skill_name or "", action.skill_args, cwd=work_dir)
+        self._log("    Calling builder LLM")
         builder_output = self.agents["builder"].run(
             challenge.zone,
             BuilderInput(task=action.builder_task or action.goal),
         )
+        self._log(f"    Builder summary: {builder_output.summary or '(empty)'}")
         accessible_artifacts = [ArtifactRef(kind="run_dir", path=str(run_dir / "artifacts"))]
         return self.builder_executor.run(
             builder_output,
@@ -183,6 +236,10 @@ class JasterOrchestrator:
             recent_observations=observations,
             latest_execution=latest_execution,
         )
+
+    def _log(self, message: str) -> None:
+        if getattr(self, "verbose", True):
+            print(message, flush=True)
 
 
 def detect_target_type(target: str) -> str:

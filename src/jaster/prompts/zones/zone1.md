@@ -1,3 +1,2 @@
-Zone guidance:
-- Bias toward web entrypoints, parameters, file leaks, source exposure, and direct exploitation paths.
-
+区域指引：
+- 优先关注 Web 入口点、参数、文件泄露、源码暴露，以及直接利用路径。

@@ -41,6 +41,7 @@ class SkillExecutor:
         self.catalog = catalog
 
     def run(self, skill_name: str, skill_args: dict[str, Any], *, cwd: Path) -> ExecutionResult:
+        cwd.mkdir(parents=True, exist_ok=True)
         spec = self.catalog.get(skill_name)
         if spec is None:
             return ExecutionResult(success=False, summary=f"Unknown skill: {skill_name}", stderr="unknown skill")
@@ -74,4 +75,3 @@ class SkillExecutor:
             else:
                 command.extend([flag, str(value)])
         return command
-
