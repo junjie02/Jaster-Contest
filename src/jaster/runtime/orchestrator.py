@@ -16,9 +16,11 @@ from jaster.domain import (
     GlobalFacts,
     Observation,
     ReconInput,
+    ReconOutput,
     ReflectionInput,
     RunState,
     StrategyInput,
+    StrategyOutput,
     SubmissionInput,
 )
 from jaster.runtime.builder import BuilderExecutor
@@ -93,7 +95,7 @@ class JasterOrchestrator:
                 f"    Result: {'OK' if latest_execution.success else 'FAIL'}"
                 f" | {latest_execution.summary or '(no summary)'}"
             )
-            state.observations.append(_execution_to_observation("recon", latest_execution))
+            state.observations.append(_create_observation(recon_index, "recon", latest_execution, recon_out))
             tree.merge_facts(_facts_from_execution(latest_execution))
             state.tree = tree.snapshot()
             self.store.append_round(
@@ -151,7 +153,7 @@ class JasterOrchestrator:
                 f"    Execution: {'OK' if latest_execution.success else 'FAIL'}"
                 f" | {latest_execution.summary or '(no summary)'}"
             )
-            state.observations.append(_execution_to_observation("strategy", latest_execution))
+            state.observations.append(_create_observation(max_recon_steps + round_index, "strategy", latest_execution, strategy_out))
             tree.merge_facts(_facts_from_execution(latest_execution))
 
             self._log(f"[*] Main round {round_index}/{max_rounds}: reflection")
@@ -297,18 +299,21 @@ def detect_zone(description: str) -> str:
     return "zone1"
 
 
-def _execution_to_observation(source: str, result: ExecutionResult) -> Observation:
+def _create_observation(
+    round_num: int,
+    source: str,
+    result: ExecutionResult,
+    agent_output: ReconOutput | StrategyOutput,
+) -> Observation:
+    """从 ExecutionResult 和 Agent 输出创建 Observation。"""
     return Observation(
+        round=round_num,
         source=source,
-        summary=result.summary,
-        details={
-            "success": result.success,
-            "findings": result.findings,
-            "flag_candidates": result.flag_candidates,
-            "stderr": result.stderr,
-            "command": result.command,
-        },
-        artifacts=result.artifacts,
+        command=result.command,
+        result_type=agent_output.result_type,
+        summary=agent_output.summary,
+        key_findings=agent_output.key_findings,
+        next_action_hint=agent_output.next_action_hint,
     )
 
 

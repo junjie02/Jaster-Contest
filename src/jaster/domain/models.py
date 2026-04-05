@@ -28,10 +28,13 @@ class ArtifactRef(BaseModel):
 
 
 class Observation(BaseModel):
-    source: str
+    round: int = 0
+    source: str = ""
+    command: str = ""
+    result_type: str = ""
     summary: str = ""
-    details: dict[str, Any] = Field(default_factory=dict)
-    artifacts: list[ArtifactRef] = Field(default_factory=list)
+    key_findings: list[str] = Field(default_factory=list)
+    next_action_hint: str = ""
 
 
 class ExecutionResult(BaseModel):
@@ -144,6 +147,9 @@ class ReconOutput(BaseModel):
     done: bool = False
     action: ActionPlan
     tree_patch: TreePatch = Field(default_factory=TreePatch)
+    key_findings: list[str] = Field(default_factory=list)
+    next_action_hint: str = ""
+    result_type: str = ""
 
 
 class StrategyInput(BaseModel):
@@ -161,6 +167,9 @@ class StrategyOutput(BaseModel):
     flag_candidates: list[str] = Field(default_factory=list)
     goal_reached: bool = False
     tree_patch: TreePatch = Field(default_factory=TreePatch)
+    key_findings: list[str] = Field(default_factory=list)
+    next_action_hint: str = ""
+    result_type: str = ""
 
 
 class ReflectionInput(BaseModel):

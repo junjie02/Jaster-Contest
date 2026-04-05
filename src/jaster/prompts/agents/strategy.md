@@ -9,6 +9,9 @@
 ## 输出结构
 - summary：string，总结
 - selected_node_key：string，所选节点 key；无则返回空字符串
+- key_findings：list[string]，从上次执行结果中发现的关键线索列表
+- next_action_hint：string，下一步行动建议
+- result_type：string，上次执行结果的分类，取值：ok | error | redirect | sensitive_file_found | directory_listing | auth_page | waf_blocked | interesting_js | git_leak
 - action：dict
   kind：string，"skill" | "builder" | "finish"
   goal：string
