@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import time
 from pathlib import Path
 
 from jaster.agents import build_agents
@@ -42,6 +43,7 @@ class JasterOrchestrator:
         self.builder_executor = BuilderExecutor()
         self.agents = build_agents(prompt_root, llm)
         self.verbose = verbose
+        self._last_builder_trace: dict | None = None
 
     def run(self, challenge: ChallengeSpec, *, max_recon_steps: int = 3, max_rounds: int = 12) -> RunState:
         run_id = self.store.new_run_id()
@@ -59,7 +61,8 @@ class JasterOrchestrator:
 
         for recon_index in range(1, max_recon_steps + 1):
             self._log(f"[*] Recon step {recon_index}/{max_recon_steps}: calling LLM")
-            recon_out = self.agents["recon"].run(
+            recon_out, recon_elapsed = self._timed_agent_run(
+                "recon",
                 challenge.zone,
                 ReconInput(
                     objective=f"Recon the target {challenge.target} and expand the global attack tree.",
@@ -69,6 +72,7 @@ class JasterOrchestrator:
                     available_skills=self.skill_catalog.list_available(),
                 ),
             )
+            self._log(f"    LLM time: {recon_elapsed:.2f}s")
             self._log(f"    Summary: {recon_out.summary or '(empty)'}")
             self._log(
                 f"    Action: {recon_out.action.kind}"
@@ -92,7 +96,13 @@ class JasterOrchestrator:
             self.store.append_round(
                 run_id,
                 recon_index,
-                {"phase": "recon", "recon": recon_out.model_dump(), "execution": latest_execution.model_dump()},
+                {
+                    "phase": "recon",
+                    "recon_input": _agent_trace(self.agents.get("recon")),
+                    "recon": recon_out.model_dump(),
+                    "builder_input": self._last_builder_trace,
+                    "execution": latest_execution.model_dump(),
+                },
             )
             if recon_out.done or recon_out.action.kind == "finish":
                 self._log("[*] Recon complete")
@@ -100,7 +110,8 @@ class JasterOrchestrator:
 
         for round_index in range(1, max_rounds + 1):
             self._log(f"[*] Main round {round_index}/{max_rounds}: strategy")
-            strategy_out = self.agents["strategy"].run(
+            strategy_out, strategy_elapsed = self._timed_agent_run(
+                "strategy",
                 challenge.zone,
                 StrategyInput(
                     objective=f"Exploit the target {challenge.target} and capture the flag.",
@@ -110,6 +121,7 @@ class JasterOrchestrator:
                     last_reflection=last_reflection,
                 ),
             )
+            self._log(f"    LLM time: {strategy_elapsed:.2f}s")
             selected_key = strategy_out.selected_node_key or (state.tree.frontier_keys[0] if state.tree.frontier_keys else "")
             self._log(f"    Summary: {strategy_out.summary or '(empty)'}")
             self._log(
@@ -138,7 +150,8 @@ class JasterOrchestrator:
             tree.merge_facts(_facts_from_execution(latest_execution))
 
             self._log(f"[*] Main round {round_index}/{max_rounds}: reflection")
-            reflection_out = self.agents["reflection"].run(
+            reflection_out, reflection_elapsed = self._timed_agent_run(
+                "reflection",
                 challenge.zone,
                 ReflectionInput(
                     objective="Reflect on the latest action, correct drift, and update the global attack tree.",
@@ -148,6 +161,7 @@ class JasterOrchestrator:
                     last_strategy=strategy_out.summary,
                 ),
             )
+            self._log(f"    LLM time: {reflection_elapsed:.2f}s")
             last_reflection = reflection_out.summary
             self._log(f"    Summary: {reflection_out.summary or '(empty)'}")
             self._log(f"    Next focus: {reflection_out.next_focus_key or '(unchanged)'}")
@@ -159,7 +173,8 @@ class JasterOrchestrator:
             submission_out = None
             if candidates:
                 self._log(f"[*] Main round {round_index}/{max_rounds}: submission candidates={len(candidates)}")
-                submission_out = self.agents["submission"].run(
+                submission_out, submission_elapsed = self._timed_agent_run(
+                    "submission",
                     challenge.zone,
                     SubmissionInput(
                         candidates=candidates,
@@ -167,6 +182,7 @@ class JasterOrchestrator:
                         submitted_flags=state.submitted_flags,
                     ),
                 )
+                self._log(f"    LLM time: {submission_elapsed:.2f}s")
                 self._log(
                     f"    Submit: {'YES' if submission_out.should_submit else 'NO'}"
                     + (f" | flag={submission_out.flag}" if submission_out.flag else "")
@@ -184,9 +200,13 @@ class JasterOrchestrator:
                 max_recon_steps + round_index,
                 {
                     "phase": "main",
+                    "strategy_input": _agent_trace(self.agents.get("strategy")),
                     "strategy": strategy_out.model_dump(),
+                    "builder_input": self._last_builder_trace,
                     "execution": latest_execution.model_dump(),
+                    "reflection_input": _agent_trace(self.agents.get("reflection")),
                     "reflection": reflection_out.model_dump(),
+                    "submission_input": _agent_trace(self.agents.get("submission")) if submission_out else None,
                     "submission": submission_out.model_dump() if submission_out else None,
                 },
             )
@@ -210,6 +230,7 @@ class JasterOrchestrator:
     ) -> ExecutionResult:
         run_dir = self.store.run_dir(run_id)
         work_dir = run_dir / "artifacts" / f"step-{len(list((run_dir / 'rounds').glob('*.json'))) + 1:03d}"
+        self._last_builder_trace = None
         self._log(f"    Work dir: {work_dir}")
         if action.kind == "finish":
             self._log(f"    Finish action: {action.goal}")
@@ -221,10 +242,13 @@ class JasterOrchestrator:
             )
             return self.skill_executor.run(action.skill_name or "", action.skill_args, cwd=work_dir)
         self._log("    Calling builder LLM")
-        builder_output = self.agents["builder"].run(
+        builder_output, builder_elapsed = self._timed_agent_run(
+            "builder",
             challenge.zone,
             BuilderInput(task=action.builder_task or action.goal),
         )
+        self._last_builder_trace = _agent_trace(self.agents.get("builder"))
+        self._log(f"    LLM time: {builder_elapsed:.2f}s")
         self._log(f"    Builder summary: {builder_output.summary or '(empty)'}")
         accessible_artifacts = [ArtifactRef(kind="run_dir", path=str(run_dir / "artifacts"))]
         return self.builder_executor.run(
@@ -240,6 +264,11 @@ class JasterOrchestrator:
     def _log(self, message: str) -> None:
         if getattr(self, "verbose", True):
             print(message, flush=True)
+
+    def _timed_agent_run(self, agent_name: str, zone: str, payload: object) -> tuple[object, float]:
+        started = time.monotonic()
+        output = self.agents[agent_name].run(zone, payload)
+        return output, time.monotonic() - started
 
 
 def detect_target_type(target: str) -> str:
@@ -289,3 +318,8 @@ def _merge_flag_candidates(*groups: list[str]) -> list[str]:
             if item and item not in merged:
                 merged.append(item)
     return merged
+
+
+def _agent_trace(agent: object) -> dict | None:
+    trace = getattr(agent, "last_trace", None)
+    return dict(trace) if isinstance(trace, dict) else None

@@ -1,4 +1,5 @@
 from pathlib import Path
+import json
 
 from jaster.domain import (
     ActionPlan,
@@ -118,3 +119,41 @@ def test_orchestrator_runs_end_to_end(tmp_path: Path) -> None:
     assert state.rounds_completed == 1
     assert store.run_dir(state.run_id).exists()
 
+
+def test_orchestrator_round_log_includes_llm_inputs(tmp_path: Path) -> None:
+    store = FileRunStore(tmp_path / "runs")
+    orchestrator = JasterOrchestrator.__new__(JasterOrchestrator)
+    orchestrator.store = store
+    orchestrator.prompt_root = tmp_path
+    orchestrator.skill_catalog = type("FakeCatalog", (), {"list_available": lambda self: []})()
+    orchestrator.skill_executor = FakeSkillExecutor()
+    orchestrator.builder_executor = FakeBuilderExecutor()
+    orchestrator.verbose = False
+    orchestrator._last_builder_trace = None
+
+    recon = FakeAgent(
+        [
+            ReconOutput(
+                summary="Recon found a login page",
+                done=True,
+                action=ActionPlan(kind="finish", goal="recon done"),
+                tree_patch=TreePatch(),
+            )
+        ]
+    )
+    recon.last_trace = {
+        "role": "recon",
+        "zone": "zone1",
+        "system": "sys",
+        "payload": {"objective": "recon"},
+        "payload_json": "{\"objective\":\"recon\"}",
+        "prompt": "prompt",
+    }
+    orchestrator.agents = {"recon": recon}
+
+    challenge = ChallengeSpec(target="http://target", zone="zone1")
+    state = orchestrator.run(challenge, max_recon_steps=1, max_rounds=0)
+
+    round_payload = json.loads((store.run_dir(state.run_id) / "rounds" / "001.json").read_text(encoding="utf-8"))
+    assert round_payload["recon_input"]["prompt"] == "prompt"
+    assert round_payload["recon_input"]["payload"]["objective"] == "recon"

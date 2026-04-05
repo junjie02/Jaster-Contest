@@ -24,15 +24,27 @@ class JsonAgent(Generic[InputModel, OutputModel]):
     def __init__(self, llm: OpenAIChatClient, prompts: PromptLibrary) -> None:
         self.llm = llm
         self.prompts = prompts
+        self.last_trace: dict[str, object] | None = None
 
     def run(self, zone: str, payload: InputModel) -> OutputModel:
+        payload_json = json.dumps(payload.model_dump(), ensure_ascii=False, indent=2)
         prompt = self.prompts.render(
             self.role,
             zone=zone,
-            payload_json=json.dumps(payload.model_dump(), ensure_ascii=False, indent=2),
+            payload_json=payload_json,
         )
+        self.last_trace = {
+            "role": self.role,
+            "zone": zone,
+            "system": STRICT_JSON_SYSTEM,
+            "payload": payload.model_dump(),
+            "payload_json": payload_json,
+            "prompt": prompt,
+        }
         response = self.llm.complete_json(system=STRICT_JSON_SYSTEM, prompt=prompt)
+        self.last_trace["raw_response"] = response
         normalized = _normalize_agent_response(self.role, response)
+        self.last_trace["normalized_response"] = normalized
         return self.output_model.model_validate(normalized)
 
 

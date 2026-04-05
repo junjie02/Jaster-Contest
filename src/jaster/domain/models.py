@@ -160,6 +160,7 @@ class AvailableSkill(BaseModel):
     name: str
     summary: str
     use_when: str = ""
+    params_summary: str = ""
 
 
 class ReconInput(BaseModel):
@@ -245,4 +246,3 @@ class RunState(BaseModel):
     observations: list[Observation] = Field(default_factory=list)
     submitted_flags: list[str] = Field(default_factory=list)
     rounds_completed: int = 0
-

@@ -40,7 +40,15 @@ class SkillCatalog:
         self._specs = self._load_specs()
 
     def list_available(self) -> list[AvailableSkill]:
-        return [AvailableSkill(name=spec.name, summary=spec.summary, use_when=spec.use_when) for spec in self._specs.values()]
+        return [
+            AvailableSkill(
+                name=spec.name,
+                summary=spec.summary,
+                use_when=spec.use_when,
+                params_summary=self._params_summary(spec),
+            )
+            for spec in self._specs.values()
+        ]
 
     def get(self, name: str) -> SkillSpec | None:
         return self._specs.get(name)
@@ -54,6 +62,28 @@ class SkillCatalog:
             spec = SkillSpec.model_validate(payload)
             specs[spec.name] = spec
         return specs
+
+    @staticmethod
+    def _params_summary(spec: SkillSpec) -> str:
+        if spec.command_mode == "shell":
+            return "command:string(required)"
+        if not spec.args:
+            return ""
+        parts: list[str] = []
+        for arg in spec.args:
+            arg_type = arg.type
+            if arg.repeatable and not arg_type.endswith("_list"):
+                arg_type = f"{arg_type}[]"
+            flags: list[str] = []
+            if arg.required:
+                flags.append("required")
+            if arg.default not in (None, "", [], {}):
+                flags.append(f"default={arg.default}")
+            if arg.enum:
+                flags.append("enum=" + "|".join(str(item) for item in arg.enum))
+            suffix = f"({', '.join(flags)})" if flags else ""
+            parts.append(f"{arg.name}:{arg_type}{suffix}")
+        return ", ".join(parts)
 
 
 class SkillExecutor:
