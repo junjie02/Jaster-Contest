@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 import time
+from collections.abc import Callable
 from pathlib import Path
 
 from jaster.agents import build_agents
@@ -35,6 +36,7 @@ class JasterOrchestrator:
         skills_dir: Path,
         llm: OpenAIChatClient,
         verbose: bool = True,
+        on_tree_update: Callable[[object], None] | None = None,
     ) -> None:
         self.store = store
         self.prompt_root = prompt_root
@@ -43,6 +45,7 @@ class JasterOrchestrator:
         self.builder_executor = BuilderExecutor()
         self.agents = build_agents(prompt_root, llm)
         self.verbose = verbose
+        self._on_tree_update = on_tree_update
         self._last_builder_trace: dict | None = None
 
     def run(self, challenge: ChallengeSpec, *, max_recon_steps: int = 3, max_rounds: int = 12) -> RunState:
@@ -105,6 +108,7 @@ class JasterOrchestrator:
                 },
             )
             self.store.save_state(state)
+            self._notify_tree_update(state.tree)
             if recon_out.done or recon_out.action.kind == "finish":
                 self._log("[*] Recon complete")
                 break
@@ -212,6 +216,7 @@ class JasterOrchestrator:
                 },
             )
             self.store.save_state(state)
+            self._notify_tree_update(state.tree)
             if strategy_out.goal_reached or reflection_out.halt:
                 self._log("[*] Run stopping: goal reached or reflection requested halt")
                 break
@@ -266,6 +271,10 @@ class JasterOrchestrator:
     def _log(self, message: str) -> None:
         if getattr(self, "verbose", True):
             print(message, flush=True)
+
+    def _notify_tree_update(self, tree_snapshot: AttackTreeSnapshot) -> None:
+        if self._on_tree_update:
+            self._on_tree_update(tree_snapshot)
 
     def _timed_agent_run(self, agent_name: str, zone: str, payload: object) -> tuple[object, float]:
         started = time.monotonic()

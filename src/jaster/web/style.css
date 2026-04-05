@@ -1,0 +1,138 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  background: #111827;
+  color: #e5e7eb;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  height: 100vh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+#header {
+  background: #1f2937;
+  padding: 12px 20px;
+  border-bottom: 1px solid #374151;
+  display: flex;
+  align-items: center;
+  gap: 24px;
+}
+
+#header h1 {
+  font-size: 18px;
+  font-weight: 600;
+  color: #f9fafb;
+}
+
+#stats {
+  display: flex;
+  gap: 16px;
+  font-size: 13px;
+  color: #9ca3af;
+}
+
+#stats span {
+  background: #374151;
+  padding: 3px 10px;
+  border-radius: 12px;
+}
+
+#controls {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+#run-id-input {
+  background: #374151;
+  border: 1px solid #4b5563;
+  border-radius: 6px;
+  padding: 4px 10px;
+  color: #e5e7eb;
+  font-size: 13px;
+  width: 220px;
+}
+
+#run-id-input::placeholder {
+  color: #6b7280;
+}
+
+#load-btn, #live-btn {
+  background: #374151;
+  border: 1px solid #4b5563;
+  border-radius: 6px;
+  padding: 4px 12px;
+  color: #e5e7eb;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+#load-btn:hover, #live-btn:hover {
+  background: #4b5563;
+}
+
+#graph-container {
+  flex: 1;
+  overflow: hidden;
+  position: relative;
+}
+
+#graph {
+  width: 100%;
+  height: 100%;
+  display: block;
+  cursor: grab;
+}
+
+#graph:active {
+  cursor: grabbing;
+}
+
+#graph .nodes g {
+  cursor: pointer;
+}
+
+.tooltip {
+  position: absolute;
+  background: #1f2937;
+  border: 1px solid #4b5563;
+  border-radius: 8px;
+  padding: 12px;
+  max-width: 320px;
+  min-width: 200px;
+  pointer-events: none;
+  z-index: 100;
+  box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+}
+
+.tooltip.hidden {
+  display: none;
+}
+
+.tip-row {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 6px;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.tip-row:last-child {
+  margin-bottom: 0;
+}
+
+.tip-key {
+  color: #9ca3af;
+  min-width: 80px;
+  flex-shrink: 0;
+}
+
+.tip-val {
+  color: #e5e7eb;
+  word-break: break-all;
+}
