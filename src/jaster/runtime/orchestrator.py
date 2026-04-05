@@ -65,6 +65,9 @@ class JasterOrchestrator:
         last_reflection = ""
 
         for recon_index in range(1, max_recon_steps + 1):
+            # 保存上一轮 execution，用于创建上一轮的 observation
+            prev_execution = latest_execution
+
             self._log(f"[*] Recon step {recon_index}/{max_recon_steps}: calling LLM")
             recon_out, recon_elapsed = self._timed_agent_run(
                 "recon",
@@ -73,7 +76,7 @@ class JasterOrchestrator:
                     objective=f"Recon the target {challenge.target} and expand the global attack tree.",
                     tree=tree.snapshot(),
                     recent_observations=state.observations[-6:],
-                    latest_execution=latest_execution,
+                    latest_execution=prev_execution,
                     available_skills=self.skill_catalog.list_available(),
                 ),
             )
@@ -89,13 +92,14 @@ class JasterOrchestrator:
                 challenge=challenge,
                 action=recon_out.action,
                 observations=state.observations[-6:],
-                latest_execution=latest_execution,
+                latest_execution=prev_execution,
             )
             self._log(
                 f"    Result: {'OK' if latest_execution.success else 'FAIL'}"
                 f" | {latest_execution.summary or '(no summary)'}"
             )
-            state.observations.append(_create_observation(recon_index, "recon", latest_execution, recon_out))
+            # 创建上一轮的 observation：round_num = recon_index - 1
+            state.observations.append(_create_observation(recon_index - 1, "recon", prev_execution, recon_out))
             tree.merge_facts(_facts_from_execution(latest_execution))
             state.tree = tree.snapshot()
             self.store.append_round(
@@ -116,6 +120,9 @@ class JasterOrchestrator:
                 break
 
         for round_index in range(1, max_rounds + 1):
+            # 保存上一轮 execution，用于创建上一轮的 observation
+            prev_execution = latest_execution
+
             self._log(f"[*] Main round {round_index}/{max_rounds}: strategy")
             strategy_out, strategy_elapsed = self._timed_agent_run(
                 "strategy",
@@ -124,7 +131,7 @@ class JasterOrchestrator:
                     objective=f"Exploit the target {challenge.target} and capture the flag.",
                     tree=tree.snapshot(),
                     recent_observations=state.observations[-8:],
-                    latest_execution=latest_execution,
+                    latest_execution=prev_execution,
                     last_reflection=last_reflection,
                 ),
             )
@@ -147,13 +154,14 @@ class JasterOrchestrator:
                 challenge=challenge,
                 action=strategy_out.action,
                 observations=state.observations[-8:],
-                latest_execution=latest_execution,
+                latest_execution=prev_execution,
             )
             self._log(
                 f"    Execution: {'OK' if latest_execution.success else 'FAIL'}"
                 f" | {latest_execution.summary or '(no summary)'}"
             )
-            state.observations.append(_create_observation(max_recon_steps + round_index, "strategy", latest_execution, strategy_out))
+            # 创建上一轮的 observation：round_num = max_recon_steps + round_index - 1
+            state.observations.append(_create_observation(max_recon_steps + round_index - 1, "strategy", prev_execution, strategy_out))
             tree.merge_facts(_facts_from_execution(latest_execution))
 
             self._log(f"[*] Main round {round_index}/{max_rounds}: reflection")
@@ -302,14 +310,14 @@ def detect_zone(description: str) -> str:
 def _create_observation(
     round_num: int,
     source: str,
-    result: ExecutionResult,
+    result: ExecutionResult | None,
     agent_output: ReconOutput | StrategyOutput,
 ) -> Observation:
-    """从 ExecutionResult 和 Agent 输出创建 Observation。"""
+    """从 ExecutionResult（可为None）和 Agent 输出创建 Observation。"""
     return Observation(
         round=round_num,
         source=source,
-        command=result.command,
+        command=result.command if result else "",
         result_type=agent_output.result_type,
         summary=agent_output.summary,
         key_findings=agent_output.key_findings,

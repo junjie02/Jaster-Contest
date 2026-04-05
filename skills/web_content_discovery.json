@@ -61,34 +61,34 @@
     },
     {
       "name": "auto_calibrate",
-      "type": "boolean",
+      "type": "bool",
       "flag": "-ac",
       "default": true,
       "description": "Enable auto calibration"
     },
     {
       "name": "json_output",
-      "type": "boolean",
+      "type": "bool",
       "flag": "-json",
       "default": true,
       "description": "Emit JSON on stdout"
     },
     {
       "name": "threads",
-      "type": "integer",
+      "type": "int",
       "flag": "-t",
       "default": 10,
       "description": "Thread count"
     },
     {
       "name": "rate",
-      "type": "integer",
+      "type": "int",
       "flag": "-rate",
       "description": "Rate limit"
     },
     {
       "name": "headers",
-      "type": "array",
+      "type": "string_list",
       "flag": "-H",
       "repeatable": true,
       "description": "Extra headers"
