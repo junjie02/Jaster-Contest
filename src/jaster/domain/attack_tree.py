@@ -35,12 +35,9 @@ class AttackTree:
             key=_stable_key("", "target", target, title or target),
             title=title or target,
             kind="target",
-            locator=target,
             status=NodeStatus.exploring,
             priority=100,
-            value="Primary target",
             reason="Run bootstrap",
-            how="Start reconnaissance",
         )
         return cls(AttackTreeSnapshot(nodes=[root], selected_node_key=root.key))
 
@@ -105,14 +102,8 @@ class AttackTree:
             if key in self._nodes:
                 node = self._nodes[key]
                 node.priority = max(node.priority, node_patch.priority)
-                if node_patch.value:
-                    node.value = node_patch.value
                 if node_patch.reason:
                     node.reason = node_patch.reason
-                if node_patch.how:
-                    node.how = node_patch.how
-                if node_patch.evidence:
-                    node.evidence = _merge_unique(node.evidence, node_patch.evidence)
                 if node_patch.status:
                     node.status = node_patch.status
                 continue
@@ -121,12 +112,8 @@ class AttackTree:
                 parent_key=node_patch.parent_key,
                 title=node_patch.title,
                 kind=node_patch.kind,
-                locator=node_patch.locator,
                 priority=node_patch.priority,
-                value=node_patch.value,
                 reason=node_patch.reason,
-                how=node_patch.how,
-                evidence=node_patch.evidence,
                 status=node_patch.status,
             )
         for update in patch.update_nodes:
@@ -137,14 +124,8 @@ class AttackTree:
                 node.status = update.status
             if update.priority is not None:
                 node.priority = update.priority
-            if update.value is not None:
-                node.value = update.value
             if update.reason is not None:
                 node.reason = update.reason
-            if update.how is not None:
-                node.how = update.how
-            if update.evidence is not None:
-                node.evidence = _merge_unique(node.evidence, update.evidence)
         for edge_patch in patch.add_edges:
             edge = TreeEdgeSnapshot(
                 from_key=edge_patch.from_key,

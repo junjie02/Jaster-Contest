@@ -283,14 +283,12 @@ function renderNodeShape(parent, node) {
 function showTooltip(event, node) {
   const fields = [
     ["key", node.key],
+    ["parent_key", node.parent_key],
+    ["title", node.title],
     ["kind", node.kind],
     ["status", node.status],
     ["priority", node.priority],
-    ["locator", node.locator],
-    ["value", node.value],
     ["reason", node.reason],
-    ["how", node.how],
-    ["evidence", Array.isArray(node.evidence) ? node.evidence.join("\n") : node.evidence],
   ].filter(([, value]) => value);
 
   tooltip.innerHTML = fields

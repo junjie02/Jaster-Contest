@@ -35,14 +35,14 @@
     status：string|null，"unexplored" | "exploring" | "success" | "failed"
     priority：int|null
     value：string|null
-    reason：string|null
+    reason：string|null 入树理由
     how：string|null
     evidence：list[string]|null
   add_edges：list[dict]
     from_key：string
     to_key：string
     relation：string，"dependency" | "evidence" | "hypothesis"
-    reason：string
+    reason：string 入树理由
     how：string
 
 ## 攻击树规则
