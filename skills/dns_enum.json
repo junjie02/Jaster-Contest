@@ -1,0 +1,109 @@
+{
+  "name": "dns_enum",
+  "bin": "dnsrecon",
+  "description": "Run dnsrecon with structured enumeration options.",
+  "base_argv": [],
+  "primary_locator_arg": "domain",
+  "shape_signature_args": [
+    "domain",
+    "enum_type"
+  ],
+  "variant_signature_args": [
+    "domain",
+    "enum_type",
+    "wordlist",
+    "server",
+    "axfr",
+    "crtsh",
+    "threads",
+    "tcp",
+    "json_output",
+    "csv_output"
+  ],
+  "args": [
+    {
+      "name": "domain",
+      "type": "string",
+      "flag": "-d",
+      "required": true,
+      "description": "Target domain"
+    },
+    {
+      "name": "enum_type",
+      "type": "string",
+      "flag": "-t",
+      "default": "std",
+      "description": "dnsrecon enumeration type"
+    },
+    {
+      "name": "wordlist",
+      "type": "string",
+      "flag": "-D",
+      "description": "Subdomain wordlist"
+    },
+    {
+      "name": "server",
+      "type": "string",
+      "flag": "-n",
+      "description": "Nameserver override"
+    },
+    {
+      "name": "axfr",
+      "type": "bool",
+      "flag": "-a",
+      "description": "Try AXFR in std mode"
+    },
+    {
+      "name": "crtsh",
+      "type": "bool",
+      "flag": "-k",
+      "description": "Query crt.sh in std mode"
+    },
+    {
+      "name": "threads",
+      "type": "int",
+      "flag": "--threads",
+      "description": "Thread count"
+    },
+    {
+      "name": "tcp",
+      "type": "bool",
+      "flag": "--tcp",
+      "description": "Force TCP"
+    },
+    {
+      "name": "json_output",
+      "type": "string",
+      "flag": "-j",
+      "path_policy": "work_dir_output",
+      "description": "JSON output path"
+    },
+    {
+      "name": "csv_output",
+      "type": "string",
+      "flag": "-c",
+      "path_policy": "work_dir_output",
+      "description": "CSV output path"
+    }
+  ],
+  "examples": [
+    {
+      "label": "std",
+      "skill_args": {
+        "domain": "example.com"
+      }
+    },
+    {
+      "label": "brt",
+      "skill_args": {
+        "domain": "example.com",
+        "enum_type": "brt",
+        "wordlist": "/usr/share/dnsrecon/dnsrecon/data/subdomains-top1mil-5000.txt",
+        "json_output": "dnsrecon.json"
+      }
+    }
+  ],
+  "summary": "使用 `dnsrecon` 做域名、记录、子域和 nameserver 侦察。",
+  "use_when": "目标是域名，需要先补齐 DNS 资产面。 需要确认 A、AAAA、MX、NS、SRV 等基础记录。 需要围绕子域、反查或 zone transfer 做低成本确认。",
+  "command_mode": "argv"
+}

@@ -1,0 +1,112 @@
+{
+  "name": "web_content_discovery",
+  "bin": "ffuf",
+  "description": "Run ffuf with a structured target URL and wordlist.",
+  "base_argv": [],
+  "primary_locator_arg": "url",
+  "shape_signature_args": [
+    "url",
+    "wordlist"
+  ],
+  "variant_signature_args": [
+    "url",
+    "wordlist",
+    "match_codes",
+    "filter_codes",
+    "filter_sizes",
+    "auto_calibrate",
+    "json_output",
+    "threads",
+    "rate",
+    "headers"
+  ],
+  "args": [
+    {
+      "name": "wordlist",
+      "type": "string",
+      "flag": "-w",
+      "required": true,
+      "description": "Wordlist path"
+    },
+    {
+      "name": "url",
+      "type": "string",
+      "flag": "-u",
+      "required": true,
+      "description": "Target URL with FUZZ placeholder"
+    },
+    {
+      "name": "match_codes",
+      "type": "string",
+      "flag": "-mc",
+      "description": "Match status codes"
+    },
+    {
+      "name": "filter_codes",
+      "type": "string",
+      "flag": "-fc",
+      "description": "Filter status codes"
+    },
+    {
+      "name": "filter_sizes",
+      "type": "string",
+      "flag": "-fs",
+      "description": "Filter fixed sizes"
+    },
+    {
+      "name": "auto_calibrate",
+      "type": "bool",
+      "flag": "-ac",
+      "default": true,
+      "description": "Enable auto calibration"
+    },
+    {
+      "name": "json_output",
+      "type": "bool",
+      "flag": "-json",
+      "default": true,
+      "description": "Emit JSON on stdout"
+    },
+    {
+      "name": "threads",
+      "type": "int",
+      "flag": "-t",
+      "default": 10,
+      "description": "Thread count"
+    },
+    {
+      "name": "rate",
+      "type": "int",
+      "flag": "-rate",
+      "description": "Rate limit"
+    },
+    {
+      "name": "headers",
+      "type": "string_list",
+      "flag": "-H",
+      "repeatable": true,
+      "description": "Extra headers"
+    }
+  ],
+  "examples": [
+    {
+      "label": "common",
+      "skill_args": {
+        "wordlist": "/usr/share/wordlists/dirb/common.txt",
+        "url": "http://target.local/FUZZ"
+      }
+    },
+    {
+      "label": "with_filters",
+      "skill_args": {
+        "wordlist": "/usr/share/wordlists/dirb/common.txt",
+        "url": "http://target.local/FUZZ",
+        "filter_sizes": "1234",
+        "threads": 10
+      }
+    }
+  ],
+  "summary": "使用 `ffuf` 发现后台、敏感文件、备份包和常见目录。",
+  "use_when": "需要围绕 Web 根路径快速补目录资产面。 已确认站点存在隐藏入口、后台、备份或敏感文件线索。 需要先做一轮低成本内容发现，再决定是否深挖。",
+  "command_mode": "argv"
+}

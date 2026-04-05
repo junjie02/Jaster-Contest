@@ -1,0 +1,113 @@
+{
+  "name": "git-dumper",
+  "bin": "git-dumper",
+  "description": "Dump an exposed .git directory into the current work dir.",
+  "base_argv": [],
+  "primary_locator_arg": "git_url",
+  "shape_signature_args": [
+    "git_url"
+  ],
+  "variant_signature_args": [
+    "git_url",
+    "jobs",
+    "timeout",
+    "retry",
+    "user_agent",
+    "headers",
+    "proxy",
+    "client_cert_p12"
+  ],
+  "args": [
+    {
+      "name": "jobs",
+      "type": "int",
+      "flag": "-j",
+      "default": 10,
+      "description": "Parallel jobs"
+    },
+    {
+      "name": "timeout",
+      "type": "int",
+      "flag": "-t",
+      "description": "Request timeout"
+    },
+    {
+      "name": "retry",
+      "type": "int",
+      "flag": "-r",
+      "description": "Retry count"
+    },
+    {
+      "name": "user_agent",
+      "type": "string",
+      "flag": "-u",
+      "description": "User-Agent override"
+    },
+    {
+      "name": "headers",
+      "type": "string_list",
+      "flag": "-H",
+      "repeatable": true,
+      "description": "Extra HTTP headers"
+    },
+    {
+      "name": "proxy",
+      "type": "string",
+      "flag": "--proxy",
+      "description": "Proxy URL"
+    },
+    {
+      "name": "client_cert_p12",
+      "type": "string",
+      "flag": "--client-cert-p12",
+      "description": "Client certificate"
+    },
+    {
+      "name": "client_cert_p12_password",
+      "type": "string",
+      "flag": "--client-cert-p12-password",
+      "description": "Client certificate password"
+    },
+    {
+      "name": "git_url",
+      "type": "string",
+      "required": true,
+      "position": 100,
+      "description": "Exposed .git URL"
+    },
+    {
+      "name": "output_dir",
+      "type": "string",
+      "required": true,
+      "position": 200,
+      "default": ".",
+      "path_policy": "work_dir_output",
+      "description": "Output directory within work dir"
+    }
+  ],
+  "examples": [
+    {
+      "label": "basic",
+      "skill_args": {
+        "git_url": "http://target.local/.git/",
+        "output_dir": "."
+      }
+    },
+    {
+      "label": "with_headers",
+      "skill_args": {
+        "git_url": "http://target.local/.git/",
+        "output_dir": ".",
+        "jobs": 10,
+        "timeout": 8,
+        "headers": [
+          "Cookie=PHPSESSID=demo"
+        ],
+        "user_agent": "Mozilla/5.0"
+      }
+    }
+  ],
+  "summary": "使用 `git-dumper` 从可访问的 `/.git/` 目录恢复仓库内容，供后续源码审计和敏感信息提取。",
+  "use_when": "已确认 `/.git/`、`/.git/HEAD`、`/.git/config` 等路径可访问。 需要把暴露的 Git 仓库完整拉到本地再做源码分析。 目标是 Web 题，怀疑存在源码泄露。",
+  "command_mode": "argv"
+}

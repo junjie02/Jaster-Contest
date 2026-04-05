@@ -22,3 +22,4 @@ Builder Agent
 2. 脚本必须向标准输出（stdout）写入一个 JSON 对象
 3. 输出 JSON 必须包含：summary、findings、artifacts、flag_candidates
 4. 最终答案中除脚本负载 JSON 外，不输出任何其他内容
+5. `summary`、`findings` 里的解释性文字默认使用中文；命令、URL、路径、参数名等技术标识保持原文

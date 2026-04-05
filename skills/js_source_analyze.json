@@ -1,0 +1,89 @@
+{
+  "name": "js_source_analyze",
+  "bin": "curl",
+  "description": "Fetch a JavaScript resource and let the runner extract common API and secret-like strings.",
+  "base_argv": [
+    "-sSkL"
+  ],
+  "primary_locator_arg": "url",
+  "shape_signature_args": [
+    "url",
+    "method"
+  ],
+  "variant_signature_args": [
+    "url",
+    "method",
+    "headers",
+    "cookie",
+    "user_agent",
+    "data",
+    "output_file"
+  ],
+  "args": [
+    {
+      "name": "headers",
+      "type": "string_list",
+      "flag": "-H",
+      "repeatable": true,
+      "description": "Extra HTTP headers"
+    },
+    {
+      "name": "user_agent",
+      "type": "string",
+      "flag": "-A",
+      "description": "User-Agent header"
+    },
+    {
+      "name": "cookie",
+      "type": "string",
+      "flag": "-b",
+      "description": "Cookie header"
+    },
+    {
+      "name": "method",
+      "type": "string",
+      "flag": "-X",
+      "description": "HTTP method"
+    },
+    {
+      "name": "data",
+      "type": "string",
+      "flag": "-d",
+      "description": "Optional request body"
+    },
+    {
+      "name": "output_file",
+      "type": "string",
+      "flag": "-o",
+      "path_policy": "work_dir_output",
+      "description": "Optional local output file"
+    },
+    {
+      "name": "url",
+      "type": "string",
+      "required": true,
+      "position": 100,
+      "description": "JavaScript resource URL"
+    }
+  ],
+  "examples": [
+    {
+      "label": "basic",
+      "skill_args": {
+        "url": "http://target.local/static/app.js"
+      }
+    },
+    {
+      "label": "with_referer",
+      "skill_args": {
+        "url": "http://target.local/static/app.js",
+        "headers": [
+          "Referer: http://target.local/"
+        ]
+      }
+    }
+  ],
+  "summary": "使用 `curl`、`grep` 等命令从 JS 资源里快速提取接口、静态路径、source map 和敏感字符串线索。",
+  "use_when": "已拿到 JS 资源 URL，想先做一轮低成本字符串提取。 需要快速找 `/api/`、`token`、`sourceMappingURL`、调试标记等关键信息。 不需要 AST 解析、批量聚类或复杂反混淆。",
+  "command_mode": "argv"
+}

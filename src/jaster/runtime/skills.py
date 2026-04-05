@@ -4,14 +4,34 @@ import json
 import shutil
 import subprocess
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
+from pydantic import BaseModel, Field
 from jaster.domain import ArtifactRef, AvailableSkill, ExecutionResult
 
 
+class SkillArgSpec(BaseModel):
+    name: str
+    type: Literal["string", "int", "bool", "string_list", "int_list"] = "string"
+    flag: str = ""
+    position: int | None = None
+    repeatable: bool = False
+    required: bool = False
+    default: Any = None
+    enum: list[Any] = Field(default_factory=list)
+    path_policy: Literal["none", "work_dir_relative", "work_dir_output"] = "none"
+
+
 class SkillSpec(AvailableSkill):
-    command_mode: str = "argv"
+    command_mode: Literal["argv", "shell"] = "argv"
     bin: str = ""
+    base_argv: list[str] = Field(default_factory=list)
+    primary_locator_arg: str = ""
+    shape_signature_args: list[str] = Field(default_factory=list)
+    variant_signature_args: list[str] = Field(default_factory=list)
+    bin_selector_arg: str = ""
+    bin_map: dict[str, str] = Field(default_factory=dict)
+    args: list[SkillArgSpec] = Field(default_factory=list)
 
 
 class SkillCatalog:
@@ -45,9 +65,13 @@ class SkillExecutor:
         spec = self.catalog.get(skill_name)
         if spec is None:
             return ExecutionResult(success=False, summary=f"Unknown skill: {skill_name}", stderr="unknown skill")
-        if not shutil.which(spec.bin):
+        binary = self._resolve_bin(spec, skill_args)
+        if not shutil.which(binary):
             return ExecutionResult(success=False, summary=f"Skill binary not found: {spec.bin}", stderr="missing binary")
-        command = self._build_command(spec, skill_args)
+        try:
+            command = self._build_command(spec, skill_args, cwd=cwd)
+        except ValueError as exc:
+            return ExecutionResult(success=False, summary=f"Invalid skill args for {skill_name}", stderr=str(exc))
         completed = subprocess.run(command, cwd=cwd, capture_output=True, text=True)
         artifacts = [ArtifactRef(kind="work_dir", path=str(cwd))]
         summary = completed.stdout.strip().splitlines()[0] if completed.stdout.strip() else ""
@@ -62,16 +86,128 @@ class SkillExecutor:
             artifacts=artifacts,
         )
 
-    def _build_command(self, spec: SkillSpec, skill_args: dict[str, Any]) -> list[str]:
-        if spec.name == "system_command":
-            return [spec.bin, "-lc", str(skill_args.get("command", ""))]
-        command = [spec.bin]
-        for key, value in skill_args.items():
+    def _resolve_bin(self, spec: SkillSpec, skill_args: dict[str, Any]) -> str:
+        if spec.bin_selector_arg and spec.bin_map:
+            selector = str(skill_args.get(spec.bin_selector_arg, "")).strip()
+            if selector:
+                return spec.bin_map.get(selector, spec.bin)
+        return spec.bin
+
+    def _build_command(self, spec: SkillSpec, skill_args: dict[str, Any], *, cwd: Path) -> list[str]:
+        if spec.command_mode == "shell":
+            command = str((skill_args or {}).get("command", "")).strip()
+            if not command:
+                raise ValueError("command is required")
+            return [spec.bin, "-lc", command]
+        if not spec.args:
+            command = [spec.bin]
+            for key, value in skill_args.items():
+                if value is None or value is False:
+                    continue
+                flag = f"--{key.replace('_', '-')}"
+                if value is True:
+                    command.append(flag)
+                else:
+                    command.extend([flag, str(value)])
+            return command
+
+        normalized = self._normalize_args(spec, skill_args or {}, cwd=cwd)
+        command = [self._resolve_bin(spec, normalized), *spec.base_argv]
+        positional_parts: list[tuple[int, list[str]]] = []
+        for arg in spec.args:
+            if arg.name not in normalized:
+                continue
+            value = normalized[arg.name]
             if value is None or value is False:
                 continue
-            flag = f"--{key.replace('_', '-')}"
-            if value is True:
-                command.append(flag)
-            else:
-                command.extend([flag, str(value)])
+            rendered = self._render_arg_value(arg, value)
+            if arg.position is not None:
+                positional_parts.append((arg.position, rendered))
+                continue
+            if not arg.flag:
+                continue
+            if arg.type == "bool":
+                if value:
+                    command.append(arg.flag)
+                continue
+            if arg.repeatable and isinstance(value, list):
+                for item in value:
+                    command.extend([arg.flag, str(item)])
+                continue
+            command.extend([arg.flag, *rendered])
+        for _, parts in sorted(positional_parts, key=lambda item: item[0]):
+            command.extend(parts)
         return command
+
+    def _normalize_args(self, spec: SkillSpec, skill_args: dict[str, Any], *, cwd: Path) -> dict[str, Any]:
+        known = {arg.name for arg in spec.args}
+        unknown = sorted(set(skill_args) - known)
+        if unknown:
+            raise ValueError(f"unknown args: {', '.join(unknown)}")
+        normalized: dict[str, Any] = {}
+        for arg in spec.args:
+            raw_value = skill_args[arg.name] if arg.name in skill_args else arg.default
+            if raw_value is None:
+                if arg.required:
+                    raise ValueError(f"{arg.name} is required")
+                continue
+            value = self._coerce_arg_value(arg, raw_value, cwd=cwd)
+            if arg.enum and value not in arg.enum:
+                raise ValueError(f"{arg.name} must be one of: {', '.join(str(item) for item in arg.enum)}")
+            normalized[arg.name] = value
+        return normalized
+
+    def _coerce_arg_value(self, arg: SkillArgSpec, value: Any, *, cwd: Path) -> Any:
+        if arg.type == "bool":
+            return self._coerce_bool(value)
+        if arg.type == "int":
+            return int(value)
+        if arg.type == "string":
+            return self._apply_path_policy(arg, str(value), cwd=cwd)
+        if arg.type == "string_list":
+            items = value if isinstance(value, list) else [value]
+            return [self._apply_path_policy(arg, str(item), cwd=cwd) for item in items]
+        if arg.type == "int_list":
+            items = value if isinstance(value, list) else [value]
+            return [int(item) for item in items]
+        return value
+
+    @staticmethod
+    def _coerce_bool(value: Any) -> bool:
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, (int, float)):
+            return bool(value)
+        rendered = str(value).strip().lower()
+        if rendered in {"1", "true", "yes", "on"}:
+            return True
+        if rendered in {"0", "false", "no", "off", ""}:
+            return False
+        raise ValueError(f"invalid bool value: {value}")
+
+    @staticmethod
+    def _render_arg_value(arg: SkillArgSpec, value: Any) -> list[str]:
+        if isinstance(value, list):
+            return [str(item) for item in value]
+        if arg.type == "bool":
+            return []
+        return [str(value)]
+
+    @staticmethod
+    def _apply_path_policy(arg: SkillArgSpec, value: str, *, cwd: Path) -> str:
+        if arg.path_policy == "none":
+            return value
+        candidate = Path(value)
+        if candidate.is_absolute():
+            raise ValueError(f"{arg.name} must be relative to work_dir")
+        resolved = (cwd / candidate).resolve(strict=False)
+        base = cwd.resolve(strict=False)
+        try:
+            relative = resolved.relative_to(base)
+        except ValueError as exc:
+            raise ValueError(f"{arg.name} escapes work_dir") from exc
+        if arg.path_policy == "work_dir_output":
+            return str(relative) if str(relative) else "."
+        if arg.path_policy == "work_dir_relative":
+            return str(relative) if str(relative) else "."
+        return value
