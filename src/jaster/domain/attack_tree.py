@@ -7,7 +7,6 @@ from .models import (
     AttackTreeSnapshot,
     GlobalFacts,
     NodeStatus,
-    TreeEdgeSnapshot,
     TreeNodeSnapshot,
     TreePatch,
 )
@@ -23,9 +22,6 @@ class AttackTree:
         if snapshot is None:
             snapshot = AttackTreeSnapshot()
         self._nodes = {node.key: node for node in snapshot.nodes}
-        self._edges = {
-            (edge.from_key, edge.to_key, edge.relation.value): edge for edge in snapshot.edges
-        }
         self._selected_node_key = snapshot.selected_node_key
         self._facts = snapshot.facts
 
@@ -57,16 +53,11 @@ class AttackTree:
             self._nodes.values(),
             key=lambda node: (self.depth(node.key), -node.priority, node.title, node.key),
         )
-        edges = sorted(
-            self._edges.values(),
-            key=lambda edge: (edge.from_key, edge.to_key, edge.relation.value),
-        )
         return AttackTreeSnapshot(
             selected_node_key=self._selected_node_key,
             selected_path_keys=path,
             frontier_keys=frontier,
             nodes=nodes,
-            edges=edges,
             facts=self._facts,
         )
 
@@ -126,15 +117,6 @@ class AttackTree:
                 node.priority = update.priority
             if update.reason is not None:
                 node.reason = update.reason
-        for edge_patch in patch.add_edges:
-            edge = TreeEdgeSnapshot(
-                from_key=edge_patch.from_key,
-                to_key=edge_patch.to_key,
-                relation=edge_patch.relation,
-                reason=edge_patch.reason,
-                how=edge_patch.how,
-            )
-            self._edges[(edge.from_key, edge.to_key, edge.relation.value)] = edge
         if patch.selected_node_key is not None:
             self._selected_node_key = patch.selected_node_key
         return self.snapshot()

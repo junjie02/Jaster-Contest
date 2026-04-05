@@ -22,12 +22,6 @@ class NodeStatus(str, Enum):
     failed = "failed"
 
 
-class EdgeRelation(str, Enum):
-    dependency = "dependency"
-    evidence = "evidence"
-    hypothesis = "hypothesis"
-
-
 class ArtifactRef(BaseModel):
     kind: str
     path: str
@@ -74,16 +68,6 @@ class TreeNodeSnapshot(BaseModel):
     reason: str = ""
 
 
-class TreeEdgeSnapshot(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    from_key: str
-    to_key: str
-    relation: EdgeRelation = EdgeRelation.dependency
-    reason: str = ""
-    how: str = ""
-
-
 class AttackTreeSnapshot(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -91,7 +75,6 @@ class AttackTreeSnapshot(BaseModel):
     selected_path_keys: list[str] = Field(default_factory=list)
     frontier_keys: list[str] = Field(default_factory=list)
     nodes: list[TreeNodeSnapshot] = Field(default_factory=list)
-    edges: list[TreeEdgeSnapshot] = Field(default_factory=list)
     facts: GlobalFacts = Field(default_factory=GlobalFacts)
 
 
@@ -122,22 +105,11 @@ class NodeUpdatePatch(BaseModel):
     evidence: list[str] | None = None
 
 
-class EdgePatch(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    from_key: str
-    to_key: str
-    relation: EdgeRelation = EdgeRelation.dependency
-    reason: str = ""
-    how: str = ""
-
-
 class TreePatch(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     add_nodes: list[NodePatch] = Field(default_factory=list)
     update_nodes: list[NodeUpdatePatch] = Field(default_factory=list)
-    add_edges: list[EdgePatch] = Field(default_factory=list)
     selected_node_key: str | None = None
 
 

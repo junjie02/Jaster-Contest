@@ -147,11 +147,9 @@ def _normalize_tree_patch(tree_patch: dict, *, role: str) -> dict:
     normalized = dict(tree_patch or {})
     add_nodes = [_normalize_node_patch(item, role=role) for item in normalized.get("add_nodes", []) if isinstance(item, dict)]
     update_nodes = [_normalize_node_update(item) for item in normalized.get("update_nodes", []) if isinstance(item, dict)]
-    add_edges = [_normalize_edge_patch(item) for item in normalized.get("add_edges", []) if isinstance(item, dict)]
     return {
         "add_nodes": [item for item in add_nodes if item],
         "update_nodes": [item for item in update_nodes if item],
-        "add_edges": [item for item in add_edges if item],
         "selected_node_key": normalized.get("selected_node_key"),
     }
 
@@ -196,16 +194,6 @@ def _normalize_node_update(node: dict) -> dict:
         "reason": node.get("reason"),
         "how": node.get("how"),
         "evidence": _string_list(node.get("evidence") or []) if node.get("evidence") is not None else None,
-    }
-
-
-def _normalize_edge_patch(edge: dict) -> dict:
-    return {
-        "from_key": str(edge.get("from_key") or edge.get("source") or ""),
-        "to_key": str(edge.get("to_key") or edge.get("target") or ""),
-        "relation": str(edge.get("relation") or edge.get("edge_type") or "dependency"),
-        "reason": str(edge.get("reason") or edge.get("why_connected") or edge.get("label") or ""),
-        "how": str(edge.get("how") or edge.get("how_to_exploit") or ""),
     }
 
 

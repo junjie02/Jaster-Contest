@@ -31,12 +31,6 @@
     reason：string|null
     how：string|null
     evidence：list[string]|null
-  add_edges：list[dict]
-    from_key：string
-    to_key：string
-    relation：string，"dependency" | "evidence" | "hypothesis"
-    reason：string
-    how：string
   selected_node_key：string|null
 
 ## 规则

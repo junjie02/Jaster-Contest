@@ -33,7 +33,6 @@ const graphState = document.getElementById("graph-state");
 const runIdInput = document.getElementById("run-id-input");
 const runIdDisplay = document.getElementById("run-id-display");
 const nodeCount = document.getElementById("node-count");
-const edgeCount = document.getElementById("edge-count");
 const loadBtn = document.getElementById("load-btn");
 const liveBtn = document.getElementById("live-btn");
 
@@ -70,9 +69,8 @@ function escapeHtml(value) {
     .replaceAll('"', "&quot;");
 }
 
-function updateStats(nodes, edges) {
+function updateStats(nodes) {
   nodeCount.textContent = `Nodes: ${nodes.length}`;
-  edgeCount.textContent = `Edges: ${edges.length}`;
 }
 
 function createSvgElement(name, attrs = {}) {
@@ -90,8 +88,6 @@ function getNodeRadius(node) {
 
 function buildTreeLayout(data) {
   const nodes = Array.isArray(data.nodes) ? data.nodes.map((node) => ({ ...node })) : [];
-  const edges = Array.isArray(data.edges) ? data.edges : [];
-  const nodeMap = new Map(nodes.map((node) => [node.key, node]));
   const children = new Map();
   const roots = [];
 
@@ -117,7 +113,7 @@ function buildTreeLayout(data) {
 
   const root = roots[0] || nodes[0] || null;
   if (!root) {
-    return { nodes: [], edges };
+    return { nodes: [] };
   }
 
   const positioned = [];
@@ -138,7 +134,7 @@ function buildTreeLayout(data) {
 
   nodes.forEach((node) => {
     if (!visited.has(node.key)) {
-      const depth = node.parent_key && nodeMap.has(node.parent_key) ? 1 : 0;
+      const depth = 1;
       const layer = layerMap.get(depth) || [];
       layer.push(node);
       layerMap.set(depth, layer);
@@ -161,40 +157,7 @@ function buildTreeLayout(data) {
     });
   });
 
-  const positions = new Map(positioned.map((node) => [node.key, node]));
-  const visibleEdges = [];
-  const seenEdges = new Set();
-
-  positioned.forEach((node) => {
-    if (!node.parent_key) return;
-    const source = positions.get(node.parent_key);
-    const target = positions.get(node.key);
-    if (!source || !target) return;
-    const key = `${source.key}->${target.key}->tree`;
-    if (seenEdges.has(key)) return;
-    seenEdges.add(key);
-    visibleEdges.push({
-      source,
-      target,
-      relation: "tree",
-    });
-  });
-
-  edges.forEach((edge) => {
-    const source = positions.get(edge.from_key);
-    const target = positions.get(edge.to_key);
-    if (!source || !target) return;
-    const key = `${source.key}->${target.key}->${edge.relation || "edge"}`;
-    if (seenEdges.has(key)) return;
-    seenEdges.add(key);
-    visibleEdges.push({
-      source,
-      target,
-      relation: edge.relation || "edge",
-    });
-  });
-
-  return { nodes: positioned, edges: visibleEdges };
+  return { nodes: positioned };
 }
 
 function fitTransform(positionedNodes) {
@@ -220,12 +183,6 @@ function applyViewportTransform() {
   if (!state.viewportEl) return;
   const { x, y, k } = state.currentTransform;
   state.viewportEl.setAttribute("transform", `translate(${x} ${y}) scale(${k})`);
-}
-
-function linkPath(source, target) {
-  const dx = target.x - source.x;
-  const curve = Math.max(40, dx * 0.45);
-  return `M ${source.x} ${source.y} C ${source.x + curve} ${source.y}, ${target.x - curve} ${target.y}, ${target.x} ${target.y}`;
 }
 
 function renderNodeShape(parent, node) {
@@ -319,30 +276,16 @@ function renderTree(data) {
   svg.replaceChildren();
 
   if (!layout.nodes.length) {
-    updateStats([], []);
+    updateStats([]);
     setGraphState("No nodes available yet.", "empty");
     return;
   }
 
   const viewport = createSvgElement("g", { class: "viewport" });
-  const edgesGroup = createSvgElement("g", { class: "edges" });
   const nodesGroup = createSvgElement("g", { class: "nodes" });
-  viewport.appendChild(edgesGroup);
   viewport.appendChild(nodesGroup);
   svg.appendChild(viewport);
   state.viewportEl = viewport;
-
-  layout.edges.forEach((edge) => {
-    const path = createSvgElement("path", {
-      d: linkPath(edge.source, edge.target),
-      fill: "none",
-      stroke: edge.relation === "tree" ? "#94a3b8" : "#6b7280",
-      "stroke-width": edge.relation === "tree" ? "2" : "1.5",
-      "stroke-opacity": edge.relation === "tree" ? "0.85" : "0.55",
-      "stroke-linecap": "round",
-    });
-    edgesGroup.appendChild(path);
-  });
 
   layout.nodes.forEach((node) => {
     const group = createSvgElement("g", {
@@ -361,7 +304,7 @@ function renderTree(data) {
     state.currentTransform = fitTransform(layout.nodes);
   }
   applyViewportTransform();
-  updateStats(layout.nodes, layout.edges);
+  updateStats(layout.nodes);
   hideGraphState();
 }
 
