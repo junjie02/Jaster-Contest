@@ -227,10 +227,14 @@ class SkillExecutor:
     def _apply_path_policy(arg: SkillArgSpec, value: str, *, cwd: Path) -> str:
         if arg.path_policy == "none":
             return value
+        # URLs should not be processed as filesystem paths
+        if value.startswith(("http://", "https://", "ftp://", "sftp://")):
+            return value
         candidate = Path(value)
         if candidate.is_absolute():
-            raise ValueError(f"{arg.name} must be relative to work_dir")
-        resolved = (cwd / candidate).resolve(strict=False)
+            resolved = candidate.resolve()
+        else:
+            resolved = (cwd / candidate).resolve(strict=False)
         base = cwd.resolve(strict=False)
         try:
             relative = resolved.relative_to(base)

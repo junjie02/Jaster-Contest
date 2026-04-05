@@ -42,7 +42,6 @@
     relation：string，"dependency" | "evidence" | "hypothesis"
     reason：string
     how：string
-  selected_node_key：string|null
 
 ## 攻击树规则
 - 仅使用事实性节点。

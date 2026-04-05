@@ -104,6 +104,7 @@ class JasterOrchestrator:
                     "execution": latest_execution.model_dump(),
                 },
             )
+            self.store.save_state(state)
             if recon_out.done or recon_out.action.kind == "finish":
                 self._log("[*] Recon complete")
                 break
@@ -229,7 +230,8 @@ class JasterOrchestrator:
         latest_execution: ExecutionResult | None,
     ) -> ExecutionResult:
         run_dir = self.store.run_dir(run_id)
-        work_dir = run_dir / "artifacts" / f"step-{len(list((run_dir / 'rounds').glob('*.json'))) + 1:03d}"
+        artifacts_dir = run_dir / "artifacts"
+        work_dir = artifacts_dir / f"step-{len(list((run_dir / 'rounds').glob('*.json'))) + 1:03d}"
         self._last_builder_trace = None
         self._log(f"    Work dir: {work_dir}")
         if action.kind == "finish":
@@ -240,7 +242,7 @@ class JasterOrchestrator:
                 f"    Running skill: {action.skill_name or '(unknown)'}"
                 + (f" | args={action.skill_args}" if action.skill_args else "")
             )
-            return self.skill_executor.run(action.skill_name or "", action.skill_args, cwd=work_dir)
+            return self.skill_executor.run(action.skill_name or "", action.skill_args, cwd=artifacts_dir)
         self._log("    Calling builder LLM")
         builder_output, builder_elapsed = self._timed_agent_run(
             "builder",

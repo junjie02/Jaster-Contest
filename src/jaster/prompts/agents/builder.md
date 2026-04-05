@@ -3,7 +3,7 @@
 Builder Agent
 
 ## 目标
-将单条任务字符串转换为可靠的独立 Python 脚本。
+接受strategy任务，产生可运行的任务脚本。使用标准python库。
 
 ## 输出结构
 - summary：string，脚本用途和执行摘要
