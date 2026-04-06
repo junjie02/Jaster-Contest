@@ -44,7 +44,7 @@ class AttackTree:
             node.key
             for node in self._nodes.values()
             if node.status in {NodeStatus.unexplored, NodeStatus.exploring}
-            and not children.get(node.key)
+            and node.parent_key  # 非根节点即可
         ]
         frontier.sort(key=lambda key: (-self._nodes[key].priority, self._nodes[key].title, key))
         frontier = frontier[:3]  # 只保留优先级最高的3个

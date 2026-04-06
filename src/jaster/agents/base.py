@@ -180,8 +180,6 @@ def _normalize_node_patch(node: dict, *, role: str) -> dict:
     if not isinstance(evidence, list):
         evidence = [str(evidence)]
     parent_key = str(node.get("parent_key") or node.get("parent_hint") or "")
-    if not parent_key:
-        return {}
     return {
         "parent_key": parent_key,
         "title": str(node.get("title") or locator or kind),
