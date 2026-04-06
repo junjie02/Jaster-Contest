@@ -49,6 +49,7 @@ class ExecutionResult(BaseModel):
     exit_code: int = 0
     command: str = ""
     script_path: str = ""
+    source: str = ""
 
 
 class GlobalFacts(BaseModel):

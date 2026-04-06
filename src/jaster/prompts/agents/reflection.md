@@ -25,7 +25,7 @@
 - summary：string，反思总结（将作为 reflection_summary 传递给后续 agent）
 - next_focus_key：string，下一聚焦节点 key；无则返回空字符串
 - flag_candidates：list[string]，候选 Flag 列表；没有则返回 []
-- tree_patch：dict
+- tree_patch：dict 只有strategy执行失败后，可以通过以下方法新增节点或调整节点优先级。recon后不新增不更新节点。
   add_nodes：list[dict]
     parent_key：string
     title：string

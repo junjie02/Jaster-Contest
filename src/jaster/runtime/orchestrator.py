@@ -472,6 +472,7 @@ class JasterOrchestrator:
                 observations=observations,
                 latest_execution=current_execution,
             )
+            execution.source = agent_name
             if execution.success or agent_out.action.kind == "finish":
                 return agent_out, execution, total_elapsed
             current_execution = execution
