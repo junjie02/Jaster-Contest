@@ -320,7 +320,7 @@ class JasterOrchestrator:
                 retry_context=retry_context,
             )
             total_elapsed += agent_elapsed
-            self._log(f"    \033[1m{agent_out.summary or '(empty)'}\033[0m")
+            self._log(f"    \033[92m{agent_out.summary or '(empty)'}\033[0m")
             execution = self._execute_action(
                 run_id=run_id,
                 challenge=challenge,
