@@ -66,6 +66,25 @@ class JasterOrchestrator:
         latest_execution: ExecutionResult | None = None
         last_reflection = ""
 
+        # HTTP 目标首次执行：curl 页面源码
+        if challenge.target_type == "http":
+            self._log(f"[*] Initial curl: {challenge.target}")
+            import subprocess
+            result = subprocess.run(
+                ["curl", "-s", "-L", "--max-time", "30", challenge.target],
+                capture_output=True,
+                text=True,
+            )
+            latest_execution = ExecutionResult(
+                success=result.returncode == 0,
+                summary=result.stdout[:2000] if result.stdout else "",
+                findings=[result.stdout[:5000]] if result.stdout else [],
+                stdout=result.stdout,
+                stderr=result.stderr,
+                exit_code=result.returncode,
+                command=f"curl -s -L {challenge.target}",
+            )
+
         for recon_index in range(1, max_recon_steps + 1):
             # 保存上一轮 execution，用于创建上一轮的 observation
             prev_execution = latest_execution
