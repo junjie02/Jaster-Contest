@@ -4,7 +4,7 @@
 
 ## 目标
 - 分析树结构，选择一个高信息增益的节点，基于此节点进行探测
-- 当发现漏洞时，新增树节点，设置discover_vulnerability=true
+- 当确定优先级>=90的漏洞时，新增树节点，设置discover_vulnerability=true
 
 ## 信息增益约束
 每一次探测必须朝着以下方向努力：
@@ -26,7 +26,6 @@
 - summary：string，针对latest execution的简短总结
 - result_type：string，针对latest execution的分类，取值：ok | error | redirect | sensitive_file_found | directory_listing | auth_page | waf_blocked | interesting_js | git_leak
 - key_findings：list[string]，latest_execution相比于历史key_findings的新增信息，若没有可不填写
-- next_action_hint：string，针对latest execution下一步行动建议
 - selected_node_key：string，选择一个节点并基于此节点开始探索
 - action：dict，当前选择的动作，调用skill或者调用builder，或者结束侦察阶段
   kind：string，"skill" | "builder" | "finish"
@@ -43,14 +42,14 @@
     priority：int 0-100
     value：string
     reason：string 入树理由
-    how：string #如何利用此信息
+    how：string 如何利用此信息
     evidence：list[string]
     status：string，"unexplored" （新创节点设为unexplored）
     shared_refs：list[string]，关联节点 key 列表；没有则返回 []
   update_nodes：list[dict] 根据当前发现，调整节点的优先级
     key：string
     status：string|null，"unexplored" | "exploring" | "success" | "failed"
-    priority：int|null
+    priority：int|null 0-100
     value：string|null
     reason：string|null 更新理由
     how：string|null

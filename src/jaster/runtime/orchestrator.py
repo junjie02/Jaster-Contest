@@ -226,9 +226,15 @@ class JasterOrchestrator:
                 self._log(f"    Summary: {reflection_out.summary or '(empty)'}")
                 tree.apply_patch(reflection_out.tree_patch)
 
-                if reflection_out.halt:
-                    self._log("[*] Reflection requested halt")
-                    break
+                self.store.append_round(
+                    run_id,
+                    total_rounds,
+                    {
+                        "phase": "reflection",
+                        "reflection_input": _agent_trace(self.agents.get("reflection")),
+                        "reflection": reflection_out.model_dump(),
+                    },
+                )
 
                 recon_done = False
 
@@ -300,6 +306,12 @@ class JasterOrchestrator:
                 {
                     "phase": "strategy",
                     "strategy_input": _agent_trace(self.agents.get("strategy")),
+                    "strategy_context": {
+                        "target_node": node_context.target_node.model_dump() if node_context else None,
+                        "path_to_root": [n.model_dump() for n in node_context.path_to_root] if node_context else [],
+                        "related_nodes": [n.model_dump() for n in node_context.related_nodes] if node_context else [],
+                        "reflection_summary": reflection_summary,
+                    },
                     "strategy": strategy_out.model_dump(),
                     "builder_input": self._last_builder_trace,
                     "execution": latest_execution.model_dump(),
@@ -497,7 +509,6 @@ def _create_observation(
         command=result.command if result else "",
         result_type=agent_output.result_type,
         summary=agent_output.summary,
-        next_action_hint=agent_output.next_action_hint,
     )
 
 

@@ -164,7 +164,6 @@ class ReconOutput(BaseModel):
     action: ActionPlan
     tree_patch: TreePatch = Field(default_factory=TreePatch)
     key_findings: list[str] = Field(default_factory=list)
-    next_action_hint: str = ""
     result_type: str = ""
 
 
@@ -205,7 +204,6 @@ class ReflectionInput(BaseModel):
 class ReflectionOutput(BaseModel):
     summary: str
     next_focus_key: str = ""
-    halt: bool = False
     flag_candidates: list[str] = Field(default_factory=list)
     tree_patch: TreePatch = Field(default_factory=TreePatch)
 
