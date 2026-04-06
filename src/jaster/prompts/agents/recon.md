@@ -19,7 +19,7 @@
 - 注意：√ 存在 LFI × 怎么 RCE（这个不能在 recon 做）
 3. 证据收集（Evidence）
 - 源码片段、响应内容、headers、报错信息
-4. 对于可利用tech_fingerprint、web_crawl、web_content_discovery的目标，应优先使用此skills进行探测。
+4. 对于可利用tech_fingerprint、web_crawl、web_content_discovery的目标，应优先依次使用此skills进行探测。
 
 ## 输出结构
 - summary：string，针对latest execution的简短字符串

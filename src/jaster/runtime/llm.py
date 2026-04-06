@@ -8,7 +8,10 @@ import httpx
 
 
 class LLMError(RuntimeError):
-    pass
+    def __init__(self, message: str, *, stage: str = "llm", raw_text: str = "") -> None:
+        super().__init__(message)
+        self.stage = stage
+        self.raw_text = raw_text
 
 
 class OpenAIChatClient:
@@ -41,18 +44,21 @@ class OpenAIChatClient:
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json",
         }
-        last_error: Exception | None = None
         with httpx.Client(timeout=self.timeout) as client:
-            for _ in range(self.max_retries):
-                try:
-                    response = client.post(f"{self.base_url}/chat/completions", headers=headers, json=body)
-                    response.raise_for_status()
-                    payload = response.json()
-                    text = payload["choices"][0]["message"]["content"]
-                    return _extract_json(text)
-                except Exception as exc:  # pragma: no cover - exercised through tests with fake client path
-                    last_error = exc
-        raise LLMError(f"LLM request failed: {last_error}")
+            try:
+                response = client.post(f"{self.base_url}/chat/completions", headers=headers, json=body)
+                response.raise_for_status()
+            except httpx.HTTPError as exc:
+                raise LLMError(f"LLM request failed: {exc}", stage="request") from exc
+            try:
+                payload = response.json()
+            except json.JSONDecodeError as exc:
+                raise LLMError("LLM returned a non-JSON HTTP response", stage="response_json") from exc
+            try:
+                text = payload["choices"][0]["message"]["content"]
+            except (KeyError, IndexError, TypeError) as exc:
+                raise LLMError("LLM response body is missing choices[0].message.content", stage="response_shape") from exc
+            return _extract_json(text)
 
     def _build_body(self, *, system: str, prompt: str) -> dict[str, Any]:
         body = {
@@ -110,8 +116,8 @@ def _extract_json(text: Any) -> dict[str, Any]:
         start = rendered.find("{")
         end = rendered.rfind("}")
         if start == -1 or end == -1 or end <= start:
-            raise LLMError("LLM did not return JSON")
+            raise LLMError("LLM did not return JSON", stage="json_extract", raw_text=rendered)
         try:
             return json.loads(rendered[start : end + 1])
         except json.JSONDecodeError as exc:
-            raise LLMError("LLM returned invalid JSON") from exc
+            raise LLMError("LLM returned invalid JSON", stage="json_extract", raw_text=rendered) from exc

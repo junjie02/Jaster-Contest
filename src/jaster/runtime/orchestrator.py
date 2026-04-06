@@ -4,6 +4,7 @@ import re
 import time
 from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
 from jaster.agents import build_agents
 from jaster.domain import (
@@ -68,32 +69,29 @@ class JasterOrchestrator:
             # 保存上一轮 execution，用于创建上一轮的 observation
             prev_execution = latest_execution
 
-            self._log(f"[*] Recon step {recon_index}/{max_recon_steps}: calling LLM")
-            recon_out, recon_elapsed = self._timed_agent_run(
-                "recon",
-                challenge.zone,
-                ReconInput(
+            recon_out, latest_execution, recon_elapsed = self._run_action_phase(
+                agent_name="recon",
+                zone=challenge.zone,
+                challenge=challenge,
+                run_id=run_id,
+                observations=state.observations[-6:],
+                latest_execution=prev_execution,
+                payload_factory=lambda execution: ReconInput(
                     objective=f"Recon the target {challenge.target} and expand the global attack tree.",
                     tree=tree.snapshot(),
                     recent_observations=state.observations[-6:],
-                    latest_execution=prev_execution,
+                    latest_execution=execution,
                     available_skills=self.skill_catalog.list_available(),
                 ),
+                label=f"Recon step {recon_index}/{max_recon_steps}",
             )
-            self._log(f"    LLM time: {recon_elapsed:.2f}s")
+            self._log(f"    Phase time: {recon_elapsed:.2f}s")
             self._log(f"    Summary: {recon_out.summary or '(empty)'}")
             self._log(
                 f"    Action: {recon_out.action.kind}"
                 + (f" | skill={recon_out.action.skill_name}" if recon_out.action.skill_name else "")
             )
             tree.apply_patch(recon_out.tree_patch)
-            latest_execution = self._execute_action(
-                run_id=run_id,
-                challenge=challenge,
-                action=recon_out.action,
-                observations=state.observations[-6:],
-                latest_execution=prev_execution,
-            )
             self._log(
                 f"    Result: {'OK' if latest_execution.success else 'FAIL'}"
                 f" | {latest_execution.summary or '(no summary)'}"
@@ -123,32 +121,29 @@ class JasterOrchestrator:
             # 保存上一轮 execution，用于创建上一轮的 observation
             prev_execution = latest_execution
 
-            self._log(f"[*] Main round {round_index}/{max_rounds}: strategy")
-            strategy_out, strategy_elapsed = self._timed_agent_run(
-                "strategy",
-                challenge.zone,
-                StrategyInput(
+            strategy_out, latest_execution, strategy_elapsed = self._run_action_phase(
+                agent_name="strategy",
+                zone=challenge.zone,
+                challenge=challenge,
+                run_id=run_id,
+                observations=state.observations[-8:],
+                latest_execution=prev_execution,
+                payload_factory=lambda execution: StrategyInput(
                     objective=f"Exploit the target {challenge.target} and capture the flag.",
                     tree=tree.snapshot(),
                     recent_observations=state.observations[-8:],
-                    latest_execution=prev_execution,
+                    latest_execution=execution,
                     last_reflection=last_reflection,
                 ),
+                label=f"Main round {round_index}/{max_rounds}: strategy",
             )
-            self._log(f"    LLM time: {strategy_elapsed:.2f}s")
+            self._log(f"    Phase time: {strategy_elapsed:.2f}s")
             self._log(f"    Summary: {strategy_out.summary or '(empty)'}")
             self._log(
                 f"    Action: {strategy_out.action.kind}"
                 + (f" | skill={strategy_out.action.skill_name}" if strategy_out.action.skill_name else "")
             )
             tree.apply_patch(strategy_out.tree_patch)
-            latest_execution = self._execute_action(
-                run_id=run_id,
-                challenge=challenge,
-                action=strategy_out.action,
-                observations=state.observations[-8:],
-                latest_execution=prev_execution,
-            )
             self._log(
                 f"    Execution: {'OK' if latest_execution.success else 'FAIL'}"
                 f" | {latest_execution.summary or '(no summary)'}"
@@ -274,13 +269,83 @@ class JasterOrchestrator:
             print(message, flush=True)
 
     def _notify_tree_update(self, tree_snapshot: AttackTreeSnapshot) -> None:
-        if self._on_tree_update:
-            self._on_tree_update(tree_snapshot)
+        callback = getattr(self, "_on_tree_update", None)
+        if callback:
+            callback(tree_snapshot)
 
-    def _timed_agent_run(self, agent_name: str, zone: str, payload: object) -> tuple[object, float]:
+    def _timed_agent_run(
+        self,
+        agent_name: str,
+        zone: str,
+        payload: object,
+        *,
+        retry_context: dict[str, Any] | None = None,
+    ) -> tuple[object, float]:
         started = time.monotonic()
-        output = self.agents[agent_name].run(zone, payload)
+        agent = self.agents[agent_name]
+        if retry_context is None:
+            output = agent.run(zone, payload)
+        else:
+            try:
+                output = agent.run(zone, payload, retry_context=retry_context)
+            except TypeError as exc:
+                if "retry_context" not in str(exc):
+                    raise
+                output = agent.run(zone, payload)
         return output, time.monotonic() - started
+
+    def _run_action_phase(
+        self,
+        *,
+        agent_name: str,
+        zone: str,
+        challenge: ChallengeSpec,
+        run_id: str,
+        observations: list[Observation],
+        latest_execution: ExecutionResult | None,
+        payload_factory: Callable[[ExecutionResult | None], object],
+        label: str,
+    ) -> tuple[ReconOutput | StrategyOutput, ExecutionResult, float]:
+        agent = self.agents[agent_name]
+        llm = getattr(agent, "llm", None)
+        max_attempts = max(1, int(getattr(llm, "max_retries", 1) or 1))
+        retry_context: dict[str, Any] | None = None
+        current_execution = latest_execution
+        total_elapsed = 0.0
+
+        for attempt in range(1, max_attempts + 1):
+            self._log(f"[*] {label}: calling LLM (attempt {attempt}/{max_attempts})")
+            agent_out, agent_elapsed = self._timed_agent_run(
+                agent_name,
+                zone,
+                payload_factory(current_execution),
+                retry_context=retry_context,
+            )
+            total_elapsed += agent_elapsed
+            execution = self._execute_action(
+                run_id=run_id,
+                challenge=challenge,
+                action=agent_out.action,
+                observations=observations,
+                latest_execution=current_execution,
+            )
+            if execution.success or agent_out.action.kind == "finish":
+                return agent_out, execution, total_elapsed
+            current_execution = execution
+            retry_context = _build_action_retry_context(
+                attempt=attempt,
+                max_attempts=max_attempts,
+                action=agent_out.action,
+                execution=execution,
+            )
+            self._log(
+                f"    Action failed: {execution.summary or '(no summary)'}"
+                f" | retrying current phase ({attempt}/{max_attempts})"
+            )
+        raise RuntimeError(
+            f"{agent_name} phase failed after {max_attempts} attempts: "
+            f"{current_execution.summary if current_execution else 'unknown error'}"
+        )
 
 
 def detect_target_type(target: str) -> str:
@@ -338,3 +403,36 @@ def _merge_flag_candidates(*groups: list[str]) -> list[str]:
 def _agent_trace(agent: object) -> dict | None:
     trace = getattr(agent, "last_trace", None)
     return dict(trace) if isinstance(trace, dict) else None
+
+
+def _build_action_retry_context(
+    *,
+    attempt: int,
+    max_attempts: int,
+    action: ActionPlan,
+    execution: ExecutionResult,
+) -> dict[str, Any]:
+    return {
+        "attempt": attempt,
+        "max_attempts": max_attempts,
+        "failure_stage": "action_execution",
+        "error_type": "ActionExecutionFailed",
+        "error_message": execution.summary or execution.stderr or execution.stdout or "Action execution failed",
+        "previous_action": action.model_dump(),
+        "latest_execution": {
+            "summary": execution.summary,
+            "success": execution.success,
+            "command": execution.command,
+            "exit_code": execution.exit_code,
+            "stdout_excerpt": _excerpt(execution.stdout),
+            "stderr_excerpt": _excerpt(execution.stderr),
+            "findings": execution.findings[:5],
+        },
+    }
+
+
+def _excerpt(value: str, limit: int = 600) -> str:
+    rendered = value.strip()
+    if len(rendered) <= limit:
+        return rendered
+    return rendered[: limit - 3] + "..."

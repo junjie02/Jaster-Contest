@@ -30,4 +30,4 @@ jaster run --target http://example.com
 - `JASTER_MAX_RECON_STEPS` optional, defaults to `3`
 - `JASTER_MAX_ROUNDS` optional, defaults to `12`
 - `JASTER_HTTP_TIMEOUT` optional, defaults to `120`
-- `JASTER_LLM_MAX_RETRIES` optional, defaults to `3`
+- `JASTER_LLM_MAX_RETRIES` optional, defaults to `3`; applies to the current retry loop for LLM request failures, invalid JSON / schema validation failures, and same-phase self-correction after action execution failures

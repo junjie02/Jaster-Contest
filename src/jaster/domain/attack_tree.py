@@ -66,6 +66,15 @@ class AttackTree:
             node = self._nodes.get(node.parent_key)
         return depth
 
+    def _collect_descendants(self, key: str) -> list[str]:
+        """递归收集所有后代节点的 key"""
+        descendants = []
+        for node in self._nodes.values():
+            if node.parent_key == key:
+                descendants.append(node.key)
+                descendants.extend(self._collect_descendants(node.key))
+        return descendants
+
     def apply_patch(self, patch: TreePatch) -> AttackTreeSnapshot:
         for node_patch in patch.add_nodes:
             key = _stable_key(
@@ -97,6 +106,11 @@ class AttackTree:
                 continue
             if update.status is not None:
                 node.status = update.status
+                # 当节点被标记为 failed，删除其所有后代
+                if update.status == NodeStatus.failed:
+                    to_delete = self._collect_descendants(update.key)
+                    for descendant_key in to_delete:
+                        del self._nodes[descendant_key]
             if update.priority is not None:
                 node.priority = update.priority
             if update.reason is not None:

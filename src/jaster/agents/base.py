@@ -4,8 +4,9 @@ import json
 from typing import Generic, TypeVar
 
 from pydantic import BaseModel
+from pydantic import ValidationError
 
-from jaster.runtime.llm import OpenAIChatClient
+from jaster.runtime.llm import LLMError, OpenAIChatClient
 from jaster.runtime.prompts import PromptLibrary
 
 InputModel = TypeVar("InputModel", bound=BaseModel)
@@ -26,26 +27,63 @@ class JsonAgent(Generic[InputModel, OutputModel]):
         self.prompts = prompts
         self.last_trace: dict[str, object] | None = None
 
-    def run(self, zone: str, payload: InputModel) -> OutputModel:
-        payload_json = json.dumps(payload.model_dump(), ensure_ascii=False, indent=2)
-        prompt = self.prompts.render(
-            self.role,
-            zone=zone,
-            payload_json=payload_json,
-        )
-        self.last_trace = {
-            "role": self.role,
-            "zone": zone,
-            "system": STRICT_JSON_SYSTEM,
-            "payload": payload.model_dump(),
-            "payload_json": payload_json,
-            "prompt": prompt,
-        }
-        response = self.llm.complete_json(system=STRICT_JSON_SYSTEM, prompt=prompt)
-        self.last_trace["raw_response"] = response
-        normalized = _normalize_agent_response(self.role, response)
-        self.last_trace["normalized_response"] = normalized
-        return self.output_model.model_validate(normalized)
+    def run(self, zone: str, payload: InputModel, *, retry_context: dict[str, object] | None = None) -> OutputModel:
+        base_payload = payload.model_dump()
+        attempts: list[dict[str, object]] = []
+        current_retry_context = dict(retry_context or {})
+        max_attempts = max(1, int(getattr(self.llm, "max_retries", 1) or 1))
+
+        for attempt in range(1, max_attempts + 1):
+            rendered_payload = dict(base_payload)
+            if current_retry_context:
+                rendered_payload["retry_context"] = current_retry_context
+            payload_json = json.dumps(rendered_payload, ensure_ascii=False, indent=2)
+            prompt = self.prompts.render(
+                self.role,
+                zone=zone,
+                payload_json=payload_json,
+            )
+            attempt_trace: dict[str, object] = {
+                "attempt": attempt,
+                "payload": rendered_payload,
+                "payload_json": payload_json,
+                "prompt": prompt,
+            }
+            attempts.append(attempt_trace)
+            try:
+                response = self.llm.complete_json(system=STRICT_JSON_SYSTEM, prompt=prompt)
+                attempt_trace["raw_response"] = response
+                normalized = _normalize_agent_response(self.role, response)
+                attempt_trace["normalized_response"] = normalized
+                validated = self.output_model.model_validate(normalized)
+                self.last_trace = {
+                    "role": self.role,
+                    "zone": zone,
+                    "system": STRICT_JSON_SYSTEM,
+                    "attempts": attempts,
+                    "succeeded_attempt": attempt,
+                }
+                return validated
+            except Exception as exc:
+                attempt_trace["error_type"] = type(exc).__name__
+                attempt_trace["error_message"] = str(exc)
+                current_retry_context = _build_retry_context(
+                    role=self.role,
+                    attempt=attempt,
+                    max_attempts=max_attempts,
+                    error=exc,
+                    attempt_trace=attempt_trace,
+                )
+                if attempt >= max_attempts:
+                    self.last_trace = {
+                        "role": self.role,
+                        "zone": zone,
+                        "system": STRICT_JSON_SYSTEM,
+                        "attempts": attempts,
+                        "succeeded_attempt": None,
+                    }
+                    raise
+        raise RuntimeError("unreachable")
 
 
 _NODE_KIND_ALIASES = {
@@ -150,10 +188,8 @@ def _normalize_tree_patch(tree_patch: dict, *, role: str, parent_key: str = "") 
     normalized = dict(tree_patch or {})
     add_nodes = [_normalize_node_patch(item, role=role) for item in normalized.get("add_nodes", []) if isinstance(item, dict)]
     update_nodes = [_normalize_node_update(item) for item in normalized.get("update_nodes", []) if isinstance(item, dict)]
-    # 注入 parent_key 到每个有实际内容的 add_nodes
     valid_add_nodes = []
     for node in add_nodes:
-        # 判断是否有实际内容（locator 或 value 或 reason 或 how 或 evidence 非空）
         has_content = bool(
             node.get("locator")
             or node.get("value")
@@ -161,9 +197,11 @@ def _normalize_tree_patch(tree_patch: dict, *, role: str, parent_key: str = "") 
             or node.get("how")
             or node.get("evidence")
         )
-        if has_content and parent_key:
+        if not has_content:
+            continue
+        if parent_key:
             node["parent_key"] = parent_key
-            valid_add_nodes.append(node)
+        valid_add_nodes.append(node)
     return {
         "add_nodes": valid_add_nodes,
         "update_nodes": [item for item in update_nodes if item],
@@ -234,3 +272,44 @@ def _string_list(value: object) -> list[str]:
         return []
     rendered = str(value).strip()
     return [rendered] if rendered else []
+
+
+def _build_retry_context(
+    *,
+    role: str,
+    attempt: int,
+    max_attempts: int,
+    error: Exception,
+    attempt_trace: dict[str, object],
+) -> dict[str, object]:
+    failure_stage = "agent"
+    previous_response_excerpt = ""
+    if isinstance(error, LLMError):
+        failure_stage = error.stage
+        previous_response_excerpt = _excerpt(error.raw_text)
+    elif isinstance(error, ValidationError):
+        failure_stage = "schema_validation"
+    response = attempt_trace.get("raw_response")
+    if not previous_response_excerpt and response is not None:
+        previous_response_excerpt = _excerpt(json.dumps(response, ensure_ascii=False))
+    previous_action = None
+    normalized = attempt_trace.get("normalized_response")
+    if isinstance(normalized, dict):
+        previous_action = normalized.get("action")
+    return {
+        "role": role,
+        "attempt": attempt,
+        "max_attempts": max_attempts,
+        "failure_stage": failure_stage,
+        "error_type": type(error).__name__,
+        "error_message": str(error),
+        "previous_response_excerpt": previous_response_excerpt,
+        "previous_action": previous_action,
+    }
+
+
+def _excerpt(value: str, limit: int = 600) -> str:
+    rendered = value.strip()
+    if len(rendered) <= limit:
+        return rendered
+    return rendered[: limit - 3] + "..."
