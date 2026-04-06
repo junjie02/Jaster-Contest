@@ -157,7 +157,16 @@ function buildTreeLayout(data) {
     });
   });
 
-  return { nodes: positioned };
+  // Calculate edges from parent_key
+  const edges = [];
+  const nodeMap = new Map(positioned.map((n) => [n.key, n]));
+  positioned.forEach((node) => {
+    if (node.parent_key && nodeMap.has(node.parent_key)) {
+      edges.push({ from: node.parent_key, to: node.key });
+    }
+  });
+
+  return { nodes: positioned, edges };
 }
 
 function fitTransform(positionedNodes) {
@@ -282,10 +291,33 @@ function renderTree(data) {
   }
 
   const viewport = createSvgElement("g", { class: "viewport" });
+  const edgesGroup = createSvgElement("g", { class: "edges" });
   const nodesGroup = createSvgElement("g", { class: "nodes" });
+  viewport.appendChild(edgesGroup);
   viewport.appendChild(nodesGroup);
   svg.appendChild(viewport);
   state.viewportEl = viewport;
+
+  // Render edges first (below nodes)
+  const nodeMap = new Map(layout.nodes.map((n) => [n.key, n]));
+  layout.edges.forEach((edge) => {
+    const fromNode = nodeMap.get(edge.from);
+    const toNode = nodeMap.get(edge.to);
+    if (fromNode && toNode) {
+      const dx = toNode.x - fromNode.x;
+      const dy = toNode.y - fromNode.y;
+      const cx = fromNode.x + dx * 0.5;
+      const cy = fromNode.y + dy * 0.5 + Math.sign(dy) * Math.abs(dx) * 0.3;
+      const path = createSvgElement("path", {
+        d: `M ${fromNode.x} ${fromNode.y} Q ${cx} ${cy} ${toNode.x} ${toNode.y}`,
+        stroke: "#4b5563",
+        "stroke-width": "2",
+        "stroke-opacity": "0.6",
+        fill: "none",
+      });
+      edgesGroup.appendChild(path);
+    }
+  });
 
   layout.nodes.forEach((node) => {
     const group = createSvgElement("g", {
