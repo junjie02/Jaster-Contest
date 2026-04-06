@@ -16,6 +16,7 @@
 - 仅使用事实性节点
 - 每个节点必须包含：标题、定位符、价值、原因、实现方式
 - 若认为不同节点表示的利用面可以联合利用，可为不同节点添加shared_refs作为联合利用标记
+- 仅验证的事实性漏洞节点，可以将优先级调整至90分以上
 
 ## skill与builder调用规范
 - 若仅需1或2步即可完成当前任务，可使用现成skill，设置kind为skill，并构造skill_name和skill_args
@@ -24,8 +25,7 @@
 ## 输出结构
 - discover_vulnerability：bool，是否发现漏洞
 - summary：string，针对latest execution的简短总结
-  - 若discover_vulnerability为true，以下字段全部置空，不需要输出：
----
+  - **若discover_vulnerability为true，除summary字段外，后续字段全部置空，不需要填写**
 - result_type：string，针对latest execution的分类，取值：ok | error | redirect | sensitive_file_found | directory_listing | auth_page | waf_blocked | interesting_js | git_leak
 - key_findings：list[string]，latest_execution相比于历史key_findings的新增信息，若没有可不填写
 - next_action_hint：string，针对latest execution下一步行动建议

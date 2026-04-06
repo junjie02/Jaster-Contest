@@ -8,7 +8,7 @@
 
 ## 上下文
 反思代理在**侦察阶段或渗透测试完成后**运行，此时已有可利用信息或渗透测试结果。
-反思的输出（summary 字段）将作为 reflection_summary，若先前为recon阶段，则后续指导strategy如何挖掘flag，若先前为strategy阶段，则给recon下一步探测建议。
+反思的输出（summary 字段）将作为 reflection_summary，若先前为recon阶段，则后续指导strategy如何挖掘flag，并给出常见的ctf flag位置，若先前为strategy阶段，则总结strategy的发现。
 
 ## 反思重点
 1. 根据全局信息，当前渗透方向是否正确？

@@ -171,6 +171,13 @@ class JasterOrchestrator:
                         + (f" | skill={recon_out.action.skill_name}" if recon_out.action.skill_name else "")
                     )
                     tree.apply_patch(recon_out.tree_patch)
+
+                    # 硬逻辑：若 selected_node_key 的优先级 >= 95，强行设置 discover_vulnerability 为 true
+                    nodes_by_key = {node.key: node for node in tree.snapshot().nodes}
+                    selected_node = nodes_by_key.get(recon_out.selected_node_key)
+                    if selected_node and selected_node.priority >= 95:
+                        recon_out.discover_vulnerability = True
+
                     self._log(
                         f"    Result: {'OK' if latest_execution.success else 'FAIL'}"
                         f" | {latest_execution.summary or '(no summary)'}"
