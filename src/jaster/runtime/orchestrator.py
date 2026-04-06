@@ -86,7 +86,6 @@ class JasterOrchestrator:
                 label=f"Recon step {recon_index}/{max_recon_steps}",
             )
             self._log(f"    Phase time: {recon_elapsed:.2f}s")
-            self._log(f"    Summary: {recon_out.summary or '(empty)'}")
             self._log(
                 f"    Action: {recon_out.action.kind}"
                 + (f" | skill={recon_out.action.skill_name}" if recon_out.action.skill_name else "")
@@ -138,7 +137,6 @@ class JasterOrchestrator:
                 label=f"Main round {round_index}/{max_rounds}: strategy",
             )
             self._log(f"    Phase time: {strategy_elapsed:.2f}s")
-            self._log(f"    Summary: {strategy_out.summary or '(empty)'}")
             self._log(
                 f"    Action: {strategy_out.action.kind}"
                 + (f" | skill={strategy_out.action.skill_name}" if strategy_out.action.skill_name else "")
@@ -322,6 +320,7 @@ class JasterOrchestrator:
                 retry_context=retry_context,
             )
             total_elapsed += agent_elapsed
+            self._log(f"    \033[1m{agent_out.summary or '(empty)'}\033[0m")
             execution = self._execute_action(
                 run_id=run_id,
                 challenge=challenge,
