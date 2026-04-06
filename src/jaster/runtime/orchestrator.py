@@ -25,10 +25,62 @@ from jaster.domain import (
     SubmissionInput,
 )
 from jaster.domain.attack_tree import _merge_unique
+from jaster.domain.models import TreeNodeSnapshot, NodeInfo
+from pydantic import BaseModel, Field
 from jaster.runtime.builder import BuilderExecutor
 from jaster.runtime.llm import OpenAIChatClient
 from jaster.runtime.skills import SkillCatalog, SkillExecutor
 from jaster.storage.files import FileRunStore
+
+
+class ExploitableNodeContext(BaseModel):
+    """Context passed to strategy: target node + path to root + shared_refs nodes."""
+    target_node: NodeInfo
+    path_to_root: list[NodeInfo] = Field(default_factory=list)
+    related_nodes: list[NodeInfo] = Field(default_factory=list)
+
+
+def _tree_node_to_info(node: TreeNodeSnapshot) -> NodeInfo:
+    """Convert TreeNodeSnapshot to NodeInfo for strategy context"""
+    return NodeInfo(
+        key=node.key,
+        parent_key=node.parent_key,
+        title=node.title,
+        kind=node.kind,
+        locator="",
+        status=node.status,
+        priority=node.priority,
+        value="",
+        reason=node.reason,
+        how="",
+        evidence=[],
+        shared_refs=list(node.shared_refs),
+    )
+
+
+def _extract_node_context(tree: AttackTree, selected_node_key: str) -> ExploitableNodeContext:
+    """从树中提取：目标节点 + 路径到根节点 + shared_refs 关联节点"""
+    nodes_by_key = {node.key: node for node in tree.snapshot().nodes}
+    target_node = nodes_by_key.get(selected_node_key)
+    if target_node is None:
+        raise ValueError(f"Node key '{selected_node_key}' not found")
+
+    # 收集目标节点到根节点的路径
+    path_to_root = []
+    current = target_node
+    while current and current.parent_key:
+        path_to_root.append(_tree_node_to_info(current))
+        current = nodes_by_key.get(current.parent_key)
+    if current:
+        path_to_root.append(_tree_node_to_info(current))
+    path_to_root.reverse()
+
+    related_nodes = [_tree_node_to_info(nodes_by_key[ref]) for ref in target_node.shared_refs if ref in nodes_by_key]
+    return ExploitableNodeContext(
+        target_node=_tree_node_to_info(target_node),
+        path_to_root=path_to_root,
+        related_nodes=related_nodes,
+    )
 
 
 class JasterOrchestrator:
@@ -64,7 +116,11 @@ class JasterOrchestrator:
         self._log(f"[*] Run dir: {self.store.run_dir(run_id)}")
 
         latest_execution: ExecutionResult | None = None
-        last_reflection = ""
+        reflection_summary: str = ""
+        node_context: ExploitableNodeContext | None = None
+        need_recon: bool = True
+        recon_done: bool = False
+        total_rounds: int = 0
 
         # HTTP 目标首次执行：curl 页面源码
         if challenge.target_type == "http":
@@ -85,62 +141,98 @@ class JasterOrchestrator:
                 command=f"curl -s -L {challenge.target}",
             )
 
-        for recon_index in range(1, max_recon_steps + 1):
-            # 保存上一轮 execution，用于创建上一轮的 observation
-            prev_execution = latest_execution
+        # === MAIN ORCHESTRATION LOOP ===
+        while True:
+            # --- RECON PHASE ---
+            if need_recon:
+                for recon_index in range(1, max_recon_steps + 1):
+                    prev_execution = latest_execution
 
-            recon_out, latest_execution, recon_elapsed = self._run_action_phase(
-                agent_name="recon",
-                zone=challenge.zone,
-                challenge=challenge,
-                run_id=run_id,
-                observations=state.observations[-6:],
-                latest_execution=prev_execution,
-                payload_factory=lambda execution: ReconInput(
-                    objective=f"Recon the target {challenge.target} and expand the global attack tree.",
-                    tree=tree.snapshot(),
-                    recent_observations=state.observations[-6:],
-                    key_findings=state.key_findings,
-                    latest_execution=execution,
-                    available_skills=self.skill_catalog.list_available(),
-                ),
-                label=f"Recon step {recon_index}/{max_recon_steps}",
-            )
-            self._log(f"    Phase time: {recon_elapsed:.2f}s")
-            self._log(
-                f"    Action: {recon_out.action.kind}"
-                + (f" | skill={recon_out.action.skill_name}" if recon_out.action.skill_name else "")
-            )
-            tree.apply_patch(recon_out.tree_patch)
-            self._log(
-                f"    Result: {'OK' if latest_execution.success else 'FAIL'}"
-                f" | {latest_execution.summary or '(no summary)'}"
-            )
-            # 创建上一轮的 observation：round_num = recon_index - 1
-            state.observations.append(_create_observation(recon_index - 1, "recon", prev_execution, recon_out))
-            # 合并 key_findings 到持久化列表
-            state.key_findings = _merge_unique(state.key_findings, recon_out.key_findings)
-            tree.merge_facts(_facts_from_execution(latest_execution))
-            state.tree = tree.snapshot()
-            self.store.append_round(
-                run_id,
-                recon_index,
-                {
-                    "phase": "recon",
-                    "recon_input": _agent_trace(self.agents.get("recon")),
-                    "recon": recon_out.model_dump(),
-                    "builder_input": self._last_builder_trace,
-                    "execution": latest_execution.model_dump(),
-                },
-            )
-            self.store.save_state(state)
-            self._notify_tree_update(state.tree)
-            if recon_out.done or recon_out.action.kind == "finish":
-                self._log("[*] Recon complete")
-                break
+                    recon_out, latest_execution, recon_elapsed = self._run_action_phase(
+                        agent_name="recon",
+                        zone=challenge.zone,
+                        challenge=challenge,
+                        run_id=run_id,
+                        observations=state.observations[-6:],
+                        latest_execution=prev_execution,
+                        payload_factory=lambda execution: ReconInput(
+                            objective=f"Recon the target {challenge.target} and expand the global attack tree.",
+                            tree=tree.snapshot(),
+                            recent_observations=state.observations[-6:],
+                            key_findings=state.key_findings,
+                            latest_execution=execution,
+                            available_skills=self.skill_catalog.list_available(),
+                        ),
+                        label=f"Recon step {recon_index}/{max_recon_steps}",
+                    )
+                    self._log(f"    Phase time: {recon_elapsed:.2f}s")
+                    self._log(
+                        f"    Action: {recon_out.action.kind}"
+                        + (f" | skill={recon_out.action.skill_name}" if recon_out.action.skill_name else "")
+                    )
+                    tree.apply_patch(recon_out.tree_patch)
+                    self._log(
+                        f"    Result: {'OK' if latest_execution.success else 'FAIL'}"
+                        f" | {latest_execution.summary or '(no summary)'}"
+                    )
+                    state.observations.append(_create_observation(recon_index - 1, "recon", prev_execution, recon_out))
+                    state.key_findings = _merge_unique(state.key_findings, recon_out.key_findings)
+                    tree.merge_facts(_facts_from_execution(latest_execution))
+                    state.tree = tree.snapshot()
+                    self.store.append_round(
+                        run_id,
+                        recon_index,
+                        {
+                            "phase": "recon",
+                            "recon_input": _agent_trace(self.agents.get("recon")),
+                            "recon": recon_out.model_dump(),
+                            "builder_input": self._last_builder_trace,
+                            "execution": latest_execution.model_dump(),
+                        },
+                    )
+                    self.store.save_state(state)
+                    self._notify_tree_update(state.tree)
 
-        for round_index in range(1, max_rounds + 1):
-            # 保存上一轮 execution，用于创建上一轮的 observation
+                    if recon_out.discover_vulnerability or recon_out.action.kind == "finish":
+                        self._log("[*] Recon complete: exploitable point found")
+                        recon_done = True
+                        node_context = _extract_node_context(tree, recon_out.selected_node_key)
+                        break
+
+                if not recon_done:
+                    self._log("[*] Recon exhausted without exploitable point")
+                    break
+
+                need_recon = False
+
+            # --- REFLECTION PHASE ---
+            if recon_done:
+                total_rounds += 1
+                self._log(f"[*] Reflection: organizing findings for exploitable point")
+                reflection_out, reflection_elapsed = self._timed_agent_run(
+                    "reflection",
+                    challenge.zone,
+                    ReflectionInput(
+                        objective="Reflect on the exploitable point found by recon, organize key findings, and provide strategic guidance.",
+                        tree=tree.snapshot(),
+                        recent_observations=state.observations[-8:],
+                        key_findings=state.key_findings,
+                        latest_execution=latest_execution,
+                        last_strategy=node_context.target_node.title if node_context else "",
+                    ),
+                )
+                self._log(f"    LLM time: {reflection_elapsed:.2f}s")
+                reflection_summary = reflection_out.summary
+                self._log(f"    Summary: {reflection_out.summary or '(empty)'}")
+                tree.apply_patch(reflection_out.tree_patch)
+
+                if reflection_out.halt:
+                    self._log("[*] Reflection requested halt")
+                    break
+
+                recon_done = False
+
+            # --- STRATEGY PHASE ---
             prev_execution = latest_execution
 
             strategy_out, latest_execution, strategy_elapsed = self._run_action_phase(
@@ -152,13 +244,15 @@ class JasterOrchestrator:
                 latest_execution=prev_execution,
                 payload_factory=lambda execution: StrategyInput(
                     objective=f"Exploit the target {challenge.target} and capture the flag.",
-                    tree=tree.snapshot(),
+                    target_node=node_context.target_node,
+                    path_to_root=node_context.path_to_root,
+                    related_nodes=node_context.related_nodes,
+                    reflection_summary=reflection_summary,
                     recent_observations=state.observations[-8:],
                     key_findings=state.key_findings,
                     latest_execution=execution,
-                    last_reflection=last_reflection,
                 ),
-                label=f"Main round {round_index}/{max_rounds}: strategy",
+                label=f"Strategy round {total_rounds}",
             )
             self._log(f"    Phase time: {strategy_elapsed:.2f}s")
             self._log(
@@ -170,35 +264,15 @@ class JasterOrchestrator:
                 f"    Execution: {'OK' if latest_execution.success else 'FAIL'}"
                 f" | {latest_execution.summary or '(no summary)'}"
             )
-            # 创建上一轮的 observation：round_num = max_recon_steps + round_index - 1
-            state.observations.append(_create_observation(max_recon_steps + round_index - 1, "strategy", prev_execution, strategy_out))
-            # 合并 key_findings 到持久化列表
+            state.observations.append(_create_observation(total_rounds, "strategy", prev_execution, strategy_out))
             state.key_findings = _merge_unique(state.key_findings, strategy_out.key_findings)
             tree.merge_facts(_facts_from_execution(latest_execution))
 
-            self._log(f"[*] Main round {round_index}/{max_rounds}: reflection")
-            reflection_out, reflection_elapsed = self._timed_agent_run(
-                "reflection",
-                challenge.zone,
-                ReflectionInput(
-                    objective="Reflect on the latest action, correct drift, and update the global attack tree.",
-                    tree=tree.snapshot(),
-                    recent_observations=state.observations[-8:],
-                    key_findings=state.key_findings,
-                    latest_execution=latest_execution,
-                    last_strategy=strategy_out.summary,
-                ),
-            )
-            self._log(f"    LLM time: {reflection_elapsed:.2f}s")
-            last_reflection = reflection_out.summary
-            self._log(f"    Summary: {reflection_out.summary or '(empty)'}")
-            self._log(f"    Next focus: {reflection_out.next_focus_key or '(unchanged)'}")
-            tree.apply_patch(reflection_out.tree_patch)
-
-            candidates = _merge_flag_candidates(strategy_out.flag_candidates, latest_execution.flag_candidates, reflection_out.flag_candidates)
+            # Submission
+            candidates = _merge_flag_candidates(strategy_out.flag_candidates, latest_execution.flag_candidates)
             submission_out = None
             if candidates:
-                self._log(f"[*] Main round {round_index}/{max_rounds}: submission candidates={len(candidates)}")
+                self._log(f"[*] Strategy round {total_rounds}: submission candidates={len(candidates)}")
                 submission_out, submission_elapsed = self._timed_agent_run(
                     "submission",
                     challenge.zone,
@@ -217,32 +291,53 @@ class JasterOrchestrator:
                     state.submitted_flags.append(submission_out.flag)
                     tree.merge_facts(GlobalFacts(flags=[submission_out.flag]))
             else:
-                self._log(f"[*] Main round {round_index}/{max_rounds}: submission skipped")
+                self._log(f"[*] Strategy round {total_rounds}: submission skipped")
 
-            state.rounds_completed += 1
             state.tree = tree.snapshot()
             self.store.append_round(
                 run_id,
-                max_recon_steps + round_index,
+                total_rounds,
                 {
-                    "phase": "main",
+                    "phase": "strategy",
                     "strategy_input": _agent_trace(self.agents.get("strategy")),
                     "strategy": strategy_out.model_dump(),
                     "builder_input": self._last_builder_trace,
                     "execution": latest_execution.model_dump(),
-                    "reflection_input": _agent_trace(self.agents.get("reflection")),
-                    "reflection": reflection_out.model_dump(),
                     "submission_input": _agent_trace(self.agents.get("submission")) if submission_out else None,
                     "submission": submission_out.model_dump() if submission_out else None,
                 },
             )
             self.store.save_state(state)
             self._notify_tree_update(state.tree)
-            if strategy_out.goal_reached or reflection_out.halt:
-                self._log("[*] Run stopping: goal reached or reflection requested halt")
+
+            # Check strategy output
+            if strategy_out.goal_reached:
+                self._log("[*] Run stopping: goal reached")
                 break
+
+            if strategy_out.need_recon:
+                self._log("[*] Strategy requests more recon")
+                need_recon = True
+                recon_done = False
+                continue
+
+            if strategy_out.need_reflection:
+                self._log("[*] Strategy requests reflection (drift correction)")
+                if strategy_out.selected_node_key:
+                    from jaster.domain.models import NodeUpdatePatch, TreePatch, NodeStatus
+                    failed_patch = TreePatch(
+                        update_nodes=[NodeUpdatePatch(
+                            key=strategy_out.selected_node_key,
+                            status=NodeStatus.failed
+                        )]
+                    )
+                    tree.apply_patch(failed_patch)
+                need_recon = False
+                recon_done = True
+                continue
+
         self._log(
-            f"[*] Run finished: rounds={state.rounds_completed} | submitted_flags={len(state.submitted_flags)}"
+            f"[*] Run finished: rounds={total_rounds} | submitted_flags={len(state.submitted_flags)}"
         )
         return state
 

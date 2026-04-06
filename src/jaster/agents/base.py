@@ -13,7 +13,7 @@ InputModel = TypeVar("InputModel", bound=BaseModel)
 OutputModel = TypeVar("OutputModel", bound=BaseModel)
 
 STRICT_JSON_SYSTEM = (
-    "You are a strict JSON generator. Follow the role instructions and return exactly one JSON object."
+    "你是一个严格的json生成器.遵循角色指令并严格返回json字段.请注意你自身的身份，只做你应该做的事。"
 )
 
 

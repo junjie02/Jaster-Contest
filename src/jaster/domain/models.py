@@ -71,6 +71,22 @@ class TreeNodeSnapshot(BaseModel):
     shared_refs: list[str] = Field(default_factory=list)
 
 
+class NodeInfo(BaseModel):
+    """Strategy输入中使用的节点信息，包含TreeNodeSnapshot和NodePatch的所有字段"""
+    key: str
+    parent_key: str = ""
+    title: str
+    kind: NodeKind
+    locator: str = ""
+    status: NodeStatus = NodeStatus.unexplored
+    priority: int = 0
+    value: str = ""
+    reason: str = ""
+    how: str = ""
+    evidence: list[str] = Field(default_factory=list)
+    shared_refs: list[str] = Field(default_factory=list)
+
+
 class AttackTreeSnapshot(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -143,7 +159,7 @@ class ReconInput(BaseModel):
 
 class ReconOutput(BaseModel):
     summary: str
-    done: bool = False
+    discover_vulnerability: bool = False
     selected_node_key: str = ""
     action: ActionPlan
     tree_patch: TreePatch = Field(default_factory=TreePatch)
@@ -154,11 +170,13 @@ class ReconOutput(BaseModel):
 
 class StrategyInput(BaseModel):
     objective: str
-    tree: AttackTreeSnapshot
+    target_node: NodeInfo
+    path_to_root: list[NodeInfo] = Field(default_factory=list)
+    related_nodes: list[NodeInfo] = Field(default_factory=list)
+    reflection_summary: str = ""
     recent_observations: list[Observation] = Field(default_factory=list)
     key_findings: list[str] = Field(default_factory=list)
     latest_execution: ExecutionResult | None = None
-    last_reflection: str = ""
 
 
 class StrategyOutput(BaseModel):
@@ -167,6 +185,8 @@ class StrategyOutput(BaseModel):
     action: ActionPlan
     flag_candidates: list[str] = Field(default_factory=list)
     goal_reached: bool = False
+    need_recon: bool = False
+    need_reflection: bool = False
     tree_patch: TreePatch = Field(default_factory=TreePatch)
     key_findings: list[str] = Field(default_factory=list)
     next_action_hint: str = ""
