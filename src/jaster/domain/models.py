@@ -177,6 +177,7 @@ class StrategyInput(BaseModel):
     recent_observations: list[Observation] = Field(default_factory=list)
     key_findings: list[str] = Field(default_factory=list)
     latest_execution: ExecutionResult | None = None
+    available_skills: list[AvailableSkill] = Field(default_factory=list)
 
 
 class StrategyOutput(BaseModel):

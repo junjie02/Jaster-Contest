@@ -28,6 +28,7 @@ from jaster.domain.attack_tree import _merge_unique
 from jaster.domain.models import TreeNodeSnapshot, NodeInfo
 from pydantic import BaseModel, Field
 from jaster.runtime.builder import BuilderExecutor
+from jaster.runtime.env import env_int
 from jaster.runtime.llm import OpenAIChatClient
 from jaster.runtime.skills import SkillCatalog, SkillExecutor
 from jaster.storage.files import FileRunStore
@@ -111,6 +112,7 @@ class JasterOrchestrator:
         self.builder_executor = BuilderExecutor()
         self.agents = build_agents(prompt_root, llm)
         self.verbose = verbose
+        self.phase_max_retries = env_int("JASTER_PHASE_MAX_RETRIES", 3)
         self._on_tree_update = on_tree_update
         self._last_builder_trace: dict | None = None
 
@@ -270,6 +272,7 @@ class JasterOrchestrator:
                     recent_observations=state.observations[-8:],
                     key_findings=state.key_findings,
                     latest_execution=execution,
+                    available_skills=self.skill_catalog.list_available(),
                 ),
                 label=f"Round {phase_round}: strategy",
             )
@@ -461,20 +464,25 @@ class JasterOrchestrator:
         label: str,
     ) -> tuple[ReconOutput | StrategyOutput, ExecutionResult, float]:
         agent = self.agents[agent_name]
-        llm = getattr(agent, "llm", None)
-        max_attempts = max(1, int(getattr(llm, "max_retries", 1) or 1))
+        max_attempts = max(1, int(getattr(self, "phase_max_retries", 3) or 1))
         retry_context: dict[str, Any] | None = None
         current_execution = latest_execution
         total_elapsed = 0.0
 
         for attempt in range(1, max_attempts + 1):
-            self._log(f"[*] {label}: calling LLM (attempt {attempt}/{max_attempts})")
-            agent_out, agent_elapsed = self._timed_agent_run(
-                agent_name,
-                zone,
-                payload_factory(current_execution),
-                retry_context=retry_context,
-            )
+            self._log(f"[*] {label}: phase attempt {attempt}/{max_attempts}")
+            try:
+                agent_out, agent_elapsed = self._timed_agent_run(
+                    agent_name,
+                    zone,
+                    payload_factory(current_execution),
+                    retry_context=retry_context,
+                )
+            except Exception as exc:
+                raise RuntimeError(
+                    f"{agent_name} agent failed before action execution: {exc}. "
+                    "This means the agent exhausted its own LLM/JSON retry budget before producing a valid action."
+                ) from exc
             total_elapsed += agent_elapsed
             self._log(f"    \033[92m{agent_out.summary or '(empty)'}\033[0m")
             execution = self._execute_action(
