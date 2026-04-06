@@ -179,11 +179,12 @@ class JasterOrchestrator:
                     state.key_findings = _merge_unique(state.key_findings, recon_out.key_findings)
                     tree.merge_facts(_facts_from_execution(latest_execution))
                     state.tree = tree.snapshot()
-                    self.store.append_round(
+                    self.store.append_agent_round(
                         run_id,
+                        "recon",
                         recon_index,
                         {
-                            "phase": "recon",
+                            "phase": f"recon_round_{recon_index}",
                             "recon_input": _agent_trace(self.agents.get("recon")),
                             "recon": recon_out.model_dump(),
                             "builder_input": self._last_builder_trace,
@@ -226,11 +227,12 @@ class JasterOrchestrator:
                 self._log(f"    Summary: {reflection_out.summary or '(empty)'}")
                 tree.apply_patch(reflection_out.tree_patch)
 
-                self.store.append_round(
+                self.store.append_agent_round(
                     run_id,
+                    "reflection",
                     total_rounds,
                     {
-                        "phase": "reflection",
+                        "phase": f"reflection_round_{total_rounds}",
                         "reflection_input": _agent_trace(self.agents.get("reflection")),
                         "reflection": reflection_out.model_dump(),
                     },
@@ -300,11 +302,12 @@ class JasterOrchestrator:
                 self._log(f"[*] Strategy round {total_rounds}: submission skipped")
 
             state.tree = tree.snapshot()
-            self.store.append_round(
+            self.store.append_agent_round(
                 run_id,
+                "strategy",
                 total_rounds,
                 {
-                    "phase": "strategy",
+                    "phase": f"strategy_round_{total_rounds}",
                     "strategy_input": _agent_trace(self.agents.get("strategy")),
                     "strategy_context": {
                         "target_node": node_context.target_node.model_dump() if node_context else None,

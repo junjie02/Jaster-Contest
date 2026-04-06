@@ -54,6 +54,12 @@ class FileRunStore:
         path = self.run_dir(run_id) / "rounds" / f"{index:03d}.json"
         path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
 
+    def append_agent_round(self, run_id: str, agent_type: str, round_num: int, payload: dict) -> None:
+        """保存 agent 独立的 round 日志，文件名格式: {agent}_round_{n}.json"""
+        path = self.run_dir(run_id) / "rounds" / f"{agent_type}_round_{round_num}.json"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+
     def load(self, run_id: str) -> RunState:
         run_dir = self.run_dir(run_id)
         run_payload = json.loads((run_dir / "run.json").read_text(encoding="utf-8"))
