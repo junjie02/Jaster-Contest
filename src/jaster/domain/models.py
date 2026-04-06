@@ -74,7 +74,6 @@ class TreeNodeSnapshot(BaseModel):
 class AttackTreeSnapshot(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    frontier_keys: list[str] = Field(default_factory=list)
     nodes: list[TreeNodeSnapshot] = Field(default_factory=list)
     facts: GlobalFacts = Field(default_factory=GlobalFacts)
 

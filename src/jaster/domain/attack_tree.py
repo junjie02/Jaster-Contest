@@ -40,20 +40,11 @@ class AttackTree:
         children = defaultdict(list)
         for node in self._nodes.values():
             children[node.parent_key].append(node.key)
-        frontier = [
-            node.key
-            for node in self._nodes.values()
-            if node.status in {NodeStatus.unexplored, NodeStatus.exploring}
-            and node.parent_key  # 非根节点即可
-        ]
-        frontier.sort(key=lambda key: (-self._nodes[key].priority, self._nodes[key].title, key))
-        frontier = frontier[:3]  # 只保留优先级最高的3个
         nodes = sorted(
             self._nodes.values(),
             key=lambda node: (self.depth(node.key), -node.priority, node.title, node.key),
         )
         return AttackTreeSnapshot(
-            frontier_keys=frontier,
             nodes=nodes,
             facts=self._facts,
         )

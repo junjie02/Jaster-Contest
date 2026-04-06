@@ -8,7 +8,7 @@
 
 ## 输出结构
 - summary：string，总结
-- selected_node_key：string，从 frontier_keys 中选择一个作为所有新节点的父节点，并基于此节点开始渗透
+- selected_node_key：string，选择一个节点作为所有新节点的父节点，并基于此节点开始渗透
 - key_findings：list[string]，从上次执行结果中发现的关键线索列表
 - next_action_hint：string，下一步行动建议
 - result_type：string，上次执行结果的分类，取值：ok | error | redirect | sensitive_file_found | directory_listing | auth_page | waf_blocked | interesting_js | git_leak

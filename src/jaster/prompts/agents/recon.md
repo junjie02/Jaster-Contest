@@ -4,7 +4,7 @@
 
 ## 目标
 - 在strategy启动之前，构建攻击树，该树会作为核心交付物交付给strategy。
-- 分析树结构，结合top_frontiers选择一个最合适的节点，基于此节点进行探测。
+- 分析树结构，选择一个最合适的节点，基于此节点进行探测。
 - 当发现疑似高危利用点时，可新增树节点，记录此利用点。若该节点经多次探测无新增信息，可返回根节点重新规划。
 - 探测过程中，可根据新发现的信息，修改其它节点的优先级。当同一利用点尝试多次失败后，若无可进一步利用信息，可以刚该节点设置为failed。
 - 当为策略制定提供足够的利用上下文时，即可停止。
@@ -24,7 +24,7 @@
 ## 输出结构
 - summary：string，针对latest execution的简短字符串
 - done：bool，是否完成侦察
-- selected_node_key：string，从 frontier_keys 中选择一个作为所有新节点的父节点，并基于此节点开始探索。
+- selected_node_key：string，选择一个节点作为所有新节点的父节点，并基于此节点开始探索。
 - key_findings：list[string]，从latest execution中发现的关键线索列表
 - next_action_hint：string，针对latest execution下一步行动建议
 - result_type：string，针对latest execution的分类，取值：ok | error | redirect | sensitive_file_found | directory_listing | auth_page | waf_blocked | interesting_js | git_leak
