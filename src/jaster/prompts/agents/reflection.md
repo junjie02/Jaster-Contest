@@ -31,7 +31,6 @@
     reason：string|null
     how：string|null
     evidence：list[string]|null
-  selected_node_key：string|null
 
 ## 规则
 - 优先以**纠正偏差**为主，而非重复执行。

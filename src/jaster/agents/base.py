@@ -68,7 +68,10 @@ _NODE_STATUS_ALIASES = {
 def _normalize_agent_response(role: str, payload: dict) -> dict:
     normalized = dict(payload or {})
     if role in {"recon", "strategy", "reflection"}:
-        normalized["tree_patch"] = _normalize_tree_patch(normalized.get("tree_patch") or {}, role=role)
+        parent_key = normalized.get("selected_node_key", "")
+        normalized["tree_patch"] = _normalize_tree_patch(
+            normalized.get("tree_patch") or {}, role=role, parent_key=parent_key
+        )
     if role in {"recon", "strategy"}:
         normalized["action"] = _normalize_action(normalized.get("action") or {}, parent=normalized)
     if role == "recon":
@@ -143,14 +146,17 @@ def _normalize_action(action: dict, *, parent: dict) -> dict:
     return normalized
 
 
-def _normalize_tree_patch(tree_patch: dict, *, role: str) -> dict:
+def _normalize_tree_patch(tree_patch: dict, *, role: str, parent_key: str = "") -> dict:
     normalized = dict(tree_patch or {})
     add_nodes = [_normalize_node_patch(item, role=role) for item in normalized.get("add_nodes", []) if isinstance(item, dict)]
     update_nodes = [_normalize_node_update(item) for item in normalized.get("update_nodes", []) if isinstance(item, dict)]
+    # 注入 parent_key 到每个 add_nodes（仅当 LLM 提供了有效节点时）
+    if add_nodes and parent_key:
+        for node in add_nodes:
+            node["parent_key"] = parent_key
     return {
         "add_nodes": [item for item in add_nodes if item],
         "update_nodes": [item for item in update_nodes if item],
-        "selected_node_key": normalized.get("selected_node_key"),
     }
 
 

@@ -8,7 +8,7 @@
 
 ## 输出结构
 - summary：string，总结
-- selected_node_key：string，所选节点 key；无则返回空字符串
+- selected_node_key：string，从 frontier_keys 中选择一个作为所有新节点的父节点，并基于此节点开始渗透
 - key_findings：list[string]，从上次执行结果中发现的关键线索列表
 - next_action_hint：string，下一步行动建议
 - result_type：string，上次执行结果的分类，取值：ok | error | redirect | sensitive_file_found | directory_listing | auth_page | waf_blocked | interesting_js | git_leak
@@ -22,8 +22,7 @@
 - flag_candidates：list[string]，候选 Flag 列表；没有则返回 []
 - goal_reached：bool，目标是否已达成
 - tree_patch：dict
-  add_nodes：list[dict]
-    parent_key：string
+  add_nodes：list[dict] # 新节点，新节点的父节点会自动绑定为selected_node_key
     title：string
     kind：string，"target" | "asset" | "entry" | "weakness" | "technique" | "hypothesis"
     locator：string
@@ -41,7 +40,6 @@
     reason：string|null
     how：string|null
     evidence：list[string]|null
-  selected_node_key：string|null
 
 ## 规则
 - 只选择一条分支。

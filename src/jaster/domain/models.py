@@ -74,8 +74,6 @@ class TreeNodeSnapshot(BaseModel):
 class AttackTreeSnapshot(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    selected_node_key: str = ""
-    selected_path_keys: list[str] = Field(default_factory=list)
     frontier_keys: list[str] = Field(default_factory=list)
     nodes: list[TreeNodeSnapshot] = Field(default_factory=list)
     facts: GlobalFacts = Field(default_factory=GlobalFacts)
@@ -113,7 +111,6 @@ class TreePatch(BaseModel):
 
     add_nodes: list[NodePatch] = Field(default_factory=list)
     update_nodes: list[NodeUpdatePatch] = Field(default_factory=list)
-    selected_node_key: str | None = None
 
 
 class ActionPlan(BaseModel):
@@ -145,6 +142,7 @@ class ReconInput(BaseModel):
 class ReconOutput(BaseModel):
     summary: str
     done: bool = False
+    selected_node_key: str = ""
     action: ActionPlan
     tree_patch: TreePatch = Field(default_factory=TreePatch)
     key_findings: list[str] = Field(default_factory=list)

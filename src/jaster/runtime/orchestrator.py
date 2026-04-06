@@ -136,18 +136,11 @@ class JasterOrchestrator:
                 ),
             )
             self._log(f"    LLM time: {strategy_elapsed:.2f}s")
-            selected_key = strategy_out.selected_node_key or (state.tree.frontier_keys[0] if state.tree.frontier_keys else "")
             self._log(f"    Summary: {strategy_out.summary or '(empty)'}")
-            self._log(
-                f"    Selected node: {selected_key or '(none)'}"
-            )
             self._log(
                 f"    Action: {strategy_out.action.kind}"
                 + (f" | skill={strategy_out.action.skill_name}" if strategy_out.action.skill_name else "")
             )
-            if selected_key:
-                tree.set_selected_node(selected_key)
-            strategy_out.tree_patch.selected_node_key = selected_key or strategy_out.tree_patch.selected_node_key
             tree.apply_patch(strategy_out.tree_patch)
             latest_execution = self._execute_action(
                 run_id=run_id,

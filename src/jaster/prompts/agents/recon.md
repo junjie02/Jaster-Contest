@@ -22,6 +22,7 @@
 ## 输出结构
 - summary：string，针对latest execution的简短字符串
 - done：bool，是否完成侦察
+- selected_node_key：string，从 frontier_keys 中选择一个作为所有新节点的父节点，并基于此节点开始探索。
 - key_findings：list[string]，从latest execution中发现的关键线索列表
 - next_action_hint：string，针对latest execution下一步行动建议
 - result_type：string，针对latest execution的分类，取值：ok | error | redirect | sensitive_file_found | directory_listing | auth_page | waf_blocked | interesting_js | git_leak
@@ -33,8 +34,7 @@
   skill_args：dict
   builder_task：string|null
 - tree_patch：dict
-  add_nodes：list[dict] #当发现高价值节点时加入节点
-    parent_key：string
+  add_nodes：list[dict] # 新节点，新节点的父节点会自动绑定为selected_node_key
     title：string
     kind：string，"target" | "asset" | "entry" | "weakness" | "technique" | "hypothesis"
     locator：string
