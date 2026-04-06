@@ -83,6 +83,16 @@ def _extract_node_context(tree: AttackTree, selected_node_key: str) -> Exploitab
     )
 
 
+def _resolve_node_context(tree: AttackTree, selected_node_key: str) -> ExploitableNodeContext:
+    snapshot = tree.snapshot()
+    if selected_node_key and any(node.key == selected_node_key for node in snapshot.nodes):
+        return _extract_node_context(tree, selected_node_key)
+    if not snapshot.nodes:
+        raise ValueError("Attack tree is empty")
+    best_node = max(snapshot.nodes, key=lambda node: (node.priority, bool(node.parent_key)))
+    return _extract_node_context(tree, best_node.key)
+
+
 class JasterOrchestrator:
     def __init__(
         self,
@@ -104,7 +114,7 @@ class JasterOrchestrator:
         self._on_tree_update = on_tree_update
         self._last_builder_trace: dict | None = None
 
-    def run(self, challenge: ChallengeSpec, *, max_recon_steps: int = 3, max_rounds: int = 12) -> RunState:
+    def run(self, challenge: ChallengeSpec, *, max_rounds: int = 12) -> RunState:
         run_id = self.store.new_run_id()
         tree = AttackTree.bootstrap(challenge.target)
         state = RunState(run_id=run_id, challenge=challenge, tree=tree.snapshot())
@@ -118,9 +128,8 @@ class JasterOrchestrator:
         latest_execution: ExecutionResult | None = None
         reflection_summary: str = ""
         node_context: ExploitableNodeContext | None = None
-        need_recon: bool = True
-        recon_done: bool = False
-        total_rounds: int = 0
+        next_phase = "recon"
+        phase_round = 0
 
         # HTTP 目标首次执行：curl 页面源码
         if challenge.target_type == "http":
@@ -142,81 +151,73 @@ class JasterOrchestrator:
             )
 
         # === MAIN ORCHESTRATION LOOP ===
-        while True:
-            # --- RECON PHASE ---
-            if need_recon:
-                for recon_index in range(1, max_recon_steps + 1):
-                    prev_execution = latest_execution
+        while phase_round < max_rounds:
+            phase_round += 1
 
-                    recon_out, latest_execution, recon_elapsed = self._run_action_phase(
-                        agent_name="recon",
-                        zone=challenge.zone,
-                        challenge=challenge,
-                        run_id=run_id,
-                        observations=state.observations[-6:],
-                        latest_execution=prev_execution,
-                        payload_factory=lambda execution: ReconInput(
-                            objective=f"Recon the target {challenge.target} and expand the global attack tree.",
-                            tree=tree.snapshot(),
-                            recent_observations=state.observations[-6:],
-                            key_findings=state.key_findings,
-                            latest_execution=execution,
-                            available_skills=self.skill_catalog.list_available(),
-                        ),
-                        label=f"Recon step {recon_index}/{max_recon_steps}",
-                    )
-                    self._log(f"    Phase time: {recon_elapsed:.2f}s")
-                    self._log(
-                        f"    Action: {recon_out.action.kind}"
-                        + (f" | skill={recon_out.action.skill_name}" if recon_out.action.skill_name else "")
-                    )
-                    tree.apply_patch(recon_out.tree_patch)
+            if next_phase == "recon":
+                prev_execution = latest_execution
+                recon_out, latest_execution, recon_elapsed = self._run_action_phase(
+                    agent_name="recon",
+                    zone=challenge.zone,
+                    challenge=challenge,
+                    run_id=run_id,
+                    observations=state.observations[-6:],
+                    latest_execution=prev_execution,
+                    payload_factory=lambda execution: ReconInput(
+                        objective=f"Recon the target {challenge.target} and expand the global attack tree.",
+                        tree=tree.snapshot(),
+                        recent_observations=state.observations[-6:],
+                        key_findings=state.key_findings,
+                        latest_execution=execution,
+                        available_skills=self.skill_catalog.list_available(),
+                    ),
+                    label=f"Round {phase_round}: recon",
+                )
+                self._log(f"    Phase time: {recon_elapsed:.2f}s")
+                self._log(
+                    f"    Action: {recon_out.action.kind}"
+                    + (f" | skill={recon_out.action.skill_name}" if recon_out.action.skill_name else "")
+                )
+                tree.apply_patch(recon_out.tree_patch)
 
-                    # 硬逻辑：若 selected_node_key 的优先级 >= 95，强行设置 discover_vulnerability 为 true
-                    nodes_by_key = {node.key: node for node in tree.snapshot().nodes}
-                    selected_node = nodes_by_key.get(recon_out.selected_node_key)
-                    if selected_node and selected_node.priority >= 95:
-                        recon_out.discover_vulnerability = True
+                nodes_by_key = {node.key: node for node in tree.snapshot().nodes}
+                selected_node = nodes_by_key.get(recon_out.selected_node_key)
+                if selected_node and selected_node.priority >= 95 and selected_node.parent_key:
+                    recon_out.discover_vulnerability = True
 
-                    self._log(
-                        f"    Result: {'OK' if latest_execution.success else 'FAIL'}"
-                        f" | {latest_execution.summary or '(no summary)'}"
-                    )
-                    state.observations.append(_create_observation(recon_index - 1, "recon", prev_execution, recon_out))
-                    state.key_findings = _merge_unique(state.key_findings, recon_out.key_findings)
-                    tree.merge_facts(_facts_from_execution(latest_execution))
-                    state.tree = tree.snapshot()
-                    self.store.append_agent_round(
-                        run_id,
-                        "recon",
-                        recon_index,
-                        {
-                            "phase": f"recon_round_{recon_index}",
-                            "recon_input": _agent_trace(self.agents.get("recon")),
-                            "recon": recon_out.model_dump(),
-                            "builder_input": self._last_builder_trace,
-                            "execution": latest_execution.model_dump(),
-                        },
-                    )
-                    self.store.save_state(state)
-                    self._notify_tree_update(state.tree)
+                self._log(
+                    f"    Result: {'OK' if latest_execution.success else 'FAIL'}"
+                    f" | {latest_execution.summary or '(no summary)'}"
+                )
+                state.observations.append(_create_observation(phase_round, "recon", prev_execution, recon_out))
+                state.key_findings = _merge_unique(state.key_findings, recon_out.key_findings)
+                tree.merge_facts(_facts_from_execution(latest_execution))
+                state.tree = tree.snapshot()
+                self._append_phase_round(
+                    run_id,
+                    phase_round,
+                    "recon",
+                    {
+                        "recon_input": _agent_trace(self.agents.get("recon")),
+                        "recon": recon_out.model_dump(),
+                        "builder_input": self._last_builder_trace,
+                        "execution": latest_execution.model_dump(),
+                    },
+                )
+                state.rounds_completed = phase_round
+                self.store.save_state(state)
+                self._notify_tree_update(state.tree)
 
-                    if recon_out.discover_vulnerability or recon_out.action.kind == "finish":
-                        self._log("[*] Recon complete: exploitable point found")
-                        recon_done = True
-                        node_context = _extract_node_context(tree, recon_out.selected_node_key)
-                        break
+                if recon_out.discover_vulnerability or recon_out.action.kind == "finish":
+                    self._log("[*] Recon complete: exploitable point found")
+                    node_context = _resolve_node_context(tree, recon_out.selected_node_key)
+                    next_phase = "reflection"
+                    continue
 
-                if not recon_done:
-                    self._log("[*] Recon exhausted without exploitable point")
-                    break
+                continue
 
-                need_recon = False
-
-            # --- REFLECTION PHASE ---
-            if recon_done:
-                total_rounds += 1
-                self._log(f"[*] Reflection: organizing findings for exploitable point")
+            if next_phase == "reflection":
+                self._log("[*] Reflection: organizing findings for exploitable point")
                 reflection_out, reflection_elapsed = self._timed_agent_run(
                     "reflection",
                     challenge.zone,
@@ -233,23 +234,26 @@ class JasterOrchestrator:
                 reflection_summary = reflection_out.summary
                 self._log(f"    Summary: {reflection_out.summary or '(empty)'}")
                 tree.apply_patch(reflection_out.tree_patch)
-
-                self.store.append_agent_round(
+                state.tree = tree.snapshot()
+                self._append_phase_round(
                     run_id,
+                    phase_round,
                     "reflection",
-                    total_rounds,
                     {
-                        "phase": f"reflection_round_{total_rounds}",
                         "reflection_input": _agent_trace(self.agents.get("reflection")),
                         "reflection": reflection_out.model_dump(),
                     },
                 )
+                state.rounds_completed = phase_round
+                self.store.save_state(state)
+                self._notify_tree_update(state.tree)
+                next_phase = "strategy"
+                continue
 
-                recon_done = False
+            if next_phase != "strategy":
+                raise RuntimeError(f"Unknown phase: {next_phase}")
 
-            # --- STRATEGY PHASE ---
             prev_execution = latest_execution
-
             strategy_out, latest_execution, strategy_elapsed = self._run_action_phase(
                 agent_name="strategy",
                 zone=challenge.zone,
@@ -267,7 +271,7 @@ class JasterOrchestrator:
                     key_findings=state.key_findings,
                     latest_execution=execution,
                 ),
-                label=f"Strategy round {total_rounds}",
+                label=f"Round {phase_round}: strategy",
             )
             self._log(f"    Phase time: {strategy_elapsed:.2f}s")
             self._log(
@@ -279,15 +283,14 @@ class JasterOrchestrator:
                 f"    Execution: {'OK' if latest_execution.success else 'FAIL'}"
                 f" | {latest_execution.summary or '(no summary)'}"
             )
-            state.observations.append(_create_observation(total_rounds, "strategy", prev_execution, strategy_out))
+            state.observations.append(_create_observation(phase_round, "strategy", prev_execution, strategy_out))
             state.key_findings = _merge_unique(state.key_findings, strategy_out.key_findings)
             tree.merge_facts(_facts_from_execution(latest_execution))
 
-            # Submission
             candidates = _merge_flag_candidates(strategy_out.flag_candidates, latest_execution.flag_candidates)
             submission_out = None
             if candidates:
-                self._log(f"[*] Strategy round {total_rounds}: submission candidates={len(candidates)}")
+                self._log(f"[*] Round {phase_round}: submission candidates={len(candidates)}")
                 submission_out, submission_elapsed = self._timed_agent_run(
                     "submission",
                     challenge.zone,
@@ -306,15 +309,14 @@ class JasterOrchestrator:
                     state.submitted_flags.append(submission_out.flag)
                     tree.merge_facts(GlobalFacts(flags=[submission_out.flag]))
             else:
-                self._log(f"[*] Strategy round {total_rounds}: submission skipped")
+                self._log(f"[*] Round {phase_round}: submission skipped")
 
             state.tree = tree.snapshot()
-            self.store.append_agent_round(
+            self._append_phase_round(
                 run_id,
+                phase_round,
                 "strategy",
-                total_rounds,
                 {
-                    "phase": f"strategy_round_{total_rounds}",
                     "strategy_input": _agent_trace(self.agents.get("strategy")),
                     "strategy_context": {
                         "target_node": node_context.target_node.model_dump() if node_context else None,
@@ -329,18 +331,17 @@ class JasterOrchestrator:
                     "submission": submission_out.model_dump() if submission_out else None,
                 },
             )
+            state.rounds_completed = phase_round
             self.store.save_state(state)
             self._notify_tree_update(state.tree)
 
-            # Check strategy output
             if strategy_out.goal_reached:
                 self._log("[*] Run stopping: goal reached")
                 break
 
             if strategy_out.need_recon:
                 self._log("[*] Strategy requests more recon")
-                need_recon = True
-                recon_done = False
+                next_phase = "recon"
                 continue
 
             if strategy_out.need_reflection:
@@ -354,14 +355,25 @@ class JasterOrchestrator:
                         )]
                     )
                     tree.apply_patch(failed_patch)
-                need_recon = False
-                recon_done = True
+                    state.tree = tree.snapshot()
+                next_phase = "reflection"
                 continue
 
+            next_phase = "strategy"
+
         self._log(
-            f"[*] Run finished: rounds={total_rounds} | submitted_flags={len(state.submitted_flags)}"
+            f"[*] Run finished: rounds={state.rounds_completed} | submitted_flags={len(state.submitted_flags)}"
         )
         return state
+
+    def _append_phase_round(self, run_id: str, round_num: int, agent_name: str, payload: dict[str, object]) -> None:
+        body = {
+            "round": round_num,
+            "agent": agent_name,
+            "phase": f"{agent_name}_round_{round_num}",
+            **payload,
+        }
+        self.store.append_round(run_id, round_num, body)
 
     def _execute_action(
         self,

@@ -55,7 +55,6 @@ def run(
     description: str = typer.Option("", help="Challenge description"),
     zone: str = typer.Option("", help="Zone override"),
     target_type: str = typer.Option("", help="http or tcp"),
-    max_recon_steps: int = typer.Option(env_int("JASTER_MAX_RECON_STEPS", 3)),
     max_rounds: int = typer.Option(env_int("JASTER_MAX_ROUNDS", 12)),
 ) -> None:
     root = _project_root()
@@ -83,7 +82,7 @@ def run(
         llm=OpenAIChatClient(),
         on_tree_update=_post_tree_update,
     )
-    state = orchestrator.run(challenge, max_recon_steps=max_recon_steps, max_rounds=max_rounds)
+    state = orchestrator.run(challenge, max_rounds=max_rounds)
     typer.echo(json.dumps(state.model_dump(), ensure_ascii=False, indent=2))
 
 

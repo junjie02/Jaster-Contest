@@ -27,7 +27,6 @@ jaster run --target http://example.com
 - `OPENAI_MODEL` optional, defaults to `gpt-4o-mini`
 - `OPENAI_REASONING_SPLIT` optional, useful for providers such as MiniMax that support `reasoning_split`
 - `JASTER_DATA_DIR` optional, defaults to `./data`
-- `JASTER_MAX_RECON_STEPS` optional, defaults to `3`
-- `JASTER_MAX_ROUNDS` optional, defaults to `12`
+- `JASTER_MAX_ROUNDS` optional, defaults to `12`; this is the shared budget for all agent phases (`recon`, `reflection`, `strategy`)
 - `JASTER_HTTP_TIMEOUT` optional, defaults to `120`
 - `JASTER_LLM_MAX_RETRIES` optional, defaults to `3`; applies to the current retry loop for LLM request failures, invalid JSON / schema validation failures, and same-phase self-correction after action execution failures

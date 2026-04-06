@@ -113,6 +113,6 @@
     }
   ],
   "summary": "使用 `ffuf` 发现后台、敏感文件、备份包和常见目录。推荐字典：/usr/share/wordlists/dirb/common.txt，url末尾需要FUZZ占位符：http://target.local/FUZZ",
-  "use_when": "需要围绕 Web 根路径快速补目录资产面。 已确认站点存在隐藏入口、后台、备份或敏感文件线索。 对于http目标前期的必须探测。需要先做一轮低成本内容发现，再决定是否深挖。",
+  "use_when": "需要围绕 Web 根路径快速补目录资产面。 已确认站点存在隐藏入口、后台、备份或敏感文件线索。需要先做一轮低成本内容发现，再决定是否深挖。",
   "command_mode": "argv"
 }
