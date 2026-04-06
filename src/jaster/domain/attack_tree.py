@@ -84,12 +84,14 @@ class AttackTree:
                     node.reason = node_patch.reason
                 if node_patch.status:
                     node.status = node_patch.status
-                # 合并 shared_refs（已有节点也要更新关联）
+                # 合并 shared_refs（已有节点也要更新关联），排除 parent_key
                 if node_patch.shared_refs:
                     for ref_key in node_patch.shared_refs:
-                        if ref_key and ref_key not in node.shared_refs:
+                        if ref_key and ref_key not in node.shared_refs and ref_key != node_patch.parent_key:
                             node.shared_refs.append(ref_key)
                 continue
+            # 过滤掉 parent_key，避免父子关系出现在 shared_refs
+            filtered_refs = [r for r in node_patch.shared_refs if r and r != node_patch.parent_key]
             self._nodes[key] = TreeNodeSnapshot(
                 key=key,
                 parent_key=node_patch.parent_key,
@@ -98,15 +100,16 @@ class AttackTree:
                 priority=node_patch.priority,
                 reason=node_patch.reason,
                 status=node_patch.status,
-                shared_refs=list(node_patch.shared_refs),
+                shared_refs=list(filtered_refs),
             )
-            if node_patch.shared_refs:
-                new_node_refs[key] = node_patch.shared_refs
+            if filtered_refs:
+                new_node_refs[key] = filtered_refs
 
-        # 处理双向关联：在被引用的节点中添加当前节点的 key
+        # 处理双向关联：在被引用的节点中添加当前节点的 key（排除 parent_key）
+        parent_keys_in_tree = {node.parent_key for node in self._nodes.values()}
         for new_key, refs in new_node_refs.items():
             for ref_key in refs:
-                if ref_key in self._nodes and new_key not in self._nodes[ref_key].shared_refs:
+                if ref_key in self._nodes and new_key not in self._nodes[ref_key].shared_refs and ref_key not in parent_keys_in_tree:
                     self._nodes[ref_key].shared_refs.append(new_key)
 
         for update in patch.update_nodes:

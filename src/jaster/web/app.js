@@ -300,6 +300,8 @@ function renderTree(data) {
 
   // Render edges first (below nodes)
   const nodeMap = new Map(layout.nodes.map((n) => [n.key, n]));
+
+  // Render parent-child edges (solid white)
   layout.edges.forEach((edge) => {
     const fromNode = nodeMap.get(edge.from);
     const toNode = nodeMap.get(edge.to);
@@ -310,13 +312,35 @@ function renderTree(data) {
       const cy = fromNode.y + dy * 0.5 + Math.sign(dy) * Math.abs(dx) * 0.3;
       const path = createSvgElement("path", {
         d: `M ${fromNode.x} ${fromNode.y} Q ${cx} ${cy} ${toNode.x} ${toNode.y}`,
-        stroke: "#4b5563",
-        "stroke-width": "2",
-        "stroke-opacity": "0.6",
+        stroke: "#ffffff",
+        "stroke-width": "3",
+        "stroke-opacity": "0.9",
         fill: "none",
       });
       edgesGroup.appendChild(path);
     }
+  });
+
+  // Render shared_refs edges (dashed gray)
+  layout.nodes.forEach((node) => {
+    (node.shared_refs || []).forEach((refKey) => {
+      const refNode = nodeMap.get(refKey);
+      if (refNode) {
+        const dx = refNode.x - node.x;
+        const dy = refNode.y - node.y;
+        const cx = node.x + dx * 0.5;
+        const cy = node.y + dy * 0.5 + Math.sign(dy) * Math.abs(dx) * 0.3;
+        const path = createSvgElement("path", {
+          d: `M ${node.x} ${node.y} Q ${cx} ${cy} ${refNode.x} ${refNode.y}`,
+          stroke: "#9ca3af",
+          "stroke-width": "1.5",
+          "stroke-opacity": "0.6",
+          "stroke-dasharray": "6 4",
+          fill: "none",
+        });
+        edgesGroup.appendChild(path);
+      }
+    });
   });
 
   layout.nodes.forEach((node) => {
