@@ -150,12 +150,22 @@ def _normalize_tree_patch(tree_patch: dict, *, role: str, parent_key: str = "") 
     normalized = dict(tree_patch or {})
     add_nodes = [_normalize_node_patch(item, role=role) for item in normalized.get("add_nodes", []) if isinstance(item, dict)]
     update_nodes = [_normalize_node_update(item) for item in normalized.get("update_nodes", []) if isinstance(item, dict)]
-    # 注入 parent_key 到每个 add_nodes（仅当 LLM 提供了有效节点时）
-    if add_nodes and parent_key:
-        for node in add_nodes:
+    # 注入 parent_key 到每个有实际内容的 add_nodes
+    valid_add_nodes = []
+    for node in add_nodes:
+        # 判断是否有实际内容（locator 或 value 或 reason 或 how 或 evidence 非空）
+        has_content = bool(
+            node.get("locator")
+            or node.get("value")
+            or node.get("reason")
+            or node.get("how")
+            or node.get("evidence")
+        )
+        if has_content and parent_key:
             node["parent_key"] = parent_key
+            valid_add_nodes.append(node)
     return {
-        "add_nodes": [item for item in add_nodes if item],
+        "add_nodes": valid_add_nodes,
         "update_nodes": [item for item in update_nodes if item],
     }
 
