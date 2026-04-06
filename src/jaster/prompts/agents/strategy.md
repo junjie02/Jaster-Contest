@@ -32,6 +32,7 @@
     how：string
     evidence：list[string]
     status：string，"unexplored" | "exploring" | "success" | "failed"
+    shared_refs：list[string]，关联节点 key 列表；没有则返回 []
   update_nodes：list[dict]
     key：string
     status：string|null，"unexplored" | "exploring" | "success" | "failed"
@@ -40,6 +41,7 @@
     reason：string|null
     how：string|null
     evidence：list[string]|null
+    shared_refs：list[string]|null，关联节点 key 列表；没有则返回 []
 
 ## 规则
 - 只选择一条分支。

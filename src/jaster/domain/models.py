@@ -69,6 +69,7 @@ class TreeNodeSnapshot(BaseModel):
     status: NodeStatus = NodeStatus.unexplored
     priority: int = 0
     reason: str = ""
+    shared_refs: list[str] = Field(default_factory=list)
 
 
 class AttackTreeSnapshot(BaseModel):
@@ -91,6 +92,7 @@ class NodePatch(BaseModel):
     how: str = ""
     evidence: list[str] = Field(default_factory=list)
     status: NodeStatus = NodeStatus.unexplored
+    shared_refs: list[str] = Field(default_factory=list)
 
 
 class NodeUpdatePatch(BaseModel):
@@ -103,6 +105,7 @@ class NodeUpdatePatch(BaseModel):
     reason: str | None = None
     how: str | None = None
     evidence: list[str] | None = None
+    shared_refs: list[str] | None = None
 
 
 class TreePatch(BaseModel):

@@ -67,6 +67,9 @@ class AttackTree:
         return descendants
 
     def apply_patch(self, patch: TreePatch) -> AttackTreeSnapshot:
+        # 记录新增节点的 key 及其关联的 refs，用于后续双向关联
+        new_node_refs: dict[str, list[str]] = {}
+
         for node_patch in patch.add_nodes:
             key = _stable_key(
                 node_patch.parent_key,
@@ -81,6 +84,11 @@ class AttackTree:
                     node.reason = node_patch.reason
                 if node_patch.status:
                     node.status = node_patch.status
+                # 合并 shared_refs（已有节点也要更新关联）
+                if node_patch.shared_refs:
+                    for ref_key in node_patch.shared_refs:
+                        if ref_key and ref_key not in node.shared_refs:
+                            node.shared_refs.append(ref_key)
                 continue
             self._nodes[key] = TreeNodeSnapshot(
                 key=key,
@@ -90,7 +98,17 @@ class AttackTree:
                 priority=node_patch.priority,
                 reason=node_patch.reason,
                 status=node_patch.status,
+                shared_refs=list(node_patch.shared_refs),
             )
+            if node_patch.shared_refs:
+                new_node_refs[key] = node_patch.shared_refs
+
+        # 处理双向关联：在被引用的节点中添加当前节点的 key
+        for new_key, refs in new_node_refs.items():
+            for ref_key in refs:
+                if ref_key in self._nodes and new_key not in self._nodes[ref_key].shared_refs:
+                    self._nodes[ref_key].shared_refs.append(new_key)
+
         for update in patch.update_nodes:
             node = self._nodes.get(update.key)
             if node is None:
@@ -106,6 +124,14 @@ class AttackTree:
                 node.priority = update.priority
             if update.reason is not None:
                 node.reason = update.reason
+            # 处理 shared_refs 更新（合并而非替换）
+            if update.shared_refs is not None:
+                for ref_key in update.shared_refs:
+                    if ref_key and ref_key in self._nodes and ref_key not in node.shared_refs:
+                        node.shared_refs.append(ref_key)
+                        # 双向关联
+                        if node.key not in self._nodes[ref_key].shared_refs:
+                            self._nodes[ref_key].shared_refs.append(node.key)
         return self.snapshot()
 
     def merge_facts(self, facts: GlobalFacts) -> None:
