@@ -174,8 +174,6 @@ class JasterOrchestrator:
             self._log(f"    Summary: {reflection_out.summary or '(empty)'}")
             self._log(f"    Next focus: {reflection_out.next_focus_key or '(unchanged)'}")
             tree.apply_patch(reflection_out.tree_patch)
-            if reflection_out.next_focus_key:
-                tree.set_selected_node(reflection_out.next_focus_key)
 
             candidates = _merge_flag_candidates(strategy_out.flag_candidates, latest_execution.flag_candidates, reflection_out.flag_candidates)
             submission_out = None
