@@ -22,11 +22,16 @@
 - 源码片段、响应内容、headers、报错信息
 4. 对于可利用tech_fingerprint、web_crawl、web_content_discovery的目标，应优先依次使用此skills进行探测。
 
+## 攻击树规则
+- 仅使用事实性节点。
+- 每个节点必须包含：标题、定位符、价值、原因、实现方式。
+- 优先选用带有具体证据的**入口点、资产、弱点、技术**类节点。
+
 ## 输出结构
 - summary：string，针对latest execution的简短字符串
 - done：bool，是否完成侦察
 - selected_node_key：string，选择一个节点作为所有新节点的父节点，并基于此节点开始探索。
-- key_findings：list[string]，从latest execution中发现的关键线索列表
+- key_findings：list[string]，从latest execution中发现的高价值线索，对比历史key_findings中新增的内容，若无新增可以不填，注意不要重复。
 - next_action_hint：string，针对latest execution下一步行动建议
 - result_type：string，针对latest execution的分类，取值：ok | error | redirect | sensitive_file_found | directory_listing | auth_page | waf_blocked | interesting_js | git_leak
 - action：dict
@@ -58,7 +63,4 @@
     evidence：list[string]|null
     shared_refs：list[string]|null，关联节点 key 列表；没有则返回 []
 
-## 攻击树规则
-- 仅使用事实性节点。
-- 每个节点必须包含：标题、定位符、价值、原因、实现方式。
-- 优先选用带有具体证据的**入口点、资产、弱点、技术**类节点。
+

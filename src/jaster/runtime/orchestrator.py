@@ -24,6 +24,7 @@ from jaster.domain import (
     StrategyOutput,
     SubmissionInput,
 )
+from jaster.domain.attack_tree import _merge_unique
 from jaster.runtime.builder import BuilderExecutor
 from jaster.runtime.llm import OpenAIChatClient
 from jaster.runtime.skills import SkillCatalog, SkillExecutor
@@ -80,6 +81,7 @@ class JasterOrchestrator:
                     objective=f"Recon the target {challenge.target} and expand the global attack tree.",
                     tree=tree.snapshot(),
                     recent_observations=state.observations[-6:],
+                    key_findings=state.key_findings,
                     latest_execution=execution,
                     available_skills=self.skill_catalog.list_available(),
                 ),
@@ -97,6 +99,8 @@ class JasterOrchestrator:
             )
             # 创建上一轮的 observation：round_num = recon_index - 1
             state.observations.append(_create_observation(recon_index - 1, "recon", prev_execution, recon_out))
+            # 合并 key_findings 到持久化列表
+            state.key_findings = _merge_unique(state.key_findings, recon_out.key_findings)
             tree.merge_facts(_facts_from_execution(latest_execution))
             state.tree = tree.snapshot()
             self.store.append_round(
@@ -131,6 +135,7 @@ class JasterOrchestrator:
                     objective=f"Exploit the target {challenge.target} and capture the flag.",
                     tree=tree.snapshot(),
                     recent_observations=state.observations[-8:],
+                    key_findings=state.key_findings,
                     latest_execution=execution,
                     last_reflection=last_reflection,
                 ),
@@ -148,6 +153,8 @@ class JasterOrchestrator:
             )
             # 创建上一轮的 observation：round_num = max_recon_steps + round_index - 1
             state.observations.append(_create_observation(max_recon_steps + round_index - 1, "strategy", prev_execution, strategy_out))
+            # 合并 key_findings 到持久化列表
+            state.key_findings = _merge_unique(state.key_findings, strategy_out.key_findings)
             tree.merge_facts(_facts_from_execution(latest_execution))
 
             self._log(f"[*] Main round {round_index}/{max_rounds}: reflection")
@@ -158,6 +165,7 @@ class JasterOrchestrator:
                     objective="Reflect on the latest action, correct drift, and update the global attack tree.",
                     tree=tree.snapshot(),
                     recent_observations=state.observations[-8:],
+                    key_findings=state.key_findings,
                     latest_execution=latest_execution,
                     last_strategy=strategy_out.summary,
                 ),
@@ -375,7 +383,6 @@ def _create_observation(
         command=result.command if result else "",
         result_type=agent_output.result_type,
         summary=agent_output.summary,
-        key_findings=agent_output.key_findings,
         next_action_hint=agent_output.next_action_hint,
     )
 

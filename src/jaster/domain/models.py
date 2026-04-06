@@ -33,7 +33,6 @@ class Observation(BaseModel):
     command: str = ""
     result_type: str = ""
     summary: str = ""
-    key_findings: list[str] = Field(default_factory=list)
     next_action_hint: str = ""
 
 
@@ -137,6 +136,7 @@ class ReconInput(BaseModel):
     objective: str
     tree: AttackTreeSnapshot
     recent_observations: list[Observation] = Field(default_factory=list)
+    key_findings: list[str] = Field(default_factory=list)
     latest_execution: ExecutionResult | None = None
     available_skills: list[AvailableSkill] = Field(default_factory=list)
 
@@ -156,6 +156,7 @@ class StrategyInput(BaseModel):
     objective: str
     tree: AttackTreeSnapshot
     recent_observations: list[Observation] = Field(default_factory=list)
+    key_findings: list[str] = Field(default_factory=list)
     latest_execution: ExecutionResult | None = None
     last_reflection: str = ""
 
@@ -176,6 +177,7 @@ class ReflectionInput(BaseModel):
     objective: str
     tree: AttackTreeSnapshot
     recent_observations: list[Observation] = Field(default_factory=list)
+    key_findings: list[str] = Field(default_factory=list)
     latest_execution: ExecutionResult | None = None
     last_strategy: str = ""
 
@@ -221,5 +223,6 @@ class RunState(BaseModel):
     challenge: ChallengeSpec
     tree: AttackTreeSnapshot
     observations: list[Observation] = Field(default_factory=list)
+    key_findings: list[str] = Field(default_factory=list)
     submitted_flags: list[str] = Field(default_factory=list)
     rounds_completed: int = 0
