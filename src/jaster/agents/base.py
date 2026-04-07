@@ -219,6 +219,7 @@ def _normalize_node_patch(node: dict, *, role: str) -> dict:
         evidence = [str(evidence)]
     parent_key = str(node.get("parent_key") or node.get("parent_hint") or "")
     shared_refs = _string_list(node.get("shared_refs") or [])
+    key_findings = _string_list(node.get("key_findings") or [])
     return {
         "parent_key": parent_key,
         "title": str(node.get("title") or locator or kind),
@@ -231,6 +232,7 @@ def _normalize_node_patch(node: dict, *, role: str) -> dict:
         "evidence": _string_list(evidence),
         "status": status,
         "shared_refs": shared_refs,
+        "key_findings": key_findings,
     }
 
 
@@ -239,6 +241,7 @@ def _normalize_node_update(node: dict) -> dict:
     if status is not None:
         status = _NODE_STATUS_ALIASES.get(str(status).strip().lower(), str(status).strip().lower())
     shared_refs = _string_list(node.get("shared_refs") or []) if node.get("shared_refs") is not None else None
+    key_findings = _string_list(node.get("key_findings") or []) if node.get("key_findings") is not None else None
     return {
         "key": str(node.get("key") or node.get("node_key") or ""),
         "status": status,
@@ -250,6 +253,7 @@ def _normalize_node_update(node: dict) -> dict:
         "how": node.get("how"),
         "evidence": _string_list(node.get("evidence") or []) if node.get("evidence") is not None else None,
         "shared_refs": shared_refs,
+        "key_findings": key_findings,
     }
 
 

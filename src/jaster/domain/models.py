@@ -70,6 +70,7 @@ class TreeNodeSnapshot(BaseModel):
     priority: int = 0
     reason: str = ""
     shared_refs: list[str] = Field(default_factory=list)
+    key_findings: list[str] = Field(default_factory=list)
 
 
 class NodeInfo(BaseModel):
@@ -86,6 +87,7 @@ class NodeInfo(BaseModel):
     how: str = ""
     evidence: list[str] = Field(default_factory=list)
     shared_refs: list[str] = Field(default_factory=list)
+    key_findings: list[str] = Field(default_factory=list)
 
 
 class AttackTreeSnapshot(BaseModel):
@@ -109,6 +111,7 @@ class NodePatch(BaseModel):
     evidence: list[str] = Field(default_factory=list)
     status: NodeStatus = NodeStatus.unexplored
     shared_refs: list[str] = Field(default_factory=list)
+    key_findings: list[str] = Field(default_factory=list)
 
 
 class NodeUpdatePatch(BaseModel):
@@ -122,6 +125,7 @@ class NodeUpdatePatch(BaseModel):
     how: str | None = None
     evidence: list[str] | None = None
     shared_refs: list[str] | None = None
+    key_findings: list[str] | None = None
 
 
 class TreePatch(BaseModel):
@@ -153,7 +157,6 @@ class ReconInput(BaseModel):
     objective: str
     tree: AttackTreeSnapshot
     recent_observations: list[Observation] = Field(default_factory=list)
-    key_findings: list[str] = Field(default_factory=list)
     latest_execution: ExecutionResult | None = None
     available_skills: list[AvailableSkill] = Field(default_factory=list)
     latest_summary: str = ""
@@ -177,7 +180,6 @@ class StrategyInput(BaseModel):
     related_nodes: list[NodeInfo] = Field(default_factory=list)
     latest_summary: str = ""
     recent_observations: list[Observation] = Field(default_factory=list)
-    key_findings: list[str] = Field(default_factory=list)
     latest_execution: ExecutionResult | None = None
     available_skills: list[AvailableSkill] = Field(default_factory=list)
 
@@ -199,7 +201,6 @@ class ReflectionInput(BaseModel):
     objective: str
     tree: AttackTreeSnapshot
     recent_observations: list[Observation] = Field(default_factory=list)
-    key_findings: list[str] = Field(default_factory=list)
     latest_execution: ExecutionResult | None = None
     last_strategy: str = ""
     latest_summary: str = ""
@@ -245,6 +246,5 @@ class RunState(BaseModel):
     challenge: ChallengeSpec
     tree: AttackTreeSnapshot
     observations: list[Observation] = Field(default_factory=list)
-    key_findings: list[str] = Field(default_factory=list)
     submitted_flags: list[str] = Field(default_factory=list)
     rounds_completed: int = 0

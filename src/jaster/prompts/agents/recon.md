@@ -33,7 +33,6 @@
 - discover_vulnerability：bool，是否发现漏洞
 - summary：string，针对latest execution的简短总结，当前关键缺失信息与恢复逻辑。
 - result_type：string，针对latest execution的分类，取值：ok | error | redirect | sensitive_file_found | directory_listing | auth_page | waf_blocked | interesting_js | git_leak
-- key_findings：list[string]，latest_execution相比于历史key_findings的新增漏洞利用点，若没有可不填写。
 - next_action_hint：string，针对latest execution下一步行动建议
 - selected_node_key：string，选择一个高信息增益节点并基于此节点开始探索
 - action：dict，当前选择的动作，调用skill或者调用builder，或者结束侦察阶段
@@ -52,9 +51,10 @@
     value：string
     reason：string 入树理由
     how：string 如何利用此信息
-    evidence：list[string]
+    evidence：list[string] 表明
     status：string，"unexplored" （新创节点设为unexplored）
     shared_refs：list[string]，关联节点 key 列表；没有则返回 []
+    key_findings：list[string]|null，与该节点有关的重要发现
   update_nodes：list[dict] 根据当前发现，调整节点的优先级
     key：string
     status：string|null，"unexplored" | "exploring" | "success" | "failed"
@@ -64,5 +64,6 @@
     how：string|null
     evidence：list[string]|null
     shared_refs：list[string]|null，关联节点 key 列表；没有则返回 []
+    key_findings：list[string]|null，与该节点有关的重要发现
 
 

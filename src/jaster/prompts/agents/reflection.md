@@ -37,6 +37,7 @@
     how：string
     evidence：list[string]
     status：string，"unexplored" | "exploring" | "success" 
+    key_findings：list[string]|null，与该节点有关的重要发现
   update_nodes：list[dict]
     key：string
     status：string|null， "exploring" | "success" | "failed"
@@ -45,3 +46,4 @@
     reason：string|null
     how：string|null
     evidence：list[string]|null
+    key_findings：list[string]|null，与该节点有关的重要发现

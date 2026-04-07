@@ -7,7 +7,7 @@
 1. 推进攻击链阶段（如：初始访问 → 命令执行 → 权限提升 → 横向移动 → 目标数据/控制达成）
 2. 验证已发现弱点的可利用性，获取实质性系统控制或敏感数据访问权限
 3. 明确排除无效利用路径或确认防御机制（如 WAF/AV/权限隔离/网络策略），及时收敛测试面
-4. 当发现新的重要信息，可通过key_findings更新信息，每次最多2条，不得与已有key_findings重复。
+4. 当发现新的重要可利用信息，通过tree_patch.add_nodes将key_findings字段填入节点，表示在该节点上发现的重要线索
 
 ## 重要约束
 - 严格基于当前 exploitable point 展开渗透，每轮必须深度分析 `latest_execution` 结果，决策路径仅限以下四种（按优先级互斥）：
@@ -29,7 +29,6 @@
 
 ## 输出结构
 - summary：string，总结
-- key_findings：list[string]，新发现的漏洞利用点或关键线索，最多 2 条，不得与已有 key_findings 重复
 - need_recon：bool，是否需要探测新的信息
 - goal_reached：bool，目标是否已达成
 - next_action_hint：string，针对 latest_execution 的下一步行动建议
@@ -43,23 +42,25 @@
 - flag_candidates：list[string]，候选 Flag 列表；没有则返回 []
 - tree_patch：dict，你需要维护的全局树结构
   add_nodes：list[dict] 新节点，新节点的父节点会自动绑定为selected_node_key
-    title：string 记录“能力”，而非具体路径或参数
-    kind：string，"target" | "asset" | "entry" | "weakness" | "technique" | "hypothesis"
+    title：string 记录”能力”，而非具体路径或参数
+    kind：string，”target” | “asset” | “entry” | “weakness” | “technique” | “hypothesis”
     locator：string
     priority：int 0-100
     value：string
     reason：string 入树理由
     how：string 如何利用此信息
     evidence：list[string]
-    status：string，"unexplored" （新创节点设为unexplored）
+    status：string，”unexplored” （新创节点设为unexplored）
     shared_refs：list[string]，关联节点 key 列表；没有则返回 []
+    key_findings：list[string]，与该节点有关的重要发现
   update_nodes：list[dict] 若认为当前节点行不通，将状态设置为failed
     key：string
-    status：string|null， "failed"
+    status：string|null， “failed”
     priority：int|null 0-100
     value：string|null
+    key_findings：list[string]|null，在该节点上补充发现的可利用信息
     reason：string|null 更新理由
     how：string|null
     evidence：list[string]|null
-    shared_refs：list[string]|null，关联节点 key 列表；没有则返回 []
+    shared_refs：list[string]|null，与该节点有关的重要发现
 

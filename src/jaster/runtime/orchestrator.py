@@ -24,7 +24,6 @@ from jaster.domain import (
     StrategyOutput,
     SubmissionInput,
 )
-from jaster.domain.attack_tree import _merge_unique
 from jaster.domain.models import TreeNodeSnapshot, NodeInfo
 from pydantic import BaseModel, Field
 from jaster.runtime.builder import BuilderExecutor
@@ -173,7 +172,6 @@ class JasterOrchestrator:
                         objective=f"Recon the target {challenge.target} and expand the global attack tree.",
                         tree=tree.snapshot(),
                         recent_observations=state.observations[-20:],
-                        key_findings=state.key_findings,
                         latest_execution=execution,
                         available_skills=self.skill_catalog.list_available(),
                         latest_summary=strategy_summary,
@@ -192,7 +190,6 @@ class JasterOrchestrator:
                     f" | {latest_execution.summary or '(no summary)'}"
                 )
                 state.observations.append(_create_observation(phase_round, "recon", prev_execution, recon_out))
-                state.key_findings = _merge_unique(state.key_findings, recon_out.key_findings)
                 tree.merge_facts(_facts_from_execution(latest_execution))
                 state.tree = tree.snapshot()
                 self._append_phase_round(
@@ -237,7 +234,6 @@ class JasterOrchestrator:
                         objective="Reflect on the exploitable point found by recon, organize key findings, and provide strategic guidance.",
                         tree=tree.snapshot(),
                         recent_observations=state.observations[-20:],
-                        key_findings=state.key_findings,
                         latest_execution=latest_execution,
                         last_strategy=node_context.target_node.title if node_context else "",
                         latest_summary=recon_summary if _reflection_entry == "recon" else strategy_summary,
@@ -290,7 +286,6 @@ class JasterOrchestrator:
                     related_nodes=node_context.related_nodes,
                     latest_summary=reflection_summary,
                     recent_observations=state.observations[-20:],
-                    key_findings=state.key_findings,
                     latest_execution=execution,
                     available_skills=self.skill_catalog.list_available(),
                 ),
@@ -307,11 +302,6 @@ class JasterOrchestrator:
                 f" | {latest_execution.summary or '(no summary)'}"
             )
             state.observations.append(_create_observation(phase_round, "strategy", prev_execution, strategy_out))
-            # 最多取 2 条与已有 key_findings 不重复的新条目
-            new_keys = [k for k in strategy_out.key_findings if k and k not in state.key_findings][:2]
-            if new_keys:
-                self._log(f"    +key_findings: {new_keys}")
-            state.key_findings = _merge_unique(state.key_findings, new_keys)
             tree.merge_facts(_facts_from_execution(latest_execution))
 
             candidates = _merge_flag_candidates(strategy_out.flag_candidates, latest_execution.flag_candidates)
