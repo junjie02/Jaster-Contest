@@ -167,6 +167,7 @@ class ReconOutput(BaseModel):
     tree_patch: TreePatch = Field(default_factory=TreePatch)
     key_findings: list[str] = Field(default_factory=list)
     result_type: str = ""
+    next_action_hint: str = ""
 
 
 class StrategyInput(BaseModel):
