@@ -125,7 +125,7 @@
       }
     }
   ],
-  "summary": "使用 `hydra` 对 SSH、FTP、MySQL、RDP、SMB 等常见服务进行暴力破解或密码 spraying。HTTP表单爆破需使用完整URL格式。用户名字典：/home/painting/桌面/Jaster/skills/docs/username.txt；密码字典：/home/painting/桌面/Jaster/skills/docs/password.txt",
+  "summary": "使用 `hydra` 对 SSH、FTP、MySQL、RDP、SMB 等常见服务进行暴力破解或密码 spraying。HTTP表单爆破需使用完整URL格式。用户名字典：/home/painting/桌面/Jaster/skills/docs/username.txt；密码字典：/home/painting/桌面/Jaster/skills/docs/password.txt。示例：hydra -L username.txt -P password.txt target.com http-post-form ‘/api/login:username=^USER^&password=^PASS^:错误密码|用户名不存在’ -V -t 4 -w 10",
   "use_when": "已确认目标开放了 SSH/FTP/MySQL/RDP/SMB 等服务，需要获取有效凭据。 HTTP 表单爆破适用于已知登录入口且知道失败关键词的场景。当前字典十分轻量，高信息增益",
   "command_mode": "argv"
 }

@@ -17,11 +17,10 @@
   4. 环境可控/有明确下一步 → 继续利用
 - 严禁在未验证连通性的情况下直接尝试高风险提权或横向移动。
 
-## 决策逻辑（互斥优先级：goal_reached > need_recon > need_reflection > 继续）
+## 决策逻辑（互斥优先级：goal_reached > need_recon > 继续）
 - 若 flag 找到：设置 goal_reached=true，在 final_flag 字段提交完整 flag
 - 若当前渗透缺少部分信息（如完整源码、资产拓扑、新弱点、凭据）：设置 need_recon=true，summary 说明具体需求
-- 若当前节点连续 2 次以上失败，且确认无渗透空间：设置 need_reflection=true，summary 明确失败归因与备选思路吗，通过update将节点设置为failed。
-- 若可继续利用：need_recon=false, need_reflection=false, goal_reached=false
+- 若可继续利用：need_recon=false, goal_reached=false
 
 ## skill与builder调用规范
 - 若一次skill调用即可完成当前任务，优先使用现成skill，设置kind为skill，并构造skill_name和skill_args。skill不允许多条命令，即便是system command也不允许用 && 拼接命令。
@@ -32,7 +31,6 @@
 - summary：string，总结
 - key_findings：list[string]，新发现的漏洞利用点或关键线索，最多 2 条，不得与已有 key_findings 重复
 - need_recon：bool，是否需要探测新的信息
-- need_reflection：bool，是否需要调整思路
 - goal_reached：bool，目标是否已达成
 - next_action_hint：string，针对 latest_execution 的下一步行动建议
 - action：dict，当前动作

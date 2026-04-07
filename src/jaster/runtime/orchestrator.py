@@ -222,7 +222,7 @@ class JasterOrchestrator:
                 if phase_round > 0 and phase_round % 5 == 0:
                     self._log(f"[*] Periodic reflection: round {phase_round}")
                     recon_summary = recon_out.summary
-                    _reflection_entry = "periodic"
+                    _reflection_entry = "recon"
                     next_phase = "reflection"
                     continue
 
@@ -249,7 +249,7 @@ class JasterOrchestrator:
                 tree.apply_patch(reflection_out.tree_patch)
                 state.tree = tree.snapshot()
                 # 用 reflection 的 next_focus_key 更新 node_context
-                if reflection_out.next_focus_key and node_context:
+                if reflection_out.next_focus_key:
                     try:
                         node_context = _resolve_node_context(tree, reflection_out.next_focus_key)
                     except ValueError:
@@ -266,7 +266,10 @@ class JasterOrchestrator:
                 state.rounds_completed = phase_round
                 self.store.save_state(state)
                 self._notify_tree_update(state.tree)
-                next_phase = "strategy"
+                if _reflection_entry == "recon":
+                    next_phase = "strategy" if recon_out.discover_vulnerability else "recon"
+                else:
+                    next_phase = "recon" if strategy_out.need_recon else "strategy"
                 continue
 
             if next_phase != "strategy":
@@ -369,27 +372,11 @@ class JasterOrchestrator:
                 next_phase = "recon"
                 continue
 
-            if strategy_out.need_reflection:
-                self._log("[*] Strategy requests reflection (drift correction)")
-                strategy_summary = strategy_out.summary
-                if strategy_out.selected_node_key:
-                    from jaster.domain.models import NodeUpdatePatch, TreePatch, NodeStatus
-                    failed_patch = TreePatch(
-                        update_nodes=[NodeUpdatePatch(
-                            key=strategy_out.selected_node_key,
-                            status=NodeStatus.failed
-                        )]
-                    )
-                    tree.apply_patch(failed_patch)
-                    state.tree = tree.snapshot()
-                _reflection_entry = "strategy"
-                next_phase = "reflection"
-                continue
-
             # 每 5 轮强制 Reflection，对当前渗透方向做阶段性思考
             if phase_round > 0 and phase_round % 5 == 0:
                 self._log(f"[*] Periodic reflection: round {phase_round}")
                 strategy_summary = strategy_out.summary
+                _reflection_entry = "strategy"
                 next_phase = "reflection"
                 continue
 
