@@ -49,6 +49,18 @@ def _data_dir(root: Path) -> Path:
     return path if path.is_absolute() else root / path
 
 
+def _run_summary(state: object, root: Path) -> dict[str, object]:
+    run_id = getattr(state, "run_id")
+    rounds_completed = getattr(state, "rounds_completed")
+    submitted_flags = list(getattr(state, "submitted_flags"))
+    return {
+        "run_id": run_id,
+        "rounds_completed": rounds_completed,
+        "submitted_flags": submitted_flags,
+        "run_dir": str(_data_dir(root) / "runs" / run_id),
+    }
+
+
 @app.command()
 def run(
     target: str = typer.Option(...),
@@ -56,6 +68,7 @@ def run(
     zone: str = typer.Option("", help="Zone override"),
     target_type: str = typer.Option("", help="http or tcp"),
     max_rounds: int = typer.Option(env_int("JASTER_MAX_ROUNDS", 12)),
+    json_output: bool = typer.Option(False, "--json", help="Print the full final run state as JSON"),
 ) -> None:
     root = _project_root()
     challenge = ChallengeSpec(
@@ -83,7 +96,8 @@ def run(
         on_tree_update=_post_tree_update,
     )
     state = orchestrator.run(challenge, max_rounds=max_rounds)
-    typer.echo(json.dumps(state.model_dump(), ensure_ascii=False, indent=2))
+    payload = state.model_dump() if json_output else _run_summary(state, root)
+    typer.echo(json.dumps(payload, ensure_ascii=False, indent=2))
 
 
 @app.command()

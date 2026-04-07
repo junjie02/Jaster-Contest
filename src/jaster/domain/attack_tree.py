@@ -30,9 +30,12 @@ class AttackTree:
             key=_stable_key("", "target", target, title or target),
             title=title or target,
             kind="target",
+            locator=target,
             status=NodeStatus.exploring,
             priority=100,
+            value="Initial target provided by challenge spec",
             reason="Run bootstrap",
+            how="Start with low-cost fingerprinting and entry-point discovery",
         )
         return cls(AttackTreeSnapshot(nodes=[root]))
 
@@ -80,8 +83,16 @@ class AttackTree:
             if key in self._nodes:
                 node = self._nodes[key]
                 node.priority = max(node.priority, node_patch.priority)
+                if node_patch.locator:
+                    node.locator = node_patch.locator
+                if node_patch.value:
+                    node.value = node_patch.value
                 if node_patch.reason:
                     node.reason = node_patch.reason
+                if node_patch.how:
+                    node.how = node_patch.how
+                if node_patch.evidence:
+                    node.evidence = _merge_unique(node.evidence, node_patch.evidence)
                 if node_patch.status:
                     node.status = node_patch.status
                 # 合并 shared_refs（已有节点也要更新关联），排除 parent_key
@@ -89,6 +100,8 @@ class AttackTree:
                     for ref_key in node_patch.shared_refs:
                         if ref_key and ref_key not in node.shared_refs and ref_key != node_patch.parent_key:
                             node.shared_refs.append(ref_key)
+                if node_patch.key_findings:
+                    node.key_findings = _merge_unique(node.key_findings, node_patch.key_findings)
                 continue
             # 过滤掉 parent_key，避免父子关系出现在 shared_refs
             filtered_refs = [r for r in node_patch.shared_refs if r and r != node_patch.parent_key]
@@ -97,10 +110,15 @@ class AttackTree:
                 parent_key=node_patch.parent_key,
                 title=node_patch.title,
                 kind=node_patch.kind,
+                locator=node_patch.locator,
                 priority=node_patch.priority,
+                value=node_patch.value,
                 reason=node_patch.reason,
+                how=node_patch.how,
+                evidence=list(node_patch.evidence),
                 status=node_patch.status,
                 shared_refs=list(filtered_refs),
+                key_findings=list(node_patch.key_findings),
             )
             if filtered_refs:
                 new_node_refs[key] = filtered_refs
@@ -125,8 +143,16 @@ class AttackTree:
                         del self._nodes[descendant_key]
             if update.priority is not None:
                 node.priority = update.priority
+            if update.value is not None:
+                node.value = update.value
             if update.reason is not None:
                 node.reason = update.reason
+            if update.how is not None:
+                node.how = update.how
+            if update.evidence is not None:
+                node.evidence = _merge_unique(node.evidence, update.evidence)
+            if update.key_findings is not None:
+                node.key_findings = _merge_unique(node.key_findings, update.key_findings)
             # 处理 shared_refs 更新（合并而非替换）
             if update.shared_refs is not None:
                 for ref_key in update.shared_refs:
@@ -150,4 +176,3 @@ def _merge_unique(left: list[str], right: list[str]) -> list[str]:
         if item and item not in seen:
             seen.append(item)
     return seen
-

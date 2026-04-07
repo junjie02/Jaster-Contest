@@ -66,9 +66,13 @@ class TreeNodeSnapshot(BaseModel):
     parent_key: str = ""
     title: str
     kind: NodeKind
+    locator: str = ""
     status: NodeStatus = NodeStatus.unexplored
     priority: int = 0
+    value: str = ""
     reason: str = ""
+    how: str = ""
+    evidence: list[str] = Field(default_factory=list)
     shared_refs: list[str] = Field(default_factory=list)
     key_findings: list[str] = Field(default_factory=list)
 

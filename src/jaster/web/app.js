@@ -254,7 +254,12 @@ function showTooltip(event, node) {
     ["kind", node.kind],
     ["status", node.status],
     ["priority", node.priority],
+    ["locator", node.locator],
+    ["value", node.value],
     ["reason", node.reason],
+    ["how", node.how],
+    ["evidence", Array.isArray(node.evidence) ? node.evidence.join(" | ") : node.evidence],
+    ["key_findings", Array.isArray(node.key_findings) ? node.key_findings.join(" | ") : node.key_findings],
   ].filter(([, value]) => value);
 
   tooltip.innerHTML = fields

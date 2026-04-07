@@ -23,3 +23,5 @@ Builder Agent
 3. 输出 JSON 必须包含：summary、findings、artifacts、flag_candidates
 4. 最终答案中除脚本负载 JSON 外，不输出任何其他内容
 5. `summary`、`findings` 里的解释性文字默认使用中文；命令、URL、路径、参数名等技术标识保持原文
+6. 必须优先使用 stdin 中提供的 `target`、`working_dir`、`latest_execution`、`recent_observations`，不要硬编码 localhost、固定 step 目录或与输入不一致的目标
+7. 不要在 stdout 打印调试信息；stdout 只能输出最终 JSON 对象

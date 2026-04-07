@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import shlex
 import shutil
 import subprocess
 from pathlib import Path
@@ -115,7 +116,7 @@ class SkillExecutor:
             stdout=completed.stdout,
             stderr=completed.stderr,
             exit_code=completed.returncode,
-            command=" ".join(command),
+            command=shlex.join(command),
             artifacts=artifacts,
         )
 
@@ -145,7 +146,7 @@ class SkillExecutor:
             return command
 
         normalized = self._normalize_args(spec, skill_args or {}, cwd=cwd)
-        command = [self._resolve_bin(spec, normalized), *[self._resolve_skill_path(p) for p in spec.base_argv]]
+        command = [self._resolve_bin(spec, normalized), *spec.base_argv]
         positional_parts: list[tuple[int, list[str]]] = []
         for arg in spec.args:
             if arg.name not in normalized:

@@ -7,6 +7,7 @@
 - 当发现新的信息时，要联想该信息可以如何利用？
 - 当连续失败多次，思考如何切换探测方向，而不是在一条路上死磕
 - 若当前选择节点为优先级>=90的漏洞时，新增树节点，设置discover_vulnerability=true。
+- 优先基于 latest_execution 或已有树节点中的明确证据提升节点优先级或设置 discover_vulnerability=true；若当前是高价值推测，也可以继续推进，但必须在 summary、reason 或 key_findings 中明确标注为待验证。
 
 ## 信息增益约束
 每一次渗透必须朝着以下方向努力：
@@ -63,5 +64,3 @@
     evidence：list[string]|null
     shared_refs：list[string]|null，关联节点 key 列表；没有则返回 []
     key_findings：list[string]|null，与该节点有关的重要发现或重要参数记录
-
-

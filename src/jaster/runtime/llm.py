@@ -5,6 +5,7 @@ import os
 from typing import Any
 
 import httpx
+from jaster.runtime.json_extract import extract_json_object
 
 
 class LLMError(RuntimeError):
@@ -102,22 +103,10 @@ def _env_float(name: str, default: float) -> float:
 
 
 def _extract_json(text: Any) -> dict[str, Any]:
-    if isinstance(text, list):
-        rendered = "\n".join(
-            item.get("text", "") if isinstance(item, dict) else str(item)
-            for item in text
-        )
-    else:
-        rendered = str(text)
-    rendered = rendered.strip()
     try:
-        return json.loads(rendered)
-    except json.JSONDecodeError:
-        start = rendered.find("{")
-        end = rendered.rfind("}")
-        if start == -1 or end == -1 or end <= start:
-            raise LLMError("LLM did not return JSON", stage="json_extract", raw_text=rendered)
-        try:
-            return json.loads(rendered[start : end + 1])
-        except json.JSONDecodeError as exc:
-            raise LLMError("LLM returned invalid JSON", stage="json_extract", raw_text=rendered) from exc
+        return extract_json_object(text)
+    except ValueError:
+        rendered = str(text).strip()
+        if "{" not in rendered or "}" not in rendered:
+            raise LLMError("LLM did not return JSON", stage="json_extract", raw_text=rendered) from None
+        raise LLMError("LLM returned invalid JSON", stage="json_extract", raw_text=rendered) from None

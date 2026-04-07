@@ -11,6 +11,7 @@ from jaster.domain import (
     ActionPlan,
     ArtifactRef,
     AttackTree,
+    AttackTreeSnapshot,
     BuilderInput,
     ChallengeSpec,
     ExecutionResult,
@@ -47,14 +48,15 @@ def _tree_node_to_info(node: TreeNodeSnapshot) -> NodeInfo:
         parent_key=node.parent_key,
         title=node.title,
         kind=node.kind,
-        locator="",
+        locator=node.locator,
         status=node.status,
         priority=node.priority,
-        value="",
+        value=node.value,
         reason=node.reason,
-        how="",
-        evidence=[],
+        how=node.how,
+        evidence=list(node.evidence),
         shared_refs=list(node.shared_refs),
+        key_findings=list(node.key_findings),
     )
 
 
@@ -147,8 +149,8 @@ class JasterOrchestrator:
             )
             latest_execution = ExecutionResult(
                 success=result.returncode == 0,
-                summary=result.stdout[:2000] if result.stdout else "",
-                findings=[result.stdout[:5000]] if result.stdout else [],
+                summary="Initial HTTP response captured" if result.stdout else "",
+                findings=[],
                 stdout=result.stdout,
                 stderr=result.stderr,
                 exit_code=result.returncode,
@@ -170,9 +172,9 @@ class JasterOrchestrator:
                     latest_execution=prev_execution,
                     payload_factory=lambda execution: ReconInput(
                         objective=f"Recon the target {challenge.target} and expand the global attack tree.",
-                        tree=tree.snapshot(),
-                        recent_observations=state.observations[-50:],
-                        latest_execution=execution,
+                        tree=_prompt_tree_snapshot(tree.snapshot()),
+                        recent_observations=_compact_observations(state.observations[-50:]),
+                        latest_execution=_compact_execution(execution),
                         available_skills=self.skill_catalog.list_available(),
                         latest_summary=strategy_summary,
                     ),
@@ -189,7 +191,7 @@ class JasterOrchestrator:
                     f"    Result: {'OK' if latest_execution.success else 'FAIL'}"
                     f" | {latest_execution.summary or '(no summary)'}"
                 )
-                state.observations.append(_create_observation(phase_round, "recon", prev_execution, recon_out))
+                state.observations.append(_create_observation(phase_round, "recon", latest_execution, recon_out))
                 tree.merge_facts(_facts_from_execution(latest_execution))
                 state.tree = tree.snapshot()
                 self._append_phase_round(
@@ -232,9 +234,9 @@ class JasterOrchestrator:
                     challenge.zone,
                     ReflectionInput(
                         objective="Reflect on the exploitable point found by recon, organize key findings, and provide strategic guidance.",
-                        tree=tree.snapshot(),
-                        recent_observations=state.observations[-50:],
-                        latest_execution=latest_execution,
+                        tree=_prompt_tree_snapshot(tree.snapshot()),
+                        recent_observations=_compact_observations(state.observations[-50:]),
+                        latest_execution=_compact_execution(latest_execution),
                         last_strategy=node_context.target_node.title if node_context else "",
                         latest_summary=recon_summary if _reflection_entry == "recon" else strategy_summary,
                     ),
@@ -285,8 +287,8 @@ class JasterOrchestrator:
                     path_to_root=node_context.path_to_root,
                     related_nodes=node_context.related_nodes,
                     latest_summary=reflection_summary,
-                    recent_observations=state.observations[-50:],
-                    latest_execution=execution,
+                    recent_observations=_compact_observations(state.observations[-50:]),
+                    latest_execution=_compact_execution(execution),
                     available_skills=self.skill_catalog.list_available(),
                 ),
                 label=f"Round {phase_round}: strategy",
@@ -301,7 +303,7 @@ class JasterOrchestrator:
                 f"    Execution: {'OK' if latest_execution.success else 'FAIL'}"
                 f" | {latest_execution.summary or '(no summary)'}"
             )
-            state.observations.append(_create_observation(phase_round, "strategy", prev_execution, strategy_out))
+            state.observations.append(_create_observation(phase_round, "strategy", latest_execution, strategy_out))
             tree.merge_facts(_facts_from_execution(latest_execution))
 
             candidates = _merge_flag_candidates(strategy_out.flag_candidates, latest_execution.flag_candidates)
@@ -313,7 +315,7 @@ class JasterOrchestrator:
                     challenge.zone,
                     SubmissionInput(
                         candidates=candidates,
-                        recent_observations=state.observations[-50:],
+                        recent_observations=_compact_observations(state.observations[-50:]),
                         submitted_flags=state.submitted_flags,
                     ),
                 )
@@ -559,6 +561,49 @@ def _facts_from_execution(result: ExecutionResult) -> GlobalFacts:
         flags=result.flag_candidates,
         credentials=credentials,
         artifacts=artifacts,
+    )
+
+
+def _truncate_text(value: str, limit: int) -> str:
+    rendered = value.strip()
+    if len(rendered) <= limit:
+        return rendered
+    return rendered[: limit - 3] + "..."
+
+
+def _compact_observations(observations: list[Observation], *, limit: int = 50) -> list[Observation]:
+    return [item.model_copy() for item in observations[-limit:]]
+
+
+def _compact_execution(execution: ExecutionResult | None) -> ExecutionResult | None:
+    if execution is None:
+        return None
+    if not execution.source and execution.command.startswith("curl -s -L "):
+        return execution.model_copy(deep=True)
+    return ExecutionResult(
+        success=execution.success,
+        summary=_truncate_text(execution.summary, 240),
+        findings=[_truncate_text(item, 200) for item in execution.findings[:8]],
+        flag_candidates=list(execution.flag_candidates),
+        artifacts=execution.artifacts[:3],
+        stdout=_truncate_text(execution.stdout, 600),
+        stderr=_truncate_text(execution.stderr, 600),
+        exit_code=execution.exit_code,
+        command=_truncate_text(execution.command, 200),
+        script_path=execution.script_path,
+        source=execution.source,
+    )
+
+
+def _prompt_tree_snapshot(snapshot: AttackTreeSnapshot) -> AttackTreeSnapshot:
+    return AttackTreeSnapshot(
+        nodes=list(snapshot.nodes),
+        facts=GlobalFacts(
+            flags=list(snapshot.facts.flags),
+            credentials=list(snapshot.facts.credentials),
+            services=list(snapshot.facts.services),
+            artifacts=list(snapshot.facts.artifacts[-8:]),
+        ),
     )
 
 

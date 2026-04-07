@@ -1,9 +1,13 @@
 from pathlib import Path
 import json
+from types import SimpleNamespace
 
 from jaster.domain import (
     ActionPlan,
+    ArtifactRef,
     ChallengeSpec,
+    ExecutionResult,
+    Observation,
     ReconOutput,
     ReflectionOutput,
     StrategyOutput,
@@ -12,7 +16,7 @@ from jaster.domain import (
 )
 from jaster.domain.attack_tree import AttackTree
 from jaster.domain.models import BuilderOutput
-from jaster.runtime.orchestrator import JasterOrchestrator
+from jaster.runtime.orchestrator import JasterOrchestrator, _compact_observations
 from jaster.storage.files import FileRunStore
 
 
@@ -269,3 +273,118 @@ def test_orchestrator_uses_shared_round_budget_and_keeps_chronological_logs(tmp_
         "recon_round_4",
     ]
     assert state.rounds_completed == 4
+
+
+def test_orchestrator_compacts_prompt_payload_and_records_current_execution(tmp_path: Path) -> None:
+    orchestrator = _make_orchestrator(tmp_path)
+    target_key = AttackTree.bootstrap("http://target").snapshot().nodes[0].key
+
+    class CapturingReconAgent(FakeAgent):
+        def __init__(self, outputs):
+            super().__init__(outputs)
+            self.payloads = []
+
+        def run(self, zone, payload):
+            self.payloads.append(payload)
+            return super().run(zone, payload)
+
+    recon = CapturingReconAgent(
+        [
+            ReconOutput(
+                summary="Recon found useful data",
+                discover_vulnerability=False,
+                selected_node_key=target_key,
+                result_type="ok",
+                next_action_hint="continue probing",
+                action=ActionPlan(kind="finish", goal="recon done"),
+                tree_patch=TreePatch(),
+            )
+        ]
+    )
+    orchestrator.agents = {"recon": recon}
+
+    long_command = "curl " + ("a" * 220)
+    long_stdout = "b" * 800
+
+    def fake_execute_action(**_: object) -> ExecutionResult:
+        return ExecutionResult(
+            success=True,
+            summary="ok",
+            findings=[f"finding-{idx}" for idx in range(10)],
+            artifacts=[ArtifactRef(kind="file", path=f"/tmp/{idx}.txt") for idx in range(5)],
+            stdout=long_stdout,
+            exit_code=0,
+            command=long_command,
+        )
+
+    orchestrator._execute_action = fake_execute_action  # type: ignore[assignment]
+
+    challenge = ChallengeSpec(target="http://target", zone="zone1")
+    state = orchestrator.run(challenge, max_rounds=1)
+
+    assert state.observations[0].command == long_command
+    payload = recon.payloads[0]
+    assert payload.tree.facts.artifacts == []
+    assert payload.recent_observations == []
+
+
+def test_compact_observations_keeps_last_fifty_items() -> None:
+    observations = [
+        {
+            "round": idx,
+            "source": "recon",
+            "command": f"cmd-{idx}",
+            "result_type": "ok",
+            "summary": f"summary-{idx}",
+            "next_action_hint": f"hint-{idx}",
+        }
+        for idx in range(60)
+    ]
+
+    compacted = _compact_observations([Observation.model_validate(item) for item in observations])
+
+    assert len(compacted) == 50
+    assert compacted[0].round == 10
+    assert compacted[-1].round == 59
+
+
+def test_initial_http_curl_keeps_full_response_body(monkeypatch, tmp_path: Path) -> None:
+    orchestrator = _make_orchestrator(tmp_path)
+    target_key = AttackTree.bootstrap("http://target").snapshot().nodes[0].key
+
+    class CapturingReconAgent(FakeAgent):
+        def __init__(self, outputs):
+            super().__init__(outputs)
+            self.payloads = []
+
+        def run(self, zone, payload):
+            self.payloads.append(payload)
+            return super().run(zone, payload)
+
+    recon = CapturingReconAgent(
+        [
+            ReconOutput(
+                summary="done",
+                discover_vulnerability=False,
+                selected_node_key=target_key,
+                action=ActionPlan(kind="finish", goal="stop"),
+                tree_patch=TreePatch(),
+            )
+        ]
+    )
+    orchestrator.agents = {"recon": recon}
+    body = "A" * 9000
+
+    monkeypatch.setattr(
+        "subprocess.run",
+        lambda *args, **kwargs: SimpleNamespace(returncode=0, stdout=body, stderr=""),
+    )
+
+    challenge = ChallengeSpec(target="http://target", zone="zone1")
+    orchestrator.run(challenge, max_rounds=1)
+
+    latest_execution = recon.payloads[0].latest_execution
+    assert latest_execution is not None
+    assert latest_execution.summary == "Initial HTTP response captured"
+    assert latest_execution.findings == []
+    assert latest_execution.stdout == body

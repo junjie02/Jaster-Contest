@@ -6,6 +6,7 @@ import sys
 from pathlib import Path
 
 from jaster.domain import ArtifactRef, BuilderOutput, ExecutionResult, Observation
+from jaster.runtime.json_extract import extract_json_object
 
 
 class BuilderExecutor:
@@ -40,17 +41,27 @@ class BuilderExecutor:
             cwd=working_dir,
         )
         try:
-            output = json.loads(completed.stdout) if completed.stdout.strip() else {}
-        except json.JSONDecodeError:
+            output = extract_json_object(completed.stdout) if completed.stdout.strip() else {}
+        except ValueError:
             output = {}
+        output_artifacts = [
+            ArtifactRef.model_validate(item)
+            for item in output.get("artifacts", [])
+            if isinstance(item, dict)
+        ]
         return ExecutionResult(
             success=completed.returncode == 0,
             summary=str(output.get("summary") or builder_output.summary),
             findings=[str(item) for item in output.get("findings", []) if str(item).strip()],
             flag_candidates=[str(item) for item in output.get("flag_candidates", []) if str(item).strip()],
-            artifacts=[ArtifactRef(kind="work_dir", path=str(working_dir)), ArtifactRef(kind="script", path=str(script_path))],
+            artifacts=[
+                ArtifactRef(kind="work_dir", path=str(working_dir)),
+                ArtifactRef(kind="script", path=str(script_path)),
+                *output_artifacts,
+            ],
             stdout=completed.stdout,
             stderr=completed.stderr,
             exit_code=completed.returncode,
+            command=f"{sys.executable} {script_path}",
             script_path=str(script_path),
         )
