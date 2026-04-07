@@ -166,12 +166,12 @@ class JasterOrchestrator:
                     zone=challenge.zone,
                     challenge=challenge,
                     run_id=run_id,
-                    observations=state.observations[-6:],
+                    observations=state.observations[-20:],
                     latest_execution=prev_execution,
                     payload_factory=lambda execution: ReconInput(
                         objective=f"Recon the target {challenge.target} and expand the global attack tree.",
                         tree=tree.snapshot(),
-                        recent_observations=state.observations[-6:],
+                        recent_observations=state.observations[-20:],
                         key_findings=state.key_findings,
                         latest_execution=execution,
                         available_skills=self.skill_catalog.list_available(),
@@ -232,7 +232,7 @@ class JasterOrchestrator:
                     ReflectionInput(
                         objective="Reflect on the exploitable point found by recon, organize key findings, and provide strategic guidance.",
                         tree=tree.snapshot(),
-                        recent_observations=state.observations[-8:],
+                        recent_observations=state.observations[-20:],
                         key_findings=state.key_findings,
                         latest_execution=latest_execution,
                         last_strategy=node_context.target_node.title if node_context else "",
@@ -268,7 +268,7 @@ class JasterOrchestrator:
                 zone=challenge.zone,
                 challenge=challenge,
                 run_id=run_id,
-                observations=state.observations[-8:],
+                observations=state.observations[-20:],
                 latest_execution=prev_execution,
                 payload_factory=lambda execution: StrategyInput(
                     objective=f"Exploit the target {challenge.target} and capture the flag.",
@@ -276,7 +276,7 @@ class JasterOrchestrator:
                     path_to_root=node_context.path_to_root,
                     related_nodes=node_context.related_nodes,
                     latest_summary=reflection_summary,
-                    recent_observations=state.observations[-8:],
+                    recent_observations=state.observations[-20:],
                     key_findings=state.key_findings,
                     latest_execution=execution,
                     available_skills=self.skill_catalog.list_available(),
@@ -306,7 +306,7 @@ class JasterOrchestrator:
                     challenge.zone,
                     SubmissionInput(
                         candidates=candidates,
-                        recent_observations=state.observations[-5:],
+                        recent_observations=state.observations[-20:],
                         submitted_flags=state.submitted_flags,
                     ),
                 )
