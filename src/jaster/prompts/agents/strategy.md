@@ -7,6 +7,7 @@
 1. 推进攻击链阶段（如：初始访问 → 命令执行 → 权限提升 → 横向移动 → 目标数据/控制达成）
 2. 验证已发现弱点的可利用性，获取实质性系统控制或敏感数据访问权限
 3. 明确排除无效利用路径或确认防御机制（如 WAF/AV/权限隔离/网络策略），及时收敛测试面
+4. 当发现新的重要信息，可通过key_findings更新信息，每次最多2条，不得与已有key_findings重复。
 
 ## 重要约束
 - 严格基于当前 exploitable point 展开渗透，每轮必须深度分析 `latest_execution` 结果，决策路径仅限以下四种（按优先级互斥）：
@@ -18,8 +19,8 @@
 
 ## 决策逻辑（互斥优先级：goal_reached > need_recon > need_reflection > 继续）
 - 若 flag 找到：设置 goal_reached=true，在 final_flag 字段提交完整 flag
-- 若当前渗透需要更多信息（如完整资产拓扑、新弱点、凭据）：设置 need_recon=true，summary 说明具体需求
-- 若当前节点连续 2 次以上失败，且确认无环境适配/绕过空间：设置 need_reflection=true，summary 明确失败归因与备选思路
+- 若当前渗透缺少部分信息（如完整源码、资产拓扑、新弱点、凭据）：设置 need_recon=true，summary 说明具体需求
+- 若当前节点连续 2 次以上失败，且确认无渗透空间：设置 need_reflection=true，summary 明确失败归因与备选思路吗，通过update将节点设置为failed。
 - 若可继续利用：need_recon=false, need_reflection=false, goal_reached=false
 
 ## skill与builder调用规范
@@ -29,6 +30,7 @@
 
 ## 输出结构
 - summary：string，总结
+- key_findings：list[string]，新发现的漏洞利用点或关键线索，最多 2 条，不得与已有 key_findings 重复
 - need_recon：bool，是否需要探测新的信息
 - need_reflection：bool，是否需要调整思路
 - goal_reached：bool，目标是否已达成
@@ -41,4 +43,25 @@
   skill_args：dict
   builder_task：string|null
 - flag_candidates：list[string]，候选 Flag 列表；没有则返回 []
+- tree_patch：dict，你需要维护的全局树结构
+  add_nodes：list[dict] 新节点，新节点的父节点会自动绑定为selected_node_key
+    title：string 记录“能力”，而非具体路径或参数
+    kind：string，"target" | "asset" | "entry" | "weakness" | "technique" | "hypothesis"
+    locator：string
+    priority：int 0-100
+    value：string
+    reason：string 入树理由
+    how：string 如何利用此信息
+    evidence：list[string]
+    status：string，"unexplored" （新创节点设为unexplored）
+    shared_refs：list[string]，关联节点 key 列表；没有则返回 []
+  update_nodes：list[dict] 若认为当前节点行不通，将状态设置为failed
+    key：string
+    status：string|null， "failed"
+    priority：int|null 0-100
+    value：string|null
+    reason：string|null 更新理由
+    how：string|null
+    evidence：list[string]|null
+    shared_refs：list[string]|null，关联节点 key 列表；没有则返回 []
 

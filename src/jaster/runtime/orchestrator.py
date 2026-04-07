@@ -290,7 +290,11 @@ class JasterOrchestrator:
                 f" | {latest_execution.summary or '(no summary)'}"
             )
             state.observations.append(_create_observation(phase_round, "strategy", prev_execution, strategy_out))
-            state.key_findings = _merge_unique(state.key_findings, strategy_out.key_findings)
+            # 最多取 2 条与已有 key_findings 不重复的新条目
+            new_keys = [k for k in strategy_out.key_findings if k and k not in state.key_findings][:2]
+            if new_keys:
+                self._log(f"    +key_findings: {new_keys}")
+            state.key_findings = _merge_unique(state.key_findings, new_keys)
             tree.merge_facts(_facts_from_execution(latest_execution))
 
             candidates = _merge_flag_candidates(strategy_out.flag_candidates, latest_execution.flag_candidates)
