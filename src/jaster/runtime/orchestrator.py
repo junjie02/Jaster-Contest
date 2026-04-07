@@ -187,11 +187,6 @@ class JasterOrchestrator:
                 )
                 tree.apply_patch(recon_out.tree_patch)
 
-                nodes_by_key = {node.key: node for node in tree.snapshot().nodes}
-                selected_node = nodes_by_key.get(recon_out.selected_node_key)
-                if selected_node and selected_node.priority >= 95 and selected_node.parent_key:
-                    recon_out.discover_vulnerability = True
-
                 self._log(
                     f"    Result: {'OK' if latest_execution.success else 'FAIL'}"
                     f" | {latest_execution.summary or '(no summary)'}"
