@@ -6,7 +6,7 @@
 - latest_summary：string，上一轮 strategy 的 summary（当 need_recon 跳回 recon 时）
 
 ## 目标
-- 分析树结构，选择一个高信息增益的节点，基于此节点朝着**信息增益最高的方向**进行探测
+- 分析树结构，选择一个高信息增益的节点，基于此节点朝着**信息增益最高且信息最完整的方向**进行探测
 - 若当前选择节点为优先级>=90的漏洞时，新增树节点，设置discover_vulnerability=true，并直接输出该字段。
 
 ## 信息增益约束
@@ -14,6 +14,7 @@
 1. 获得新的资产信息
 2. 获得新的弱点证据
 3. 明确排除一类负信息
+4. 若当前获取的信息存在截断、乱码、语法断裂或逻辑不完整，必须优先执行“完整性恢复”，不得直接跳过或切换目标。信息完整性本身即视为高信息增益。
 
 ## 攻击树规则
 - 仅使用事实性节点
@@ -28,11 +29,11 @@
 
 ## 输出结构
 - discover_vulnerability：bool，是否发现漏洞
-- summary：string，针对latest execution的简短总结
+- summary：string，针对latest execution的简短总结，当前关键缺失信息与恢复逻辑。
 - result_type：string，针对latest execution的分类，取值：ok | error | redirect | sensitive_file_found | directory_listing | auth_page | waf_blocked | interesting_js | git_leak
 - key_findings：list[string]，latest_execution相比于历史key_findings的新增漏洞利用点，若没有可不填写。
 - next_action_hint：string，针对latest execution下一步行动建议
-- selected_node_key：string，选择一个节点并基于此节点开始探索
+- selected_node_key：string，选择一个高信息增益节点并基于此节点开始探索
 - action：dict，当前选择的动作，调用skill或者调用builder，或者结束侦察阶段
   kind：string，"skill" | "builder" | "finish"
   goal：string

@@ -551,6 +551,7 @@ def _create_observation(
         command=result.command if result else "",
         result_type=agent_output.result_type,
         summary=agent_output.summary,
+        next_action_hint=agent_output.next_action_hint,
     )
 
 
