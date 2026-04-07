@@ -142,7 +142,7 @@ class SkillExecutor:
             return command
 
         normalized = self._normalize_args(spec, skill_args or {}, cwd=cwd)
-        command = [self._resolve_bin(spec, normalized), *spec.base_argv]
+        command = [self._resolve_bin(spec, normalized), *[self._resolve_skill_path(p) for p in spec.base_argv]]
         positional_parts: list[tuple[int, list[str]]] = []
         for arg in spec.args:
             if arg.name not in normalized:
@@ -201,6 +201,13 @@ class SkillExecutor:
             items = value if isinstance(value, list) else [value]
             return [int(item) for item in items]
         return value
+
+    def _resolve_skill_path(self, path: str) -> str:
+        """Resolve a path relative to skills_dir if it's not absolute."""
+        p = Path(path)
+        if p.is_absolute():
+            return path
+        return str((self.catalog.skills_dir / path).resolve())
 
     @staticmethod
     def _coerce_bool(value: Any) -> bool:
