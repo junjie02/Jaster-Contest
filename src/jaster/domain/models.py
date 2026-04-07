@@ -156,6 +156,7 @@ class ReconInput(BaseModel):
     key_findings: list[str] = Field(default_factory=list)
     latest_execution: ExecutionResult | None = None
     available_skills: list[AvailableSkill] = Field(default_factory=list)
+    latest_summary: str = ""
 
 
 class ReconOutput(BaseModel):
@@ -173,7 +174,7 @@ class StrategyInput(BaseModel):
     target_node: NodeInfo
     path_to_root: list[NodeInfo] = Field(default_factory=list)
     related_nodes: list[NodeInfo] = Field(default_factory=list)
-    reflection_summary: str = ""
+    latest_summary: str = ""
     recent_observations: list[Observation] = Field(default_factory=list)
     key_findings: list[str] = Field(default_factory=list)
     latest_execution: ExecutionResult | None = None
@@ -201,6 +202,7 @@ class ReflectionInput(BaseModel):
     key_findings: list[str] = Field(default_factory=list)
     latest_execution: ExecutionResult | None = None
     last_strategy: str = ""
+    latest_summary: str = ""
 
 
 class ReflectionOutput(BaseModel):

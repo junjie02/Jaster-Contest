@@ -129,9 +129,12 @@ class JasterOrchestrator:
 
         latest_execution: ExecutionResult | None = None
         reflection_summary: str = ""
+        recon_summary: str = ""
+        strategy_summary: str = ""
         node_context: ExploitableNodeContext | None = None
         next_phase = "recon"
         phase_round = 0
+        _reflection_entry: str = ""
 
         # HTTP 目标首次执行：curl 页面源码
         if challenge.target_type == "http":
@@ -172,6 +175,7 @@ class JasterOrchestrator:
                         key_findings=state.key_findings,
                         latest_execution=execution,
                         available_skills=self.skill_catalog.list_available(),
+                        latest_summary=strategy_summary,
                     ),
                     label=f"Round {phase_round}: recon",
                 )
@@ -213,6 +217,8 @@ class JasterOrchestrator:
                 if recon_out.discover_vulnerability or recon_out.action.kind == "finish":
                     self._log("[*] Recon complete: exploitable point found")
                     node_context = _resolve_node_context(tree, recon_out.selected_node_key)
+                    recon_summary = recon_out.summary
+                    _reflection_entry = "recon"
                     next_phase = "reflection"
                     continue
 
@@ -230,6 +236,7 @@ class JasterOrchestrator:
                         key_findings=state.key_findings,
                         latest_execution=latest_execution,
                         last_strategy=node_context.target_node.title if node_context else "",
+                        latest_summary=recon_summary if _reflection_entry == "recon" else strategy_summary,
                     ),
                 )
                 self._log(f"    LLM time: {reflection_elapsed:.2f}s")
@@ -268,7 +275,7 @@ class JasterOrchestrator:
                     target_node=node_context.target_node,
                     path_to_root=node_context.path_to_root,
                     related_nodes=node_context.related_nodes,
-                    reflection_summary=reflection_summary,
+                    latest_summary=reflection_summary,
                     recent_observations=state.observations[-8:],
                     key_findings=state.key_findings,
                     latest_execution=execution,
@@ -344,11 +351,13 @@ class JasterOrchestrator:
 
             if strategy_out.need_recon:
                 self._log("[*] Strategy requests more recon")
+                strategy_summary = strategy_out.summary
                 next_phase = "recon"
                 continue
 
             if strategy_out.need_reflection:
                 self._log("[*] Strategy requests reflection (drift correction)")
+                strategy_summary = strategy_out.summary
                 if strategy_out.selected_node_key:
                     from jaster.domain.models import NodeUpdatePatch, TreePatch, NodeStatus
                     failed_patch = TreePatch(
@@ -359,6 +368,7 @@ class JasterOrchestrator:
                     )
                     tree.apply_patch(failed_patch)
                     state.tree = tree.snapshot()
+                _reflection_entry = "strategy"
                 next_phase = "reflection"
                 continue
 
