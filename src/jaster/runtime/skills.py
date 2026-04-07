@@ -38,6 +38,9 @@ class SkillCatalog:
     def __init__(self, skills_dir: Path) -> None:
         self.skills_dir = skills_dir
         self._specs = self._load_specs()
+        self._params_summaries: dict[str, str] = {
+            name: self._params_summary(spec) for name, spec in self._specs.items()
+        }
 
     def list_available(self) -> list[AvailableSkill]:
         return [
@@ -45,7 +48,7 @@ class SkillCatalog:
                 name=spec.name,
                 summary=spec.summary,
                 use_when=spec.use_when,
-                params_summary=self._params_summary(spec),
+                params_summary=self._params_summaries[spec.name],
             )
             for spec in self._specs.values()
         ]
@@ -247,8 +250,4 @@ class SkillExecutor:
             relative = resolved.relative_to(base)
         except ValueError as exc:
             raise ValueError(f"{arg.name} escapes work_dir") from exc
-        if arg.path_policy == "work_dir_output":
-            return str(relative) if str(relative) else "."
-        if arg.path_policy == "work_dir_relative":
-            return str(relative) if str(relative) else "."
-        return value
+        return str(relative) if str(relative) else "."

@@ -52,7 +52,7 @@
     evidence：list[string]
     status：string，”unexplored” （新创节点设为unexplored）
     shared_refs：list[string]，关联节点 key 列表；没有则返回 []
-    key_findings：list[string]，与该节点有关的重要发现
+    key_findings：list[string]，与该节点有关的重要发现或重要参数记录
   update_nodes：list[dict] 若认为当前节点行不通，将状态设置为failed
     key：string
     status：string|null， “failed”
@@ -62,5 +62,5 @@
     reason：string|null 更新理由
     how：string|null
     evidence：list[string]|null
-    shared_refs：list[string]|null，与该节点有关的重要发现
+    shared_refs：list[string]|null，与该节点有关的重要发现或重要参数记录
 

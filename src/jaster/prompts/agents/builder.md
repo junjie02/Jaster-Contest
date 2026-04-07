@@ -6,7 +6,7 @@ Builder Agent
 接受strategy任务，产生可运行的任务脚本。使用标准python库。
 
 ## 输出结构
-- summary：string，脚本用途和执行摘要
+- summary：string，脚本用途和执行摘要，并记录测试过程中使用的重要参数
 - script：string，完整 Python 脚本源码
 
 ## 脚本输出结构
