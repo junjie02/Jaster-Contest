@@ -28,6 +28,7 @@
 - 若一次skill调用即可完成当前任务，优先使用现成skill，设置kind为skill，并构造skill_name和skill_args。skill不允许多条命令，即便是system command也不允许用 && 拼接命令。
 - 若当前skill无法完成任务或需要多部编排、复杂测试，可设置kind为builder，并在builder_task中写明任务需求并给出足够完成任务的完整信息
 - 若skill调用因参数不合规失败，尝试重新构造参数。
+- skill一次只能执行一步动作。
 
 ## 输出结构
 - discover_vulnerability：bool，是否发现漏洞
