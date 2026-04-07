@@ -218,6 +218,14 @@ class JasterOrchestrator:
                     next_phase = "reflection"
                     continue
 
+                # 每 5 轮强制 Reflection，对当前侦察方向做阶段性思考
+                if phase_round > 0 and phase_round % 5 == 0:
+                    self._log(f"[*] Periodic reflection: round {phase_round}")
+                    recon_summary = recon_out.summary
+                    _reflection_entry = "periodic"
+                    next_phase = "reflection"
+                    continue
+
                 continue
 
             if next_phase == "reflection":
@@ -240,6 +248,12 @@ class JasterOrchestrator:
                 self._log(f"    Summary: {reflection_out.summary or '(empty)'}")
                 tree.apply_patch(reflection_out.tree_patch)
                 state.tree = tree.snapshot()
+                # 用 reflection 的 next_focus_key 更新 node_context
+                if reflection_out.next_focus_key and node_context:
+                    try:
+                        node_context = _resolve_node_context(tree, reflection_out.next_focus_key)
+                    except ValueError:
+                        pass  # 节点不存在，保持原 node_context
                 self._append_phase_round(
                     run_id,
                     phase_round,
@@ -369,6 +383,13 @@ class JasterOrchestrator:
                     tree.apply_patch(failed_patch)
                     state.tree = tree.snapshot()
                 _reflection_entry = "strategy"
+                next_phase = "reflection"
+                continue
+
+            # 每 5 轮强制 Reflection，对当前渗透方向做阶段性思考
+            if phase_round > 0 and phase_round % 5 == 0:
+                self._log(f"[*] Periodic reflection: round {phase_round}")
+                strategy_summary = strategy_out.summary
                 next_phase = "reflection"
                 continue
 

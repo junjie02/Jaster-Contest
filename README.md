@@ -31,3 +31,5 @@ jaster run --target http://example.com
 - `JASTER_HTTP_TIMEOUT` optional, defaults to `120`
 - `JASTER_LLM_MAX_RETRIES` optional, defaults to `3`; applies only to a single agent call when the provider request fails, JSON extraction fails, or schema validation fails
 - `JASTER_PHASE_MAX_RETRIES` optional, defaults to `3`; applies to same-phase self-correction after an action executes but fails and the agent needs to revise the plan
+
+使用前修改username和password的存放理解。
