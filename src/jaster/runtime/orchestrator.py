@@ -144,6 +144,7 @@ class JasterOrchestrator:
                 ["curl", "-s", "-L", "--max-time", "30", challenge.target],
                 capture_output=True,
                 text=True,
+                errors="replace",
             )
             latest_execution = ExecutionResult(
                 success=result.returncode == 0,

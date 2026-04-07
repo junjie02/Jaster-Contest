@@ -36,6 +36,7 @@ class BuilderExecutor:
             input=json.dumps(input_payload),
             capture_output=True,
             text=True,
+            errors="replace",
             cwd=working_dir,
         )
         try:

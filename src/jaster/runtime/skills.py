@@ -102,7 +102,7 @@ class SkillExecutor:
             command = self._build_command(spec, skill_args, cwd=cwd)
         except ValueError as exc:
             return ExecutionResult(success=False, summary=f"Invalid skill args for {skill_name}", stderr=str(exc))
-        completed = subprocess.run(command, cwd=cwd, capture_output=True, text=True)
+        completed = subprocess.run(command, cwd=cwd, capture_output=True, text=True, errors="replace")
         artifacts = [ArtifactRef(kind="work_dir", path=str(cwd))]
         summary = completed.stdout.strip().splitlines()[0] if completed.stdout.strip() else ""
         return ExecutionResult(
