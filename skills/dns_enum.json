@@ -39,6 +39,7 @@
       "name": "wordlist",
       "type": "string",
       "flag": "-D",
+      "path_policy": "repo_relative",
       "description": "Subdomain wordlist"
     },
     {
@@ -98,7 +99,7 @@
       "skill_args": {
         "domain": "example.com",
         "enum_type": "brt",
-        "wordlist": "/usr/share/dnsrecon/dnsrecon/data/subdomains-top1mil-5000.txt",
+        "wordlist": "skills/docs/subdomains-top1mil-5000.txt",
         "json_output": "dnsrecon.json"
       }
     }

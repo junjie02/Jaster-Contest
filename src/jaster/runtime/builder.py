@@ -20,6 +20,8 @@ class BuilderExecutor:
         accessible_artifacts: list[ArtifactRef],
         recent_observations: list[Observation],
         latest_execution: ExecutionResult | None,
+        repo_root: Path | None = None,
+        skills_dir: Path | None = None,
     ) -> ExecutionResult:
         working_dir.mkdir(parents=True, exist_ok=True)
         script_path = working_dir / "builder_tool.py"
@@ -28,6 +30,8 @@ class BuilderExecutor:
             "target": target,
             "target_type": target_type,
             "working_dir": str(working_dir),
+            "repo_root": str(repo_root or working_dir),
+            "skills_dir": str(skills_dir or working_dir),
             "accessible_artifacts": [item.model_dump() for item in accessible_artifacts],
             "recent_observations": [item.model_dump() for item in recent_observations],
             "latest_execution": latest_execution.model_dump() if latest_execution is not None else None,

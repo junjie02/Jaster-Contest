@@ -20,7 +20,7 @@ class SkillArgSpec(BaseModel):
     required: bool = False
     default: Any = None
     enum: list[Any] = Field(default_factory=list)
-    path_policy: Literal["none", "work_dir_relative", "work_dir_output"] = "none"
+    path_policy: Literal["none", "work_dir_relative", "work_dir_output", "repo_relative"] = "none"
 
 
 class SkillSpec(AvailableSkill):
@@ -33,6 +33,7 @@ class SkillSpec(AvailableSkill):
     bin_selector_arg: str = ""
     bin_map: dict[str, str] = Field(default_factory=dict)
     args: list[SkillArgSpec] = Field(default_factory=list)
+    examples: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class SkillCatalog:
@@ -50,6 +51,8 @@ class SkillCatalog:
                 summary=spec.summary,
                 use_when=spec.use_when,
                 params_summary=self._params_summaries[spec.name],
+                example=self._representative_example(spec),
+                wordlist=self._detect_wordlist(spec),
             )
             for spec in self._specs.values()
         ]
@@ -88,6 +91,33 @@ class SkillCatalog:
             suffix = f"({', '.join(flags)})" if flags else ""
             parts.append(f"{arg.name}:{arg_type}{suffix}")
         return ", ".join(parts)
+
+    @staticmethod
+    def _representative_example(spec: SkillSpec) -> str:
+        if not spec.examples:
+            return ""
+        first = spec.examples[0]
+        label = str(first.get("label") or "").strip()
+        skill_args = first.get("skill_args")
+        if not isinstance(skill_args, dict) or not skill_args:
+            return label
+        rendered = json.dumps(skill_args, ensure_ascii=False, separators=(", ", ": "))
+        return f"{label}: {rendered}" if label else rendered
+
+    @staticmethod
+    def _detect_wordlist(spec: SkillSpec) -> str:
+        for example in spec.examples:
+            skill_args = example.get("skill_args")
+            if not isinstance(skill_args, dict):
+                continue
+            for key in ("wordlist", "usersfile"):
+                value = skill_args.get(key)
+                if isinstance(value, str) and value.strip():
+                    return value.strip()
+        for arg in spec.args:
+            if arg.name in {"wordlist", "usersfile"} and isinstance(arg.default, str) and arg.default.strip():
+                return arg.default.strip()
+        return ""
 
 
 class SkillExecutor:
@@ -206,12 +236,11 @@ class SkillExecutor:
             return [int(item) for item in items]
         return value
 
-    def _resolve_skill_path(self, path: str) -> str:
-        """Resolve a path relative to skills_dir if it's not absolute."""
+    def _resolve_repo_path(self, path: str) -> str:
         p = Path(path)
         if p.is_absolute():
-            return path
-        return str((self.catalog.skills_dir / path).resolve())
+            return str(p.resolve())
+        return str((self.catalog.skills_dir.parent / p).resolve())
 
     @staticmethod
     def _coerce_bool(value: Any) -> bool:
@@ -234,13 +263,14 @@ class SkillExecutor:
             return []
         return [str(value)]
 
-    @staticmethod
-    def _apply_path_policy(arg: SkillArgSpec, value: str, *, cwd: Path) -> str:
+    def _apply_path_policy(self, arg: SkillArgSpec, value: str, *, cwd: Path) -> str:
         if arg.path_policy == "none":
             return value
         # URLs should not be processed as filesystem paths
         if value.startswith(("http://", "https://", "ftp://", "sftp://")):
             return value
+        if arg.path_policy == "repo_relative":
+            return self._resolve_repo_path(value)
         candidate = Path(value)
         if candidate.is_absolute():
             resolved = candidate.resolve()

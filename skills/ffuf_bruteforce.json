@@ -31,6 +31,7 @@
       "type": "string",
       "flag": "-w",
       "required": true,
+      "path_policy": "repo_relative",
       "description": "Password wordlist (use FUZZ placeholder)"
     },
     {
@@ -111,7 +112,7 @@
       "label": "basic_form_login",
       "skill_args": {
         "url": "http://target.local/login",
-        "wordlist": "/usr/share/wordlists/rockyou.txt",
+        "wordlist": "skills/docs/password.txt",
         "data": "username=admin&password=FUZZ",
         "filter_size": "1234"
       }
@@ -120,7 +121,7 @@
       "label": "json_login",
       "skill_args": {
         "url": "http://target.local/api/login",
-        "wordlist": "/usr/share/wordlists/rockyou.txt",
+        "wordlist": "skills/docs/password.txt",
         "method": "POST",
         "data": "{\"username\":\"admin\",\"password\":\"FUZZ\"}",
         "headers": ["Content-Type: application/json"],
@@ -130,6 +131,6 @@
   ],
 
   "summary": "使用 ffuf 对登录接口进行密码爆破，使用 FUZZ 作为占位符。",
-  "use_when": "已确认登录接口，且用户名已知（如 admin），需要进行密码爆破。示例：ffuf -w /home/painting/桌面/Jaster/skills/docs/password.txt -X POST -d 'username=admin&password=FUZZ' -u http://target/login -fs 1234",
+  "use_when": "已确认登录接口，且用户名已知（如 admin），需要进行密码爆破。示例：ffuf -w skills/docs/password.txt -X POST -d 'username=admin&password=FUZZ' -u http://target/login -fs 1234",
   "command_mode": "argv"
 }

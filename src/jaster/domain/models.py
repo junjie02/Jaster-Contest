@@ -154,6 +154,8 @@ class AvailableSkill(BaseModel):
     summary: str
     use_when: str = ""
     params_summary: str = ""
+    example: str = ""
+    wordlist: str = ""
 
 
 class ReconInput(BaseModel):

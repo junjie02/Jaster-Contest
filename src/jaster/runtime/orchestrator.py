@@ -478,7 +478,13 @@ class JasterOrchestrator:
         self._last_builder_trace = _agent_trace(self.agents.get("builder"))
         self._log(f"    LLM time: {builder_elapsed:.2f}s")
         self._log(f"    Builder summary: {builder_output.summary or '(empty)'}")
-        accessible_artifacts = [ArtifactRef(kind="run_dir", path=str(run_dir / "artifacts"))]
+        skills_dir = Path(getattr(self.skill_catalog, "skills_dir", self.prompt_root.parent.parent / "skills")).resolve()
+        repo_root = skills_dir.parent.resolve()
+        accessible_artifacts = [
+            ArtifactRef(kind="run_dir", path=str(run_dir / "artifacts")),
+            ArtifactRef(kind="repo_root", path=str(repo_root)),
+            ArtifactRef(kind="skills_dir", path=str(skills_dir)),
+        ]
         return self.builder_executor.run(
             builder_output,
             target=challenge.target,
@@ -487,6 +493,8 @@ class JasterOrchestrator:
             accessible_artifacts=accessible_artifacts,
             recent_observations=observations,
             latest_execution=latest_execution,
+            repo_root=repo_root,
+            skills_dir=skills_dir,
         )
 
     def _log(self, message: str) -> None:
