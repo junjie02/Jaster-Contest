@@ -578,18 +578,16 @@ def _compact_observations(observations: list[Observation], *, limit: int = 50) -
 def _compact_execution(execution: ExecutionResult | None) -> ExecutionResult | None:
     if execution is None:
         return None
-    if not execution.source and execution.command.startswith("curl -s -L "):
-        return execution.model_copy(deep=True)
     return ExecutionResult(
         success=execution.success,
-        summary=_truncate_text(execution.summary, 240),
-        findings=[_truncate_text(item, 200) for item in execution.findings[:8]],
+        summary=execution.summary,
+        findings=list(execution.findings),
         flag_candidates=list(execution.flag_candidates),
         artifacts=execution.artifacts[:3],
-        stdout=_truncate_text(execution.stdout, 600),
-        stderr=_truncate_text(execution.stderr, 600),
+        stdout=execution.stdout,
+        stderr=execution.stderr,
         exit_code=execution.exit_code,
-        command=_truncate_text(execution.command, 200),
+        command=execution.command,
         script_path=execution.script_path,
         source=execution.source,
     )
