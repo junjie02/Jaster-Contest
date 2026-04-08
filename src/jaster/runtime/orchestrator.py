@@ -21,6 +21,7 @@ from jaster.domain import (
     ReconOutput,
     ReflectionInput,
     RunState,
+    SubmissionResult,
     StrategyInput,
     StrategyOutput,
     SubmissionInput,
@@ -39,6 +40,12 @@ class ExploitableNodeContext(BaseModel):
     target_node: NodeInfo
     path_to_root: list[NodeInfo] = Field(default_factory=list)
     related_nodes: list[NodeInfo] = Field(default_factory=list)
+
+
+class PendingObservation(BaseModel):
+    round: int
+    source: str
+    execution: ExecutionResult
 
 
 def _tree_node_to_info(node: TreeNodeSnapshot) -> NodeInfo:
@@ -117,7 +124,14 @@ class JasterOrchestrator:
         self._on_tree_update = on_tree_update
         self._last_builder_trace: dict | None = None
 
-    def run(self, challenge: ChallengeSpec, *, max_rounds: int = 12) -> RunState:
+    def run(
+        self,
+        challenge: ChallengeSpec,
+        *,
+        max_rounds: int = 12,
+        submission_handler: Callable[[ChallengeSpec, str, RunState], SubmissionResult] | None = None,
+        round_hook: Callable[[RunState, str, ExecutionResult | None], bool] | None = None,
+    ) -> RunState:
         run_id = self.store.new_run_id()
         tree = AttackTree.bootstrap(challenge.target)
         state = RunState(run_id=run_id, challenge=challenge, tree=tree.snapshot())
@@ -136,13 +150,14 @@ class JasterOrchestrator:
         next_phase = "recon"
         phase_round = 0
         _reflection_entry: str = ""
+        pending_observation: PendingObservation | None = None
 
         # HTTP 目标首次执行：curl 页面源码
-        if challenge.target_type == "http":
-            self._log(f"[*] Initial curl: {challenge.target}")
+        if state.challenge.target_type == "http":
+            self._log(f"[*] Initial curl: {state.challenge.target}")
             import subprocess
             result = subprocess.run(
-                ["curl", "-s", "-L", "--max-time", "30", challenge.target],
+                ["curl", "-s", "-L", "--max-time", "30", state.challenge.target],
                 capture_output=True,
                 text=True,
                 errors="replace",
@@ -154,7 +169,7 @@ class JasterOrchestrator:
                 stdout=result.stdout,
                 stderr=result.stderr,
                 exit_code=result.returncode,
-                command=f"curl -s -L {challenge.target}",
+                command=f"curl -s -L {state.challenge.target}",
             )
 
         # === MAIN ORCHESTRATION LOOP ===
@@ -165,14 +180,15 @@ class JasterOrchestrator:
                 prev_execution = latest_execution
                 recon_out, latest_execution, recon_elapsed = self._run_action_phase(
                     agent_name="recon",
-                    zone=challenge.zone,
-                    challenge=challenge,
+                    zone=state.challenge.zone,
+                    challenge=state.challenge,
                     run_id=run_id,
                     observations=state.observations[-50:],
                     latest_execution=prev_execution,
                     payload_factory=lambda execution: ReconInput(
-                        objective=f"Recon the target {challenge.target} and expand the global attack tree.",
+                        objective=f"Recon the target {state.challenge.target} and expand the global attack tree.",
                         tree=_prompt_tree_snapshot(tree.snapshot()),
+                        challenge_context=_challenge_context(state.challenge),
                         recent_observations=_compact_observations(state.observations[-50:]),
                         latest_execution=_compact_execution(execution),
                         available_skills=self.skill_catalog.list_available(),
@@ -191,7 +207,12 @@ class JasterOrchestrator:
                     f"    Result: {'OK' if latest_execution.success else 'FAIL'}"
                     f" | {latest_execution.summary or '(no summary)'}"
                 )
-                state.observations.append(_create_observation(phase_round, "recon", latest_execution, recon_out))
+                _flush_pending_observation(state, pending_observation, recon_out.summary, recon_out.result_type)
+                pending_observation = PendingObservation(
+                    round=phase_round,
+                    source="recon",
+                    execution=latest_execution.model_copy(deep=True),
+                )
                 tree.merge_facts(_facts_from_execution(latest_execution))
                 state.tree = tree.snapshot()
                 self._append_phase_round(
@@ -208,6 +229,11 @@ class JasterOrchestrator:
                 state.rounds_completed = phase_round
                 self.store.save_state(state)
                 self._notify_tree_update(state.tree)
+                if round_hook and round_hook(state, "recon", latest_execution):
+                    self.store.save_state(state)
+                    self._notify_tree_update(state.tree)
+                    self._log("[*] Run stopping: requested by round hook")
+                    break
 
                 if recon_out.discover_vulnerability or recon_out.action.kind == "finish":
                     self._log("[*] Recon complete: exploitable point found")
@@ -231,10 +257,11 @@ class JasterOrchestrator:
                 self._log("[*] Reflection: organizing findings for exploitable point")
                 reflection_out, reflection_elapsed = self._timed_agent_run(
                     "reflection",
-                    challenge.zone,
+                    state.challenge.zone,
                     ReflectionInput(
                         objective="Reflect on the exploitable point found by recon, organize key findings, and provide strategic guidance.",
                         tree=_prompt_tree_snapshot(tree.snapshot()),
+                        challenge_context=_challenge_context(state.challenge),
                         recent_observations=_compact_observations(state.observations[-50:]),
                         latest_execution=_compact_execution(latest_execution),
                         last_strategy=node_context.target_node.title if node_context else "",
@@ -244,6 +271,8 @@ class JasterOrchestrator:
                 self._log(f"    LLM time: {reflection_elapsed:.2f}s")
                 reflection_summary = reflection_out.summary
                 self._log(f"    Summary: {reflection_out.summary or '(empty)'}")
+                _flush_pending_observation(state, pending_observation, reflection_out.summary, "")
+                pending_observation = None
                 tree.apply_patch(reflection_out.tree_patch)
                 state.tree = tree.snapshot()
                 # 用 reflection 的 next_focus_key 更新 node_context
@@ -264,6 +293,11 @@ class JasterOrchestrator:
                 state.rounds_completed = phase_round
                 self.store.save_state(state)
                 self._notify_tree_update(state.tree)
+                if round_hook and round_hook(state, "reflection", latest_execution):
+                    self.store.save_state(state)
+                    self._notify_tree_update(state.tree)
+                    self._log("[*] Run stopping: requested by round hook")
+                    break
                 if _reflection_entry == "recon":
                     next_phase = "strategy" if recon_out.discover_vulnerability else "recon"
                 else:
@@ -276,16 +310,17 @@ class JasterOrchestrator:
             prev_execution = latest_execution
             strategy_out, latest_execution, strategy_elapsed = self._run_action_phase(
                 agent_name="strategy",
-                zone=challenge.zone,
-                challenge=challenge,
+                zone=state.challenge.zone,
+                challenge=state.challenge,
                 run_id=run_id,
                 observations=state.observations[-50:],
                 latest_execution=prev_execution,
                 payload_factory=lambda execution: StrategyInput(
-                    objective=f"Exploit the target {challenge.target} and capture the flag.",
+                    objective=f"Exploit the target {state.challenge.target} and capture the flag.",
                     target_node=node_context.target_node,
                     path_to_root=node_context.path_to_root,
                     related_nodes=node_context.related_nodes,
+                    challenge_context=_challenge_context(state.challenge),
                     latest_summary=reflection_summary,
                     recent_observations=_compact_observations(state.observations[-50:]),
                     latest_execution=_compact_execution(execution),
@@ -303,7 +338,12 @@ class JasterOrchestrator:
                 f"    Execution: {'OK' if latest_execution.success else 'FAIL'}"
                 f" | {latest_execution.summary or '(no summary)'}"
             )
-            state.observations.append(_create_observation(phase_round, "strategy", latest_execution, strategy_out))
+            _flush_pending_observation(state, pending_observation, strategy_out.summary, strategy_out.result_type)
+            pending_observation = PendingObservation(
+                round=phase_round,
+                source="strategy",
+                execution=latest_execution.model_copy(deep=True),
+            )
             tree.merge_facts(_facts_from_execution(latest_execution))
 
             candidates = _merge_flag_candidates(strategy_out.flag_candidates, latest_execution.flag_candidates)
@@ -312,7 +352,7 @@ class JasterOrchestrator:
                 self._log(f"[*] Round {phase_round}: submission candidates={len(candidates)}")
                 submission_out, submission_elapsed = self._timed_agent_run(
                     "submission",
-                    challenge.zone,
+                    state.challenge.zone,
                     SubmissionInput(
                         candidates=candidates,
                         recent_observations=_compact_observations(state.observations[-50:]),
@@ -325,8 +365,21 @@ class JasterOrchestrator:
                     + (f" | flag={submission_out.flag}" if submission_out.flag else "")
                 )
                 if submission_out.should_submit and submission_out.flag and submission_out.flag not in state.submitted_flags:
-                    state.submitted_flags.append(submission_out.flag)
-                    tree.merge_facts(GlobalFacts(flags=[submission_out.flag]))
+                    if submission_handler:
+                        submission_result = submission_handler(state.challenge, submission_out.flag, state)
+                        self._log(
+                            "    Platform submit: "
+                            + ("OK" if submission_result.correct else "FAIL")
+                            + (f" | {submission_result.message}" if submission_result.message else "")
+                        )
+                        state.challenge.flag_count = submission_result.flag_count or state.challenge.flag_count
+                        state.challenge.flag_got_count = submission_result.flag_got_count or state.challenge.flag_got_count
+                        if submission_result.correct:
+                            state.submitted_flags.append(submission_out.flag)
+                            tree.merge_facts(GlobalFacts(flags=[submission_out.flag]))
+                    else:
+                        state.submitted_flags.append(submission_out.flag)
+                        tree.merge_facts(GlobalFacts(flags=[submission_out.flag]))
             else:
                 self._log(f"[*] Round {phase_round}: submission skipped")
 
@@ -353,6 +406,11 @@ class JasterOrchestrator:
             state.rounds_completed = phase_round
             self.store.save_state(state)
             self._notify_tree_update(state.tree)
+            if round_hook and round_hook(state, "strategy", latest_execution):
+                self.store.save_state(state)
+                self._notify_tree_update(state.tree)
+                self._log("[*] Run stopping: requested by round hook")
+                break
 
             if strategy_out.goal_reached:
                 self._log("[*] Run stopping: goal reached")
@@ -537,20 +595,22 @@ def detect_zone(description: str) -> str:
     return "zone1"
 
 
-def _create_observation(
-    round_num: int,
-    source: str,
-    result: ExecutionResult | None,
-    agent_output: ReconOutput | StrategyOutput,
-) -> Observation:
-    """从 ExecutionResult（可为None）和 Agent 输出创建 Observation。"""
-    return Observation(
-        round=round_num,
-        source=source,
-        command=result.command if result else "",
-        result_type=agent_output.result_type,
-        summary=agent_output.summary,
-        next_action_hint=agent_output.next_action_hint,
+def _flush_pending_observation(
+    state: RunState,
+    pending: PendingObservation | None,
+    summary: str,
+    result_type: str,
+) -> None:
+    if pending is None:
+        return
+    state.observations.append(
+        Observation(
+            round=pending.round,
+            source=pending.source,
+            command=pending.execution.command,
+            result_type=result_type,
+            summary=summary,
+        )
     )
 
 
@@ -603,6 +663,29 @@ def _prompt_tree_snapshot(snapshot: AttackTreeSnapshot) -> AttackTreeSnapshot:
             artifacts=list(snapshot.facts.artifacts[-8:]),
         ),
     )
+
+
+def _challenge_context(challenge: ChallengeSpec) -> str:
+    lines: list[str] = []
+    if challenge.title:
+        lines.append(f"题目标题: {challenge.title}")
+    if challenge.description:
+        lines.append(f"题目描述: {challenge.description}")
+    if challenge.target:
+        lines.append(f"主入口: {challenge.target}")
+    if challenge.entrypoints:
+        others = [item for item in challenge.entrypoints if item and item != challenge.target]
+        if others:
+            lines.append("其他入口: " + ", ".join(others))
+    if challenge.difficulty:
+        lines.append(f"难度: {challenge.difficulty}")
+    if challenge.level:
+        lines.append(f"赛区: level={challenge.level}, zone={challenge.zone}")
+    if challenge.flag_count:
+        lines.append(f"Flag进度: {challenge.flag_got_count}/{challenge.flag_count}")
+    if challenge.hint_content:
+        lines.append(f"平台提示: {challenge.hint_content}")
+    return "\n".join(line for line in lines if line).strip()
 
 
 def _merge_flag_candidates(*groups: list[str]) -> list[str]:

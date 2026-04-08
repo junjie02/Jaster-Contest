@@ -8,6 +8,7 @@ from pathlib import Path
 import typer
 
 from jaster.domain import ChallengeSpec
+from jaster.runtime.contest import create_contest_scheduler
 from jaster.runtime.env import env_int, load_dotenv
 from jaster.runtime.llm import OpenAIChatClient
 from jaster.runtime.orchestrator import JasterOrchestrator, detect_target_type, detect_zone
@@ -15,6 +16,8 @@ from jaster.runtime.server import SSEBroadcaster, start_server
 from jaster.storage.files import FileRunStore
 
 app = typer.Typer(help="Jaster pentest agent runtime.")
+contest_app = typer.Typer(help="Tencent hackathon contest automation.")
+app.add_typer(contest_app, name="contest")
 
 _broadcaster: SSEBroadcaster | None = None
 _server_url: str | None = None
@@ -124,6 +127,44 @@ def serve(
         thread.join()
     except KeyboardInterrupt:
         print("\n[*] Server stopped")
+
+
+@contest_app.command("run")
+def contest_run(
+    host: str = typer.Option(os.environ.get("JASTER_PLATFORM_HOST", ""), help="Platform host, without /api suffix"),
+    agent_token: str = typer.Option(os.environ.get("JASTER_AGENT_TOKEN", ""), help="Platform Agent-Token"),
+) -> None:
+    if not host.strip():
+        raise typer.BadParameter("JASTER_PLATFORM_HOST is required")
+    if not agent_token.strip():
+        raise typer.BadParameter("JASTER_AGENT_TOKEN is required")
+    root = _project_root()
+    data_dir = _data_dir(root)
+    orchestrator = JasterOrchestrator(
+        store=FileRunStore(data_dir / "runs"),
+        prompt_root=root / "src" / "jaster" / "prompts",
+        skills_dir=root / "skills",
+        llm=OpenAIChatClient(),
+    )
+    scheduler = create_contest_scheduler(
+        base_url=host,
+        agent_token=agent_token,
+        orchestrator=orchestrator,
+        data_dir=data_dir,
+    )
+    session = scheduler.run()
+    typer.echo(
+        json.dumps(
+            {
+                "session_id": session.session_id,
+                "status": session.status,
+                "current_level": session.current_level,
+                "session_dir": str(data_dir / "contests" / session.session_id),
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
+    )
 
 
 if __name__ == "__main__":

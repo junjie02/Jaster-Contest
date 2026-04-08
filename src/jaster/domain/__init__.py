@@ -21,6 +21,7 @@ from .models import (
     StrategyOutput,
     SubmissionInput,
     SubmissionOutput,
+    SubmissionResult,
     TreePatch,
 )
 
@@ -47,5 +48,6 @@ __all__ = [
     "StrategyOutput",
     "SubmissionInput",
     "SubmissionOutput",
+    "SubmissionResult",
     "TreePatch",
 ]

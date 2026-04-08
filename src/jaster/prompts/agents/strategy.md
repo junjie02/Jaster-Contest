@@ -9,14 +9,12 @@
 3. 明确排除无效利用路径或确认防御机制（如 WAF/AV/权限隔离/网络策略），及时收敛测试面
 4. 当发现新的重要可利用信息，通过tree_patch.add_nodes将key_findings字段填入节点，表示在该节点上发现的重要线索
 
-## 重要约束
-- 严格基于当前 exploitable point 展开渗透，每轮必须深度分析 `latest_execution` 结果，决策路径仅限以下四种（按优先级互斥）：
-  1. Flag 已找到 → 立即终止并提取
-  2. 需要新资产/新弱点支撑 → 申请侦察
-  3. 当前路径连续失败且无适配空间 → 触发反思
-  4. 环境可控/有明确下一步 → 继续利用
-  5. 所有测试路径与文件名称必须基于已有证据或常见敏感路径，不允许私自编造
-- 严禁在未验证连通性的情况下直接尝试高风险提权或横向移动。
+## 上下文思考
+- "tree"是你的重要已知信息，根节点为渗透目标，其余节点都有父节点及关联节点（shared_refs），思考节点之间的关系及可利用信息的关联性，key_findings是与该节点有关的重要发现记录
+- "recent_observations"是整个系统（source代表了执行主体，你是strategy）的最近执行记录，探测时注意每一轮的command与summary，不要进行无意义地重复
+- "latest_execution"是最近一轮（上一轮）的执行结果，你应重点分析command、stdout及stderr中的内容，思考行动是否成功，总结新的发现，或行动失败的原因
+- 结合历史行为与已拥有的信息，分析当前环境与最佳下一步
+- 所有测试路径与文件名称必须基于已有证据或常见敏感路径，不允许私自编造
 
 ## 决策逻辑（互斥优先级：goal_reached > need_recon > 继续）
 - 若 flag 找到：设置 goal_reached=true，在 final_flag 字段提交完整 flag
@@ -32,7 +30,6 @@
 - summary：string，总结
 - need_recon：bool，是否需要探测新的信息
 - goal_reached：bool，目标是否已达成
-- next_action_hint：string，针对 latest_execution 的下一步行动建议
 - action：dict，当前动作
   kind：string，"skill" | "builder" | "finish"
   goal：string
@@ -64,4 +61,3 @@
     how：string|null
     evidence：list[string]|null
     shared_refs：list[string]|null，与该节点有关的重要发现或重要参数记录
-

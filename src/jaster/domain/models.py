@@ -33,7 +33,6 @@ class Observation(BaseModel):
     command: str = ""
     result_type: str = ""
     summary: str = ""
-    next_action_hint: str = ""
 
 
 class ExecutionResult(BaseModel):
@@ -160,6 +159,7 @@ class AvailableSkill(BaseModel):
 class ReconInput(BaseModel):
     objective: str
     tree: AttackTreeSnapshot
+    challenge_context: str = ""
     recent_observations: list[Observation] = Field(default_factory=list)
     latest_execution: ExecutionResult | None = None
     available_skills: list[AvailableSkill] = Field(default_factory=list)
@@ -174,7 +174,6 @@ class ReconOutput(BaseModel):
     tree_patch: TreePatch = Field(default_factory=TreePatch)
     key_findings: list[str] = Field(default_factory=list)
     result_type: str = ""
-    next_action_hint: str = ""
 
 
 class StrategyInput(BaseModel):
@@ -182,6 +181,7 @@ class StrategyInput(BaseModel):
     target_node: NodeInfo
     path_to_root: list[NodeInfo] = Field(default_factory=list)
     related_nodes: list[NodeInfo] = Field(default_factory=list)
+    challenge_context: str = ""
     latest_summary: str = ""
     recent_observations: list[Observation] = Field(default_factory=list)
     latest_execution: ExecutionResult | None = None
@@ -197,13 +197,13 @@ class StrategyOutput(BaseModel):
     need_recon: bool = False
     tree_patch: TreePatch = Field(default_factory=TreePatch)
     key_findings: list[str] = Field(default_factory=list)
-    next_action_hint: str = ""
     result_type: str = ""
 
 
 class ReflectionInput(BaseModel):
     objective: str
     tree: AttackTreeSnapshot
+    challenge_context: str = ""
     recent_observations: list[Observation] = Field(default_factory=list)
     latest_execution: ExecutionResult | None = None
     last_strategy: str = ""
@@ -238,11 +238,26 @@ class SubmissionOutput(BaseModel):
     reason: str
 
 
+class SubmissionResult(BaseModel):
+    correct: bool
+    message: str = ""
+    flag_count: int = 0
+    flag_got_count: int = 0
+
+
 class ChallengeSpec(BaseModel):
     target: str
     target_type: Literal["http", "tcp"] = "http"
     description: str = ""
     zone: str = "zone1"
+    code: str = ""
+    title: str = ""
+    difficulty: str = ""
+    level: int = 0
+    entrypoints: list[str] = Field(default_factory=list)
+    hint_content: str = ""
+    flag_count: int = 0
+    flag_got_count: int = 0
 
 
 class RunState(BaseModel):

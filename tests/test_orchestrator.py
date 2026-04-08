@@ -12,6 +12,7 @@ from jaster.domain import (
     ReflectionOutput,
     StrategyOutput,
     SubmissionOutput,
+    SubmissionResult,
     TreePatch,
 )
 from jaster.domain.attack_tree import AttackTree
@@ -279,7 +280,7 @@ def test_orchestrator_compacts_prompt_payload_and_records_current_execution(tmp_
     orchestrator = _make_orchestrator(tmp_path)
     target_key = AttackTree.bootstrap("http://target").snapshot().nodes[0].key
 
-    class CapturingReconAgent(FakeAgent):
+    class CapturingStrategyAgent(FakeAgent):
         def __init__(self, outputs):
             super().__init__(outputs)
             self.payloads = []
@@ -288,20 +289,53 @@ def test_orchestrator_compacts_prompt_payload_and_records_current_execution(tmp_
             self.payloads.append(payload)
             return super().run(zone, payload)
 
-    recon = CapturingReconAgent(
+    strategy = CapturingStrategyAgent(
         [
-            ReconOutput(
-                summary="Recon found useful data",
-                discover_vulnerability=False,
-                selected_node_key=target_key,
+            StrategyOutput(
+                summary="Summarize previous execution",
+                selected_node_key="node-1",
                 result_type="ok",
-                next_action_hint="continue probing",
-                action=ActionPlan(kind="finish", goal="recon done"),
+                action=ActionPlan(kind="finish", goal="strategy done"),
                 tree_patch=TreePatch(),
+                goal_reached=True,
             )
         ]
     )
-    orchestrator.agents = {"recon": recon}
+    orchestrator.agents = {
+        "recon": FakeAgent(
+            [
+                ReconOutput(
+                    summary="Recon found branch",
+                    discover_vulnerability=True,
+                    selected_node_key=target_key,
+                    action=ActionPlan(kind="finish", goal="recon done"),
+                    tree_patch=TreePatch(
+                        add_nodes=[
+                            {
+                                "parent_key": target_key,
+                                "title": "branch",
+                                "kind": "weakness",
+                                "locator": "/branch",
+                                "priority": 90,
+                                "value": "candidate",
+                                "reason": "signal",
+                                "how": "exploit",
+                                "evidence": ["x"],
+                                "status": "success",
+                                "shared_refs": [],
+                            }
+                        ]
+                    ),
+                )
+            ]
+        ),
+        "reflection": FakeAgent(
+            [
+                ReflectionOutput(summary="focus branch", next_focus_key="node-1", tree_patch=TreePatch())
+            ]
+        ),
+        "strategy": strategy,
+    }
 
     long_command = "curl " + ("a" * 220)
     long_stdout = "b" * 800
@@ -320,12 +354,86 @@ def test_orchestrator_compacts_prompt_payload_and_records_current_execution(tmp_
     orchestrator._execute_action = fake_execute_action  # type: ignore[assignment]
 
     challenge = ChallengeSpec(target="http://target", zone="zone1")
-    state = orchestrator.run(challenge, max_rounds=1)
+    state = orchestrator.run(challenge, max_rounds=3)
 
+    assert len(state.observations) == 1
+    assert state.observations[0].round == 1
+    assert state.observations[0].source == "recon"
     assert state.observations[0].command == long_command
-    payload = recon.payloads[0]
-    assert payload.tree.facts.artifacts == []
-    assert payload.recent_observations == []
+    assert state.observations[0].summary == "focus branch"
+    payload = strategy.payloads[0]
+    assert len(payload.recent_observations) == 1
+    assert payload.recent_observations[0].command == long_command
+
+
+def test_observations_are_delayed_by_one_round(tmp_path: Path) -> None:
+    orchestrator = _make_orchestrator(tmp_path)
+    target_key = AttackTree.bootstrap("http://target").snapshot().nodes[0].key
+
+    class CapturingReconAgent(FakeAgent):
+        def __init__(self, outputs):
+            super().__init__(outputs)
+            self.payloads = []
+
+        def run(self, zone, payload):
+            self.payloads.append(payload)
+            return super().run(zone, payload)
+
+    recon = CapturingReconAgent(
+        [
+                ReconOutput(
+                    summary="round1 summary",
+                    discover_vulnerability=False,
+                    selected_node_key=target_key,
+                    result_type="ok",
+                    action=ActionPlan(kind="skill", goal="step1", skill_name="dummy", skill_args={}),
+                    tree_patch=TreePatch(),
+                ),
+                ReconOutput(
+                    summary="round2 summary",
+                    discover_vulnerability=False,
+                    selected_node_key=target_key,
+                    result_type="ok",
+                    action=ActionPlan(kind="skill", goal="step2", skill_name="dummy", skill_args={}),
+                    tree_patch=TreePatch(),
+                ),
+                ReconOutput(
+                    summary="round3 summary",
+                    discover_vulnerability=False,
+                    selected_node_key=target_key,
+                    result_type="ok",
+                    action=ActionPlan(kind="skill", goal="step3", skill_name="dummy", skill_args={}),
+                    tree_patch=TreePatch(),
+                ),
+            ]
+        )
+    orchestrator.agents = {"recon": recon}
+
+    commands = ["cmd-1", "cmd-2", "cmd-3"]
+
+    def fake_execute_action(**_: object) -> ExecutionResult:
+        command = commands.pop(0)
+        return ExecutionResult(success=True, summary=f"exec {command}", command=command)
+
+    orchestrator._execute_action = fake_execute_action  # type: ignore[assignment]
+
+    challenge = ChallengeSpec(target="target", target_type="tcp", zone="zone1")
+    state = orchestrator.run(challenge, max_rounds=3)
+
+    assert recon.payloads[0].recent_observations == []
+    assert recon.payloads[0].latest_execution is None
+    assert recon.payloads[1].recent_observations == []
+    assert recon.payloads[1].latest_execution is not None
+    assert recon.payloads[1].latest_execution.command == "cmd-1"
+    assert len(recon.payloads[2].recent_observations) == 1
+    assert recon.payloads[2].recent_observations[0].round == 1
+    assert recon.payloads[2].recent_observations[0].command == "cmd-1"
+    assert recon.payloads[2].recent_observations[0].summary == "round2 summary"
+    assert len(state.observations) == 2
+    assert state.observations[0].round == 1
+    assert state.observations[0].summary == "round2 summary"
+    assert state.observations[1].round == 2
+    assert state.observations[1].summary == "round3 summary"
 
 
 def test_compact_observations_keeps_last_fifty_items() -> None:
@@ -336,7 +444,6 @@ def test_compact_observations_keeps_last_fifty_items() -> None:
             "command": f"cmd-{idx}",
             "result_type": "ok",
             "summary": f"summary-{idx}",
-            "next_action_hint": f"hint-{idx}",
         }
         for idx in range(60)
     ]
@@ -388,3 +495,161 @@ def test_initial_http_curl_keeps_full_response_body(monkeypatch, tmp_path: Path)
     assert latest_execution.summary == "Initial HTTP response captured"
     assert latest_execution.findings == []
     assert latest_execution.stdout == body
+
+
+def test_round_hook_can_inject_hint_into_later_prompt(tmp_path: Path) -> None:
+    orchestrator = _make_orchestrator(tmp_path)
+    target_key = AttackTree.bootstrap("http://target").snapshot().nodes[0].key
+    branch_key = "branch-1"
+
+    class CapturingStrategyAgent(FakeAgent):
+        def __init__(self, outputs):
+            super().__init__(outputs)
+            self.payloads = []
+
+        def run(self, zone, payload):
+            self.payloads.append(payload)
+            return super().run(zone, payload)
+
+    strategy = CapturingStrategyAgent(
+        [
+            StrategyOutput(
+                summary="first pass",
+                selected_node_key=branch_key,
+                action=ActionPlan(kind="finish", goal="step1"),
+                tree_patch=TreePatch(),
+                goal_reached=False,
+            ),
+            StrategyOutput(
+                summary="second pass",
+                selected_node_key=branch_key,
+                action=ActionPlan(kind="finish", goal="step2"),
+                tree_patch=TreePatch(),
+                goal_reached=False,
+            ),
+        ]
+    )
+    orchestrator.agents = {
+        "recon": FakeAgent(
+            [
+                ReconOutput(
+                    summary="found branch",
+                    discover_vulnerability=True,
+                    selected_node_key=target_key,
+                    action=ActionPlan(kind="finish", goal="recon done"),
+                    tree_patch=TreePatch(
+                        add_nodes=[
+                            {
+                                "parent_key": target_key,
+                                "title": "branch",
+                                "kind": "weakness",
+                                "locator": "/branch",
+                                "priority": 90,
+                                "value": "candidate",
+                                "reason": "signal",
+                                "how": "exploit",
+                                "evidence": ["x"],
+                                "status": "success",
+                                "shared_refs": [],
+                            }
+                        ]
+                    ),
+                )
+            ]
+        ),
+        "reflection": FakeAgent(
+            [
+                ReflectionOutput(summary="focus branch", next_focus_key=branch_key, tree_patch=TreePatch())
+            ]
+        ),
+        "strategy": strategy,
+    }
+
+    injected = {"done": False}
+
+    def round_hook(state: object, phase: str, latest_execution: object) -> bool:
+        if phase == "strategy" and not injected["done"]:
+            state.challenge.hint_content = "check robots.txt"
+            injected["done"] = True
+        return False
+
+    challenge = ChallengeSpec(target="http://target", zone="zone1", title="Contest", description="desc")
+    orchestrator.run(challenge, max_rounds=4, round_hook=round_hook)
+
+    assert "平台提示: check robots.txt" not in strategy.payloads[0].challenge_context
+    assert "平台提示: check robots.txt" in strategy.payloads[1].challenge_context
+
+
+def test_submission_handler_only_records_verified_flags(tmp_path: Path) -> None:
+    orchestrator = _make_orchestrator(tmp_path)
+    bootstrap_tree = AttackTree.bootstrap("http://target").snapshot()
+    target_key = bootstrap_tree.nodes[0].key
+    exploitable_key = "node-1"
+
+    orchestrator.agents = {
+        "recon": FakeAgent(
+            [
+                ReconOutput(
+                    summary="Recon found an exploitable branch",
+                    discover_vulnerability=True,
+                    selected_node_key=target_key,
+                    action=ActionPlan(kind="finish", goal="recon done"),
+                    tree_patch=TreePatch(
+                        add_nodes=[
+                            {
+                                "parent_key": target_key,
+                                "title": "Flag path",
+                                "kind": "weakness",
+                                "locator": "/flag",
+                                "priority": 95,
+                                "value": "candidate",
+                                "reason": "high signal",
+                                "how": "read file",
+                                "evidence": ["flag snippet"],
+                                "status": "success",
+                                "shared_refs": [],
+                            }
+                        ]
+                    ),
+                )
+            ]
+        ),
+        "strategy": FakeAgent(
+            [
+                StrategyOutput(
+                    summary="Try submit",
+                    selected_node_key=exploitable_key,
+                    action=ActionPlan(kind="finish", goal="done"),
+                    goal_reached=True,
+                    flag_candidates=["flag{wrong}"],
+                    tree_patch=TreePatch(),
+                )
+            ]
+        ),
+        "reflection": FakeAgent(
+            [
+                ReflectionOutput(
+                    summary="focus",
+                    next_focus_key=exploitable_key,
+                    tree_patch=TreePatch(),
+                )
+            ]
+        ),
+        "submission": FakeAgent(
+            [
+                SubmissionOutput(
+                    should_submit=True,
+                    flag="flag{wrong}",
+                    reason="try it",
+                )
+            ]
+        ),
+    }
+
+    def submission_handler(challenge: ChallengeSpec, flag: str, state: object) -> SubmissionResult:
+        return SubmissionResult(correct=False, message="wrong", flag_count=1, flag_got_count=0)
+
+    challenge = ChallengeSpec(target="http://target", zone="zone1")
+    state = orchestrator.run(challenge, max_rounds=3, submission_handler=submission_handler)
+
+    assert state.submitted_flags == []
