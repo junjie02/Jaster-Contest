@@ -11,6 +11,7 @@ from jaster.domain import (
     ActionPlan,
     AttackTree,
     AttackTreeSnapshot,
+    BuilderInput,
     ChallengeSpec,
     ExecutorInput,
     ExecutionResult,
@@ -31,6 +32,7 @@ from pydantic import BaseModel, Field
 from jaster.runtime.env import env_int
 from jaster.runtime.llm import LLMError, OpenAIChatClient
 from jaster.runtime.catalog import RuntimeCatalog, FunctionExecutor
+from jaster.runtime.builder import BuilderExecutor
 from jaster.storage.files import FileRunStore
 
 
@@ -117,6 +119,7 @@ class JasterOrchestrator:
         self.prompt_root = prompt_root
         self.catalog = RuntimeCatalog(functions_dir, skills_dir)
         self.function_executor = FunctionExecutor(self.catalog)
+        self.builder_executor = BuilderExecutor()
         self.agents = build_agents(prompt_root, llm)
         self.verbose = verbose
         self.phase_max_retries = env_int("JASTER_PHASE_MAX_RETRIES", 3)
@@ -181,7 +184,9 @@ class JasterOrchestrator:
                     agent_name="recon",
                     zone=state.challenge.zone,
                     run_id=run_id,
+                    challenge=state.challenge,
                     latest_execution=prev_execution,
+                    recent_observations=_compact_observations(state.observations[-50:]),
                     payload_factory=lambda execution: ReconInput(
                         objective=f"Recon the target {state.challenge.target} and expand the global attack tree.",
                         tree=_prompt_tree_snapshot(tree.snapshot()),
@@ -348,7 +353,9 @@ class JasterOrchestrator:
                 agent_name="strategy",
                 zone=state.challenge.zone,
                 run_id=run_id,
+                challenge=state.challenge,
                 latest_execution=prev_execution,
+                recent_observations=_compact_observations(state.observations[-50:]),
                 payload_factory=lambda execution: StrategyInput(
                     objective=f"Exploit the target {state.challenge.target} and capture the flag.",
                     target_node=node_context.target_node,
@@ -486,6 +493,9 @@ class JasterOrchestrator:
         run_id: str,
         zone: str,
         action: ActionPlan,
+        challenge: ChallengeSpec | None = None,
+        recent_observations: list[Observation] | None = None,
+        latest_execution: ExecutionResult | None = None,
     ) -> ExecutionResult:
         run_dir = self.store.run_dir(run_id)
         artifacts_dir = run_dir / "artifacts"
@@ -495,6 +505,35 @@ class JasterOrchestrator:
             self._log(f"    Finish action: {action.goal}")
             return ExecutionResult(success=True, summary=action.goal)
         if not action.function_name:
+            if action.kind == "builder":
+                self._log("    Calling builder agent")
+                try:
+                    builder_out, _ = self._timed_agent_run(
+                        "builder",
+                        zone,
+                        BuilderInput(task=action.executor_brief or action.goal),
+                    )
+                except Exception as exc:
+                    self._last_executor_trace = _agent_trace(self.agents.get("builder"))
+                    return ExecutionResult(
+                        success=False,
+                        summary="Builder agent failed",
+                        stderr=str(exc),
+                        failure_stage="builder_generation",
+                    )
+                self._last_executor_trace = _agent_trace(self.agents.get("builder"))
+                self._log("    Running builder-generated script")
+                return self.builder_executor.run(
+                    builder_out,
+                    target=challenge.target if challenge else "",
+                    target_type=challenge.target_type if challenge else "http",
+                    working_dir=artifacts_dir,
+                    accessible_artifacts=list(latest_execution.artifacts) if latest_execution else [],
+                    recent_observations=list(recent_observations or []),
+                    latest_execution=latest_execution,
+                    repo_root=self.catalog.functions_dir.parent,
+                    skills_dir=self.catalog.skills_dir,
+                )
             return ExecutionResult(
                 success=False,
                 summary="Missing function_name",
@@ -514,9 +553,11 @@ class JasterOrchestrator:
             tool_call = self.agents["executor"].run(
                 zone,
                 ExecutorInput(
+                    target=challenge.target if challenge else "",
                     function_name=action.function_name,
                     function_summary=function_spec.summary,
                     function_schema_text=self.catalog.tool_prompt_text(action.function_name),
+                    function_definition_json=self.catalog.get_function_definition_text(action.function_name),
                     executor_brief=action.executor_brief,
                 ),
                 tool_name=action.function_name,
@@ -573,7 +614,9 @@ class JasterOrchestrator:
         agent_name: str,
         zone: str,
         run_id: str,
+        challenge: ChallengeSpec | None = None,
         latest_execution: ExecutionResult | None,
+        recent_observations: list[Observation] | None = None,
         payload_factory: Callable[[ExecutionResult | None], object],
         label: str,
     ) -> tuple[ReconOutput | StrategyOutput, ExecutionResult, float]:
@@ -602,6 +645,9 @@ class JasterOrchestrator:
                 run_id=run_id,
                 zone=zone,
                 action=agent_out.action,
+                challenge=challenge,
+                recent_observations=recent_observations or [],
+                latest_execution=current_execution,
             )
             execution.source = agent_name
             if execution.success or agent_out.action.kind == "finish":

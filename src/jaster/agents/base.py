@@ -149,6 +149,8 @@ def _normalize_action(action: dict, *, parent: dict) -> dict:
     if "kind" not in source:
         if source.get("function") or source.get("function_name") or parent.get("use_function"):
             normalized["kind"] = "function"
+        elif source.get("builder") or parent.get("use_builder"):
+            normalized["kind"] = "builder"
         else:
             action_type = str(parent.get("action_type") or "").strip().lower()
             normalized["kind"] = "finish" if action_type == "finish" else "function"
@@ -173,7 +175,9 @@ def _normalize_action(action: dict, *, parent: dict) -> dict:
     normalized["function_args"] = source.get("function_args") or source.get("params") or source.get("arguments") or {}
     normalized["executor_brief"] = str(
         source.get("executor_brief")
+        or source.get("builder_task")
         or parent.get("executor_brief")
+        or parent.get("builder_task")
         or parent.get("execution_brief")
         or normalized["goal"]
     )
@@ -181,6 +185,9 @@ def _normalize_action(action: dict, *, parent: dict) -> dict:
         normalized["function_name"] = None
         normalized["function_args"] = {}
         normalized["executor_brief"] = ""
+    if normalized["kind"] == "builder":
+        normalized["function_name"] = None
+        normalized["function_args"] = {}
     if normalized["kind"] == "function" and not normalized["function_name"]:
         normalized["kind"] = "finish"
     return normalized

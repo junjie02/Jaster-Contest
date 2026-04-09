@@ -6,6 +6,7 @@ from jaster.domain import (
     ActionPlan,
     ArtifactRef,
     ChallengeSpec,
+    BuilderOutput,
     ExecutionResult,
     Observation,
     ReconOutput,
@@ -66,6 +67,32 @@ class FakeSkillExecutor:
         )
 
 
+class FakeBuilderExecutor:
+    def run(
+        self,
+        builder_output,
+        *,
+        target,
+        target_type,
+        working_dir,
+        accessible_artifacts,
+        recent_observations,
+        latest_execution,
+        repo_root=None,
+        skills_dir=None,
+    ):
+        from jaster.domain import ExecutionResult
+
+        working_dir.mkdir(parents=True, exist_ok=True)
+        return ExecutionResult(
+            success=True,
+            summary=builder_output.summary or "builder ok",
+            findings=["builder executed"],
+            command="python builder_tool.py",
+            script_path=str(working_dir / "builder_tool.py"),
+        )
+
+
 def _make_orchestrator(tmp_path: Path) -> JasterOrchestrator:
     store = FileRunStore(tmp_path / "runs")
     orchestrator = JasterOrchestrator.__new__(JasterOrchestrator)
@@ -75,15 +102,19 @@ def _make_orchestrator(tmp_path: Path) -> JasterOrchestrator:
         "FakeCatalog",
         (),
         {
+            "functions_dir": tmp_path / "functions",
+            "skills_dir": tmp_path / "skills",
             "list_functions": lambda self: [],
             "list_skills": lambda self: [],
             "render_inspiration": lambda self, selected: "",
             "get_function": lambda self, name: SimpleNamespace(summary=name),
+            "get_function_definition_text": lambda self, name: json.dumps({"name": name, "args": []}, ensure_ascii=False),
             "tool_prompt_text": lambda self, name: f"name: {name}",
             "build_tool": lambda self, name: {"type": "function", "function": {"name": name, "parameters": {"type": "object"}}},
         },
     )()
     orchestrator.function_executor = FakeSkillExecutor()
+    orchestrator.builder_executor = FakeBuilderExecutor()
     orchestrator.verbose = False
     orchestrator._last_executor_trace = None
     orchestrator.phase_max_retries = 3
@@ -175,6 +206,8 @@ def test_orchestrator_runs_end_to_end(tmp_path: Path) -> None:
     assert (orchestrator.store.run_dir(state.run_id) / "rounds" / "001.json").exists()
     assert (orchestrator.store.run_dir(state.run_id) / "rounds" / "002.json").exists()
     assert (orchestrator.store.run_dir(state.run_id) / "rounds" / "003.json").exists()
+    assert orchestrator.agents["executor"].last_trace["payload"]["target"] == "http://target"
+    assert orchestrator.agents["executor"].last_trace["payload"]["function_definition_json"] == '{"name": "dummy", "args": []}'
 
 
 def test_orchestrator_round_log_includes_llm_inputs(tmp_path: Path) -> None:
@@ -212,6 +245,153 @@ def test_orchestrator_round_log_includes_llm_inputs(tmp_path: Path) -> None:
     assert round_payload["recon_input"]["prompt"] == "prompt"
     assert round_payload["recon_input"]["payload"]["objective"] == "recon"
     assert state.rounds_completed == 1
+
+
+def test_orchestrator_passes_full_function_definition_to_executor(tmp_path: Path) -> None:
+    orchestrator = _make_orchestrator(tmp_path)
+    executor = FakeExecutorAgent(
+        [
+            {"id": "call-1", "name": "dummy", "arguments": {"url": "http://target"}}
+        ]
+    )
+    orchestrator.agents = {"executor": executor}
+
+    result = orchestrator._execute_action(
+        run_id="run-1",
+        zone="zone1",
+        action=ActionPlan(
+            kind="function",
+            goal="do",
+            function_name="dummy",
+            executor_brief="访问目标",
+        ),
+    )
+
+    assert result.success is True
+    assert executor.last_trace is not None
+    assert executor.last_trace["payload"]["target"] == ""
+    assert executor.last_trace["payload"]["function_definition_json"] == '{"name": "dummy", "args": []}'
+    assert executor.last_trace["payload"]["function_schema_text"] == "name: dummy"
+
+
+def test_orchestrator_executes_builder_action(tmp_path: Path) -> None:
+    orchestrator = _make_orchestrator(tmp_path)
+    bootstrap_tree = AttackTree.bootstrap("http://target").snapshot()
+    target_key = bootstrap_tree.nodes[0].key
+    exploitable_key = "node-builder"
+
+    builder = FakeAgent(
+        [
+            BuilderOutput(
+                summary="builder summary",
+                script="import json\nprint(json.dumps({'summary':'ok','findings':[],'artifacts':[],'flag_candidates':[]}))\n",
+            )
+        ]
+    )
+    builder.last_trace = {
+        "role": "builder",
+        "zone": "zone1",
+        "payload": {"task": "写一个脚本验证目标"},
+    }
+
+    orchestrator.agents = {
+        "recon": FakeAgent(
+            [
+                ReconOutput(
+                    summary="Recon found exploitable branch",
+                    discover_vulnerability=True,
+                    selected_node_key=target_key,
+                    action=ActionPlan(kind="finish", goal="recon done"),
+                    tree_patch=TreePatch(),
+                )
+            ]
+        ),
+        "reflection": FakeAgent(
+            [
+                ReflectionOutput(summary="reflection", next_focus_key=exploitable_key, tree_patch=TreePatch())
+            ]
+        ),
+        "strategy": FakeAgent(
+            [
+                StrategyOutput(
+                    summary="Need a custom script",
+                    selected_node_key=exploitable_key,
+                    action=ActionPlan(
+                        kind="builder",
+                        goal="生成脚本验证利用",
+                        expected_result="得到自定义执行结果",
+                        executor_brief="写一个脚本验证目标",
+                    ),
+                    goal_reached=False,
+                    tree_patch=TreePatch(),
+                )
+            ]
+        ),
+        "builder": builder,
+        "submission": FakeAgent(
+            [
+                SubmissionOutput(
+                    should_submit=False,
+                    flag=None,
+                    reason="no flag",
+                )
+            ]
+        ),
+    }
+
+    challenge = ChallengeSpec(target="http://target", zone="zone1")
+    state = orchestrator.run(challenge, max_rounds=3)
+
+    assert state.rounds_completed == 3
+    assert orchestrator._last_executor_trace is not None
+    assert orchestrator._last_executor_trace["role"] == "builder"
+
+
+def test_orchestrator_executes_builder_action_from_recon(tmp_path: Path) -> None:
+    orchestrator = _make_orchestrator(tmp_path)
+    bootstrap_tree = AttackTree.bootstrap("http://target").snapshot()
+    target_key = bootstrap_tree.nodes[0].key
+
+    builder = FakeAgent(
+        [
+            BuilderOutput(
+                summary="builder summary",
+                script="import json\nprint(json.dumps({'summary':'ok','findings':[],'artifacts':[],'flag_candidates':[]}))\n",
+            )
+        ]
+    )
+    builder.last_trace = {
+        "role": "builder",
+        "zone": "zone1",
+        "payload": {"task": "写一个脚本做侦察"},
+    }
+
+    orchestrator.agents = {
+        "recon": FakeAgent(
+            [
+                ReconOutput(
+                    summary="Recon needs custom script",
+                    discover_vulnerability=False,
+                    selected_node_key=target_key,
+                    action=ActionPlan(
+                        kind="builder",
+                        goal="生成脚本做侦察",
+                        expected_result="得到新的资产线索",
+                        executor_brief="写一个脚本做侦察",
+                    ),
+                    tree_patch=TreePatch(),
+                )
+            ]
+        ),
+        "builder": builder,
+    }
+
+    challenge = ChallengeSpec(target="http://target", zone="zone1")
+    state = orchestrator.run(challenge, max_rounds=1)
+
+    assert state.rounds_completed == 1
+    assert orchestrator._last_executor_trace is not None
+    assert orchestrator._last_executor_trace["role"] == "builder"
 
 
 def test_orchestrator_uses_shared_round_budget_and_keeps_chronological_logs(tmp_path: Path) -> None:

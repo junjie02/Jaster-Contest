@@ -142,7 +142,7 @@ class TreePatch(BaseModel):
 class ActionPlan(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    kind: Literal["function", "finish"]
+    kind: Literal["function", "builder", "finish"]
     goal: str
     expected_result: str = ""
     function_name: str | None = None
@@ -244,9 +244,11 @@ class SkillRouterOutput(BaseModel):
 
 
 class ExecutorInput(BaseModel):
+    target: str = ""
     function_name: str
     function_summary: str = ""
     function_schema_text: str
+    function_definition_json: str = ""
     executor_brief: str
 
 

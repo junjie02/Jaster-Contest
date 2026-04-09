@@ -76,7 +76,17 @@ class ExecutorAgent:
             if current_retry_context:
                 rendered_payload["retry_context"] = current_retry_context
             payload_json = ExecutorInput.model_validate(
-                {key: rendered_payload[key] for key in ("function_name", "function_summary", "function_schema_text", "executor_brief")}
+                {
+                    key: rendered_payload[key]
+                    for key in (
+                        "target",
+                        "function_name",
+                        "function_summary",
+                        "function_schema_text",
+                        "function_definition_json",
+                        "executor_brief",
+                    )
+                }
             ).model_dump_json(indent=2)
             prompt = "\n".join(
                 [

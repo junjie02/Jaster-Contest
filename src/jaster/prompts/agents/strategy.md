@@ -21,23 +21,24 @@
 - 若当前渗透缺少部分信息（如完整源码、资产拓扑、新弱点、凭据）：设置 need_recon=true，summary 说明具体需求
 - 若可继续利用：need_recon=false, goal_reached=false
 
-## function与executor调用规范
-- 若本轮需要执行工具，设置 action.kind 为 function，并从 available_functions 中选择一个最合适的 function_name。
-- 你在本阶段只负责规划，不负责补参数执行；function_args 固定返回 `{}`。
-- 必须填写 executor_brief，供后续 executor agent 独立补参。executor_brief 必须写清：目标、证据、要验证/获取什么、关键参数约束、禁止事项。
-- 若当前不应执行工具，可设置 kind 为 finish。
+## action 调用规范
+- 若本轮需要执行现成工具，设置 action.kind 为 function，并从 available_functions 中选择一个最合适的 function_name。
+- 若现成 function 无法覆盖、但可以通过一个小型 Python 脚本直接完成，设置 action.kind 为 builder。
+- 对于 function：你只负责规划，不负责补参数执行；function_args 固定返回 `{}`。
+- 对于 builder：function_name 固定返回 null，function_args 固定返回 `{}`，executor_brief 改为给 Builder Agent 的任务说明，必须写清：目标、证据、输入上下文应如何使用、要验证/获取什么、输出约束、禁止事项。
+- 若当前不应执行任何动作，可设置 kind 为 finish。
 
 ## 输出结构
 - summary：string，总结
 - need_recon：bool，是否需要探测新的信息
 - goal_reached：bool，目标是否已达成
 - action：dict，当前动作
-  kind：string，"function" | "finish"
+  kind：string，"function" | "builder" | "finish"
   goal：string
   expected_result：string
   function_name：string|null
   function_args：dict，固定返回 {}
-  executor_brief：string
+  executor_brief：string，function 时供 executor 补参；builder 时供 Builder Agent 写脚本
 - flag_candidates：list[string]，候选 Flag 列表；没有则返回 []
 - tree_patch：dict，你需要维护的全局树结构
   add_nodes：list[dict] 新节点，新节点的父节点会自动绑定为selected_node_key

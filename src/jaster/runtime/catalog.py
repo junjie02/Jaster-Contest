@@ -44,6 +44,7 @@ class RuntimeCatalog:
     def __init__(self, functions_dir: Path, skills_dir: Path) -> None:
         self.functions_dir = functions_dir
         self.skills_dir = skills_dir
+        self._function_definition_texts: dict[str, str] = {}
         self._function_specs = self._load_function_specs()
         self._skill_docs = self._load_skill_docs()
         self._params_summaries: dict[str, str] = {
@@ -71,6 +72,9 @@ class RuntimeCatalog:
     def get_function(self, name: str) -> FunctionSpec | None:
         return self._function_specs.get(name)
 
+    def get_function_definition_text(self, name: str) -> str:
+        return self._function_definition_texts.get(name, "")
+
     def get_skill(self, name: str) -> SkillDoc | None:
         return self._skill_docs.get(name)
 
@@ -79,9 +83,11 @@ class RuntimeCatalog:
         if not self.functions_dir.exists():
             return specs
         for path in sorted(self.functions_dir.glob("*.json")):
-            payload = json.loads(path.read_text(encoding="utf-8"))
+            raw_text = path.read_text(encoding="utf-8")
+            payload = json.loads(raw_text)
             spec = FunctionSpec.model_validate(payload)
             specs[spec.name] = spec
+            self._function_definition_texts[spec.name] = raw_text
         return specs
 
     def _load_skill_docs(self) -> dict[str, SkillDoc]:
