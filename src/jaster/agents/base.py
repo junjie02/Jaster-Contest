@@ -128,6 +128,11 @@ def _normalize_agent_response(role: str, payload: dict) -> dict:
         normalized["flag_candidates"] = _string_list(
             normalized.get("flag_candidates") or normalized.get("flags_found") or []
         )
+    if role == "skill_router":
+        selected = normalized.get("selected_skills") or normalized.get("skills") or normalized.get("skill_names") or []
+        if isinstance(selected, str):
+            selected = [selected]
+        normalized["selected_skills"] = _string_list(selected)[:2]
     if role == "builder":
         normalized.setdefault("summary", str(normalized.get("summary") or ""))
         if "script" not in normalized:
@@ -142,13 +147,11 @@ def _normalize_action(action: dict, *, parent: dict) -> dict:
     source = dict(action or {})
     normalized: dict[str, object] = {}
     if "kind" not in source:
-        if source.get("skill") or source.get("skill_name") or parent.get("use_skill"):
-            normalized["kind"] = "skill"
-        elif source.get("builder_task") or parent.get("needs_builder"):
-            normalized["kind"] = "builder"
+        if source.get("function") or source.get("function_name") or parent.get("use_function"):
+            normalized["kind"] = "function"
         else:
             action_type = str(parent.get("action_type") or "").strip().lower()
-            normalized["kind"] = "finish" if action_type == "finish" else "builder"
+            normalized["kind"] = "finish" if action_type == "finish" else "function"
     else:
         normalized["kind"] = source.get("kind")
     if "goal" not in normalized:
@@ -166,21 +169,20 @@ def _normalize_action(action: dict, *, parent: dict) -> dict:
         or parent.get("expected_output")
         or ""
     )
-    normalized["skill_name"] = source.get("skill_name") or source.get("skill")
-    normalized["skill_args"] = source.get("skill_args") or source.get("params") or source.get("arguments") or {}
-    normalized["builder_task"] = str(
-        source.get("builder_task")
-        or parent.get("builder_task")
-        or parent.get("builder_goal")
-        or parent.get("builder_context")
+    normalized["function_name"] = source.get("function_name") or source.get("function") or source.get("tool_name")
+    normalized["function_args"] = source.get("function_args") or source.get("params") or source.get("arguments") or {}
+    normalized["executor_brief"] = str(
+        source.get("executor_brief")
+        or parent.get("executor_brief")
+        or parent.get("execution_brief")
         or normalized["goal"]
     )
     if normalized["kind"] == "finish":
-        normalized["skill_name"] = None
-        normalized["skill_args"] = {}
-        normalized["builder_task"] = None
-    if normalized["kind"] == "skill" and not normalized["skill_name"]:
-        normalized["kind"] = "builder"
+        normalized["function_name"] = None
+        normalized["function_args"] = {}
+        normalized["executor_brief"] = ""
+    if normalized["kind"] == "function" and not normalized["function_name"]:
+        normalized["kind"] = "finish"
     return normalized
 
 

@@ -49,6 +49,7 @@ class ExecutionResult(BaseModel):
     command: str = ""
     script_path: str = ""
     source: str = ""
+    failure_stage: str = ""
 
 
 class GlobalFacts(BaseModel):
@@ -141,20 +142,26 @@ class TreePatch(BaseModel):
 class ActionPlan(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    kind: Literal["skill", "builder", "finish"]
+    kind: Literal["function", "finish"]
     goal: str
     expected_result: str = ""
-    skill_name: str | None = None
-    skill_args: dict[str, Any] = Field(default_factory=dict)
-    builder_task: str | None = None
+    function_name: str | None = None
+    function_args: dict[str, Any] = Field(default_factory=dict)
+    executor_brief: str = ""
+
+
+class AvailableFunction(BaseModel):
+    name: str
+    summary: str
+    use_when: str = ""
+    params_summary: str = ""
+    example: str = ""
 
 
 class AvailableSkill(BaseModel):
     name: str
     summary: str
     use_when: str = ""
-    params_summary: str = ""
-    example: str = ""
     wordlist: str = ""
 
 
@@ -164,7 +171,7 @@ class ReconInput(BaseModel):
     challenge_context: str = ""
     recent_observations: list[Observation] = Field(default_factory=list)
     latest_execution: ExecutionResult | None = None
-    available_skills: list[AvailableSkill] = Field(default_factory=list)
+    available_functions: list[AvailableFunction] = Field(default_factory=list)
     latest_summary: str = ""
 
 
@@ -187,7 +194,7 @@ class StrategyInput(BaseModel):
     latest_summary: str = ""
     recent_observations: list[Observation] = Field(default_factory=list)
     latest_execution: ExecutionResult | None = None
-    available_skills: list[AvailableSkill] = Field(default_factory=list)
+    available_functions: list[AvailableFunction] = Field(default_factory=list)
 
 
 class StrategyOutput(BaseModel):
@@ -210,6 +217,8 @@ class ReflectionInput(BaseModel):
     latest_execution: ExecutionResult | None = None
     last_strategy: str = ""
     latest_summary: str = ""
+    selected_skills: list[str] = Field(default_factory=list)
+    inspiration: str = ""
 
 
 class ReflectionOutput(BaseModel):
@@ -217,6 +226,28 @@ class ReflectionOutput(BaseModel):
     next_focus_key: str = ""
     flag_candidates: list[str] = Field(default_factory=list)
     tree_patch: TreePatch = Field(default_factory=TreePatch)
+
+
+class SkillRouterInput(BaseModel):
+    objective: str
+    tree: AttackTreeSnapshot
+    challenge_context: str = ""
+    recent_observations: list[Observation] = Field(default_factory=list)
+    latest_execution: ExecutionResult | None = None
+    last_strategy: str = ""
+    latest_summary: str = ""
+    available_skills: list[AvailableSkill] = Field(default_factory=list)
+
+
+class SkillRouterOutput(BaseModel):
+    selected_skills: list[str] = Field(default_factory=list, max_length=2)
+
+
+class ExecutorInput(BaseModel):
+    function_name: str
+    function_summary: str = ""
+    function_schema_text: str
+    executor_brief: str
 
 
 class BuilderInput(BaseModel):

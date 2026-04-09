@@ -122,7 +122,7 @@
         "roast_mode": "asrep",
         "target": "corp.local/",
         "dc_ip": "10.10.10.10",
-        "usersfile": "skills/docs/users.txt",
+        "usersfile": "functions/docs/users.txt",
         "outputfile": "asrep.txt",
         "format": "hashcat"
       }

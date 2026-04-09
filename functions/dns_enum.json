@@ -99,7 +99,7 @@
       "skill_args": {
         "domain": "example.com",
         "enum_type": "brt",
-        "wordlist": "skills/docs/subdomains-top1mil-5000.txt",
+        "wordlist": "functions/docs/subdomains-top1mil-5000.txt",
         "json_output": "dnsrecon.json"
       }
     }

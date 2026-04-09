@@ -99,21 +99,21 @@
     {
       "label": "common",
       "skill_args": {
-        "wordlist": "skills/docs/common.txt",
+        "wordlist": "functions/docs/common.txt",
         "url": "http://target.local/FUZZ"
       }
     },
     {
       "label": "with_filters",
       "skill_args": {
-        "wordlist": "skills/docs/common.txt",
+        "wordlist": "functions/docs/common.txt",
         "url": "http://target.local/FUZZ",
         "filter_sizes": "1234",
         "threads": 10
       }
     }
   ],
-  "summary": "使用 `ffuf` 发现后台、敏感文件、备份包和常见目录。推荐字典：skills/docs/common.txt，url末尾需要FUZZ占位符：http://target.local/FUZZ",
+  "summary": "使用 `ffuf` 发现后台、敏感文件、备份包和常见目录。推荐字典：functions/docs/common.txt，url末尾需要FUZZ占位符：http://target.local/FUZZ",
   "use_when": "需要围绕 Web 根路径快速补目录资产面。 已确认站点存在隐藏入口、后台、备份或敏感文件线索。需要先做一轮低成本内容发现，再决定是否深挖。",
   "command_mode": "argv"
 }

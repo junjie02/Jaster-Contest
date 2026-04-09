@@ -94,6 +94,7 @@ def run(
     orchestrator = JasterOrchestrator(
         store=FileRunStore(_data_dir(root) / "runs"),
         prompt_root=root / "src" / "jaster" / "prompts",
+        functions_dir=root / "functions",
         skills_dir=root / "skills",
         llm=OpenAIChatClient(),
         on_tree_update=_post_tree_update,
@@ -143,6 +144,7 @@ def contest_run(
     orchestrator = JasterOrchestrator(
         store=FileRunStore(data_dir / "runs"),
         prompt_root=root / "src" / "jaster" / "prompts",
+        functions_dir=root / "functions",
         skills_dir=root / "skills",
         llm=OpenAIChatClient(),
     )

@@ -16,7 +16,6 @@ from jaster.domain import (
     TreePatch,
 )
 from jaster.domain.attack_tree import AttackTree
-from jaster.domain.models import BuilderOutput
 from jaster.runtime.orchestrator import JasterOrchestrator, _compact_observations
 from jaster.storage.files import FileRunStore
 
@@ -32,29 +31,38 @@ class FakeAgent:
         return self.outputs.pop(0)
 
 
+class FakeExecutorAgent:
+    def __init__(self, outputs):
+        self.outputs = list(outputs)
+        self.last_trace = None
+
+    def run(self, zone, payload, *, tool_name, tools, retry_context=None):
+        if not self.outputs:
+            raise AssertionError("Executor received more calls than expected")
+        result = self.outputs.pop(0)
+        self.last_trace = {
+            "role": "executor",
+            "zone": zone,
+            "payload": payload.model_dump(),
+            "tool_name": tool_name,
+            "tools": tools,
+            "retry_context": retry_context,
+            "tool_call": result,
+        }
+        return result
+
+
 class FakeSkillExecutor:
-    def run(self, skill_name, skill_args, *, cwd):
+    def run_function(self, function_name, function_args, *, cwd):
         from jaster.domain import ExecutionResult
 
         cwd.mkdir(parents=True, exist_ok=True)
         return ExecutionResult(
             success=True,
-            summary=f"{skill_name} ok",
+            summary=f"{function_name} ok",
             findings=["found login page"],
-            flag_candidates=[],
-            command=f"{skill_name} {skill_args}",
-        )
-
-
-class FakeBuilderExecutor:
-    def run(self, builder_output, **kwargs):
-        from jaster.domain import ExecutionResult
-
-        return ExecutionResult(
-            success=True,
-            summary=builder_output.summary,
-            findings=["builder parsed source and found flag"],
-            flag_candidates=["flag{demo}"],
+            flag_candidates=["flag{demo}"] if function_name == "dummy" else [],
+            command=f"{function_name} {function_args}",
         )
 
 
@@ -63,11 +71,22 @@ def _make_orchestrator(tmp_path: Path) -> JasterOrchestrator:
     orchestrator = JasterOrchestrator.__new__(JasterOrchestrator)
     orchestrator.store = store
     orchestrator.prompt_root = tmp_path
-    orchestrator.skill_catalog = type("FakeCatalog", (), {"list_available": lambda self: []})()
-    orchestrator.skill_executor = FakeSkillExecutor()
-    orchestrator.builder_executor = FakeBuilderExecutor()
+    orchestrator.catalog = type(
+        "FakeCatalog",
+        (),
+        {
+            "list_functions": lambda self: [],
+            "list_skills": lambda self: [],
+            "render_inspiration": lambda self, selected: "",
+            "get_function": lambda self, name: SimpleNamespace(summary=name),
+            "tool_prompt_text": lambda self, name: f"name: {name}",
+            "build_tool": lambda self, name: {"type": "function", "function": {"name": name, "parameters": {"type": "object"}}},
+        },
+    )()
+    orchestrator.function_executor = FakeSkillExecutor()
     orchestrator.verbose = False
-    orchestrator._last_builder_trace = None
+    orchestrator._last_executor_trace = None
+    orchestrator.phase_max_retries = 3
     orchestrator._on_tree_update = None
     return orchestrator
 
@@ -109,25 +128,23 @@ def test_orchestrator_runs_end_to_end(tmp_path: Path) -> None:
         "strategy": FakeAgent(
             [
                 StrategyOutput(
-                    summary="Use builder on selected branch",
+                    summary="Use function on selected branch",
                     selected_node_key=exploitable_key,
                     action=ActionPlan(
-                        kind="builder",
+                        kind="function",
                         goal="Parse source dump",
                         expected_result="find sensitive data",
-                        builder_task="Read the source dump and extract any flag-like value.",
+                        function_name="dummy",
+                        executor_brief="读取源码并提取 flag",
                     ),
                     goal_reached=True,
                     tree_patch=TreePatch(),
                 )
             ]
         ),
-        "builder": FakeAgent(
+        "executor": FakeExecutorAgent(
             [
-                BuilderOutput(
-                    summary="builder script",
-                    script='import json,sys; data=json.load(sys.stdin); print(json.dumps({"summary":"ok","findings":["x"],"artifacts":[],"flag_candidates":["flag{demo}"]}))',
-                )
+                {"id": "call-1", "name": "dummy", "arguments": {}}
             ]
         ),
         "reflection": FakeAgent(
@@ -386,7 +403,7 @@ def test_observations_are_delayed_by_one_round(tmp_path: Path) -> None:
                     discover_vulnerability=False,
                     selected_node_key=target_key,
                     result_type="ok",
-                    action=ActionPlan(kind="skill", goal="step1", skill_name="dummy", skill_args={}),
+                    action=ActionPlan(kind="function", goal="step1", function_name="dummy", executor_brief="step1"),
                     tree_patch=TreePatch(),
                 ),
                 ReconOutput(
@@ -394,7 +411,7 @@ def test_observations_are_delayed_by_one_round(tmp_path: Path) -> None:
                     discover_vulnerability=False,
                     selected_node_key=target_key,
                     result_type="ok",
-                    action=ActionPlan(kind="skill", goal="step2", skill_name="dummy", skill_args={}),
+                    action=ActionPlan(kind="function", goal="step2", function_name="dummy", executor_brief="step2"),
                     tree_patch=TreePatch(),
                 ),
                 ReconOutput(
@@ -402,7 +419,7 @@ def test_observations_are_delayed_by_one_round(tmp_path: Path) -> None:
                     discover_vulnerability=False,
                     selected_node_key=target_key,
                     result_type="ok",
-                    action=ActionPlan(kind="skill", goal="step3", skill_name="dummy", skill_args={}),
+                    action=ActionPlan(kind="function", goal="step3", function_name="dummy", executor_brief="step3"),
                     tree_patch=TreePatch(),
                 ),
             ]

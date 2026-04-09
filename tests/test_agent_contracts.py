@@ -20,16 +20,17 @@ def test_tree_snapshot_is_shared_contract_shape() -> None:
 
 def test_action_plan_replaces_boolean_routing() -> None:
     plan = ActionPlan(
-        kind="skill",
+        kind="function",
         goal="scan ports",
         expected_result="open ports",
-        skill_name="port_scan",
-        skill_args={"target": "1.1.1.1"},
+        function_name="port_scan",
+        function_args={"target": "1.1.1.1"},
+        executor_brief="目标: 1.1.1.1",
     )
     dumped = plan.model_dump()
-    assert dumped["kind"] == "skill"
-    assert dumped["skill_name"] == "port_scan"
-    assert "builder_task" in dumped
+    assert dumped["kind"] == "function"
+    assert dumped["function_name"] == "port_scan"
+    assert dumped["executor_brief"] == "目标: 1.1.1.1"
 
 
 def test_submission_input_is_minimal() -> None:

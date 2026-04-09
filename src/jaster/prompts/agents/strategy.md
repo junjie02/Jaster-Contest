@@ -21,22 +21,23 @@
 - 若当前渗透缺少部分信息（如完整源码、资产拓扑、新弱点、凭据）：设置 need_recon=true，summary 说明具体需求
 - 若可继续利用：need_recon=false, goal_reached=false
 
-## skill与builder调用规范
-- 若一次skill调用即可完成当前任务，优先使用现成skill，设置kind为skill，并构造skill_name和skill_args。skill不允许多条命令，即便是system command也不允许用 && 拼接命令。
-- 若当前skill无法完成任务或需要多部编排、复杂测试，可设置kind为builder，并在builder_task中写明任务需求并给出足够完成任务的完整信息
-- 若skill调用因参数不合规失败，尝试重新构造参数。
+## function与executor调用规范
+- 若本轮需要执行工具，设置 action.kind 为 function，并从 available_functions 中选择一个最合适的 function_name。
+- 你在本阶段只负责规划，不负责补参数执行；function_args 固定返回 `{}`。
+- 必须填写 executor_brief，供后续 executor agent 独立补参。executor_brief 必须写清：目标、证据、要验证/获取什么、关键参数约束、禁止事项。
+- 若当前不应执行工具，可设置 kind 为 finish。
 
 ## 输出结构
 - summary：string，总结
 - need_recon：bool，是否需要探测新的信息
 - goal_reached：bool，目标是否已达成
 - action：dict，当前动作
-  kind：string，"skill" | "builder" | "finish"
+  kind：string，"function" | "finish"
   goal：string
   expected_result：string
-  skill_name：string|null
-  skill_args：dict
-  builder_task：string|null
+  function_name：string|null
+  function_args：dict，固定返回 {}
+  executor_brief：string
 - flag_candidates：list[string]，候选 Flag 列表；没有则返回 []
 - tree_patch：dict，你需要维护的全局树结构
   add_nodes：list[dict] 新节点，新节点的父节点会自动绑定为selected_node_key

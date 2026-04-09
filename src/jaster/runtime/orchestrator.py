@@ -9,11 +9,10 @@ from typing import Any
 from jaster.agents import build_agents
 from jaster.domain import (
     ActionPlan,
-    ArtifactRef,
     AttackTree,
     AttackTreeSnapshot,
-    BuilderInput,
     ChallengeSpec,
+    ExecutorInput,
     ExecutionResult,
     GlobalFacts,
     Observation,
@@ -21,6 +20,7 @@ from jaster.domain import (
     ReconOutput,
     ReflectionInput,
     RunState,
+    SkillRouterInput,
     SubmissionResult,
     StrategyInput,
     StrategyOutput,
@@ -28,10 +28,9 @@ from jaster.domain import (
 )
 from jaster.domain.models import TreeNodeSnapshot, NodeInfo
 from pydantic import BaseModel, Field
-from jaster.runtime.builder import BuilderExecutor
 from jaster.runtime.env import env_int
-from jaster.runtime.llm import OpenAIChatClient
-from jaster.runtime.skills import SkillCatalog, SkillExecutor
+from jaster.runtime.llm import LLMError, OpenAIChatClient
+from jaster.runtime.catalog import RuntimeCatalog, FunctionExecutor
 from jaster.storage.files import FileRunStore
 
 
@@ -108,6 +107,7 @@ class JasterOrchestrator:
         *,
         store: FileRunStore,
         prompt_root: Path,
+        functions_dir: Path,
         skills_dir: Path,
         llm: OpenAIChatClient,
         verbose: bool = True,
@@ -115,14 +115,13 @@ class JasterOrchestrator:
     ) -> None:
         self.store = store
         self.prompt_root = prompt_root
-        self.skill_catalog = SkillCatalog(skills_dir)
-        self.skill_executor = SkillExecutor(self.skill_catalog)
-        self.builder_executor = BuilderExecutor()
+        self.catalog = RuntimeCatalog(functions_dir, skills_dir)
+        self.function_executor = FunctionExecutor(self.catalog)
         self.agents = build_agents(prompt_root, llm)
         self.verbose = verbose
         self.phase_max_retries = env_int("JASTER_PHASE_MAX_RETRIES", 3)
         self._on_tree_update = on_tree_update
-        self._last_builder_trace: dict | None = None
+        self._last_executor_trace: dict | None = None
 
     def run(
         self,
@@ -181,9 +180,7 @@ class JasterOrchestrator:
                 recon_out, latest_execution, recon_elapsed = self._run_action_phase(
                     agent_name="recon",
                     zone=state.challenge.zone,
-                    challenge=state.challenge,
                     run_id=run_id,
-                    observations=state.observations[-50:],
                     latest_execution=prev_execution,
                     payload_factory=lambda execution: ReconInput(
                         objective=f"Recon the target {state.challenge.target} and expand the global attack tree.",
@@ -191,7 +188,7 @@ class JasterOrchestrator:
                         challenge_context=_challenge_context(state.challenge),
                         recent_observations=_compact_observations(state.observations[-50:]),
                         latest_execution=_compact_execution(execution),
-                        available_skills=self.skill_catalog.list_available(),
+                        available_functions=self.catalog.list_functions(),
                         latest_summary=strategy_summary,
                     ),
                     label=f"Round {phase_round}: recon",
@@ -199,7 +196,7 @@ class JasterOrchestrator:
                 self._log(f"    Phase time: {recon_elapsed:.2f}s")
                 self._log(
                     f"    Action: {recon_out.action.kind}"
-                    + (f" | skill={recon_out.action.skill_name}" if recon_out.action.skill_name else "")
+                    + (f" | function={recon_out.action.function_name}" if recon_out.action.function_name else "")
                 )
                 tree.apply_patch(recon_out.tree_patch)
 
@@ -222,7 +219,7 @@ class JasterOrchestrator:
                     {
                         "recon_input": _agent_trace(self.agents.get("recon")),
                         "recon": recon_out.model_dump(),
-                        "builder_input": self._last_builder_trace,
+                        "executor_input": self._last_executor_trace,
                         "execution": latest_execution.model_dump(),
                     },
                 )
@@ -255,6 +252,38 @@ class JasterOrchestrator:
 
             if next_phase == "reflection":
                 self._log("[*] Reflection: organizing findings for exploitable point")
+                skill_router_out = None
+                skill_router_elapsed = 0.0
+                skill_router_status = "skipped_no_skills"
+                available_skills = self.catalog.list_skills()
+                selected_skills: list[str] = []
+                inspiration = ""
+                if available_skills:
+                    try:
+                        skill_router_out, skill_router_elapsed = self._timed_agent_run(
+                            "skill_router",
+                            state.challenge.zone,
+                            SkillRouterInput(
+                                objective="Select 1-2 skills as inspiration before reflection.",
+                                tree=_prompt_tree_snapshot(tree.snapshot()),
+                                challenge_context=_challenge_context(state.challenge),
+                                recent_observations=_compact_observations(state.observations[-50:]),
+                                latest_execution=_compact_execution(latest_execution),
+                                last_strategy=node_context.target_node.title if node_context else "",
+                                latest_summary=recon_summary if _reflection_entry == "recon" else strategy_summary,
+                                available_skills=available_skills,
+                            ),
+                        )
+                        selected_skills = _normalize_selected_skills(
+                            skill_router_out.selected_skills,
+                            available={item.name for item in available_skills},
+                        )
+                        skill_router_status = "selected" if selected_skills else "fallback_empty_selection"
+                    except Exception as exc:
+                        skill_router_status = f"fallback_error:{type(exc).__name__}"
+                        selected_skills = []
+                    inspiration = self.catalog.render_inspiration(selected_skills)
+                self._log(f"    Skill router time: {skill_router_elapsed:.2f}s | {skill_router_status}")
                 reflection_out, reflection_elapsed = self._timed_agent_run(
                     "reflection",
                     state.challenge.zone,
@@ -266,6 +295,8 @@ class JasterOrchestrator:
                         latest_execution=_compact_execution(latest_execution),
                         last_strategy=node_context.target_node.title if node_context else "",
                         latest_summary=recon_summary if _reflection_entry == "recon" else strategy_summary,
+                        selected_skills=selected_skills,
+                        inspiration=inspiration,
                     ),
                 )
                 self._log(f"    LLM time: {reflection_elapsed:.2f}s")
@@ -286,6 +317,11 @@ class JasterOrchestrator:
                     phase_round,
                     "reflection",
                     {
+                        "skill_router_input": _agent_trace(self.agents.get("skill_router")),
+                        "skill_router": skill_router_out.model_dump() if skill_router_out else None,
+                        "skill_router_status": skill_router_status,
+                        "selected_skills": selected_skills,
+                        "inspiration": inspiration,
                         "reflection_input": _agent_trace(self.agents.get("reflection")),
                         "reflection": reflection_out.model_dump(),
                     },
@@ -311,9 +347,7 @@ class JasterOrchestrator:
             strategy_out, latest_execution, strategy_elapsed = self._run_action_phase(
                 agent_name="strategy",
                 zone=state.challenge.zone,
-                challenge=state.challenge,
                 run_id=run_id,
-                observations=state.observations[-50:],
                 latest_execution=prev_execution,
                 payload_factory=lambda execution: StrategyInput(
                     objective=f"Exploit the target {state.challenge.target} and capture the flag.",
@@ -324,14 +358,14 @@ class JasterOrchestrator:
                     latest_summary=reflection_summary,
                     recent_observations=_compact_observations(state.observations[-50:]),
                     latest_execution=_compact_execution(execution),
-                    available_skills=self.skill_catalog.list_available(),
+                    available_functions=self.catalog.list_functions(),
                 ),
                 label=f"Round {phase_round}: strategy",
             )
             self._log(f"    Phase time: {strategy_elapsed:.2f}s")
             self._log(
                 f"    Action: {strategy_out.action.kind}"
-                + (f" | skill={strategy_out.action.skill_name}" if strategy_out.action.skill_name else "")
+                + (f" | function={strategy_out.action.function_name}" if strategy_out.action.function_name else "")
             )
             tree.apply_patch(strategy_out.tree_patch)
             self._log(
@@ -397,7 +431,7 @@ class JasterOrchestrator:
                         "reflection_summary": reflection_summary,
                     },
                     "strategy": strategy_out.model_dump(),
-                    "builder_input": self._last_builder_trace,
+                    "executor_input": self._last_executor_trace,
                     "execution": latest_execution.model_dump(),
                     "submission_input": _agent_trace(self.agents.get("submission")) if submission_out else None,
                     "submission": submission_out.model_dump() if submission_out else None,
@@ -450,52 +484,58 @@ class JasterOrchestrator:
         self,
         *,
         run_id: str,
-        challenge: ChallengeSpec,
+        zone: str,
         action: ActionPlan,
-        observations: list[Observation],
-        latest_execution: ExecutionResult | None,
     ) -> ExecutionResult:
         run_dir = self.store.run_dir(run_id)
         artifacts_dir = run_dir / "artifacts"
-        work_dir = artifacts_dir / f"step-{len(list((run_dir / 'rounds').glob('*.json'))) + 1:03d}"
-        self._last_builder_trace = None
-        self._log(f"    Work dir: {work_dir}")
+        self._last_executor_trace = None
+        self._log(f"    Work dir: {artifacts_dir}")
         if action.kind == "finish":
             self._log(f"    Finish action: {action.goal}")
             return ExecutionResult(success=True, summary=action.goal)
-        if action.kind == "skill":
-            self._log(
-                f"    Running skill: {action.skill_name or '(unknown)'}"
-                + (f" | args={action.skill_args}" if action.skill_args else "")
+        if not action.function_name:
+            return ExecutionResult(
+                success=False,
+                summary="Missing function_name",
+                stderr="missing function_name",
+                failure_stage="executor_tool_call",
             )
-            return self.skill_executor.run(action.skill_name or "", action.skill_args, cwd=artifacts_dir)
-        self._log("    Calling builder LLM")
-        builder_output, builder_elapsed = self._timed_agent_run(
-            "builder",
-            challenge.zone,
-            BuilderInput(task=action.builder_task or action.goal),
-        )
-        self._last_builder_trace = _agent_trace(self.agents.get("builder"))
-        self._log(f"    LLM time: {builder_elapsed:.2f}s")
-        self._log(f"    Builder summary: {builder_output.summary or '(empty)'}")
-        skills_dir = Path(getattr(self.skill_catalog, "skills_dir", self.prompt_root.parent.parent / "skills")).resolve()
-        repo_root = skills_dir.parent.resolve()
-        accessible_artifacts = [
-            ArtifactRef(kind="run_dir", path=str(run_dir / "artifacts")),
-            ArtifactRef(kind="repo_root", path=str(repo_root)),
-            ArtifactRef(kind="skills_dir", path=str(skills_dir)),
-        ]
-        return self.builder_executor.run(
-            builder_output,
-            target=challenge.target,
-            target_type=challenge.target_type,
-            working_dir=work_dir,
-            accessible_artifacts=accessible_artifacts,
-            recent_observations=observations,
-            latest_execution=latest_execution,
-            repo_root=repo_root,
-            skills_dir=skills_dir,
-        )
+        function_spec = self.catalog.get_function(action.function_name)
+        if function_spec is None:
+            return ExecutionResult(
+                success=False,
+                summary=f"Unknown function: {action.function_name}",
+                stderr="unknown function",
+                failure_stage="executor_tool_call",
+            )
+        self._log(f"    Calling executor for function: {action.function_name}")
+        try:
+            tool_call = self.agents["executor"].run(
+                zone,
+                ExecutorInput(
+                    function_name=action.function_name,
+                    function_summary=function_spec.summary,
+                    function_schema_text=self.catalog.tool_prompt_text(action.function_name),
+                    executor_brief=action.executor_brief,
+                ),
+                tool_name=action.function_name,
+                tools=[self.catalog.build_tool(action.function_name)],
+            )
+        except Exception as exc:
+            self._last_executor_trace = _agent_trace(self.agents.get("executor"))
+            raw_text = exc.raw_text if isinstance(exc, LLMError) else ""
+            return ExecutionResult(
+                success=False,
+                summary=f"Executor failed for {action.function_name}",
+                stderr=str(exc),
+                findings=[raw_text] if raw_text else [],
+                failure_stage="executor_tool_call",
+            )
+        self._last_executor_trace = _agent_trace(self.agents.get("executor"))
+        action.function_args = dict(tool_call.get("arguments") or {})
+        self._log(f"    Running function: {action.function_name} | args={action.function_args}")
+        return self.function_executor.run_function(action.function_name, action.function_args, cwd=artifacts_dir)
 
     def _log(self, message: str) -> None:
         if getattr(self, "verbose", True):
@@ -532,14 +572,11 @@ class JasterOrchestrator:
         *,
         agent_name: str,
         zone: str,
-        challenge: ChallengeSpec,
         run_id: str,
-        observations: list[Observation],
         latest_execution: ExecutionResult | None,
         payload_factory: Callable[[ExecutionResult | None], object],
         label: str,
     ) -> tuple[ReconOutput | StrategyOutput, ExecutionResult, float]:
-        agent = self.agents[agent_name]
         max_attempts = max(1, int(getattr(self, "phase_max_retries", 3) or 1))
         retry_context: dict[str, Any] | None = None
         current_execution = latest_execution
@@ -563,10 +600,8 @@ class JasterOrchestrator:
             self._log(f"    \033[92m{agent_out.summary or '(empty)'}\033[0m")
             execution = self._execute_action(
                 run_id=run_id,
-                challenge=challenge,
+                zone=zone,
                 action=agent_out.action,
-                observations=observations,
-                latest_execution=current_execution,
             )
             execution.source = agent_name
             if execution.success or agent_out.action.kind == "finish":
@@ -632,13 +667,6 @@ def _facts_from_execution(result: ExecutionResult) -> GlobalFacts:
     )
 
 
-def _truncate_text(value: str, limit: int) -> str:
-    rendered = value.strip()
-    if len(rendered) <= limit:
-        return rendered
-    return rendered[: limit - 3] + "..."
-
-
 def _compact_observations(observations: list[Observation], *, limit: int = 50) -> list[Observation]:
     return [item.model_copy() for item in observations[-limit:]]
 
@@ -658,6 +686,7 @@ def _compact_execution(execution: ExecutionResult | None) -> ExecutionResult | N
         command=execution.command,
         script_path=execution.script_path,
         source=execution.source,
+        failure_stage=execution.failure_stage,
     )
 
 
@@ -710,6 +739,18 @@ def _agent_trace(agent: object) -> dict | None:
     return dict(trace) if isinstance(trace, dict) else None
 
 
+def _normalize_selected_skills(selected: list[str], *, available: set[str]) -> list[str]:
+    normalized: list[str] = []
+    for item in selected:
+        name = str(item).strip()
+        if not name or name not in available or name in normalized:
+            continue
+        normalized.append(name)
+        if len(normalized) >= 2:
+            break
+    return normalized
+
+
 def _build_action_retry_context(
     *,
     attempt: int,
@@ -720,7 +761,7 @@ def _build_action_retry_context(
     return {
         "attempt": attempt,
         "max_attempts": max_attempts,
-        "failure_stage": "action_execution",
+        "failure_stage": execution.failure_stage or "action_execution",
         "error_type": "ActionExecutionFailed",
         "error_message": execution.summary or execution.stderr or execution.stdout or "Action execution failed",
         "previous_action": action.model_dump(),
