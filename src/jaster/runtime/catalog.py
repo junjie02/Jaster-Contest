@@ -47,9 +47,6 @@ class RuntimeCatalog:
         self._function_definition_texts: dict[str, str] = {}
         self._function_specs = self._load_function_specs()
         self._skill_docs = self._load_skill_docs()
-        self._params_summaries: dict[str, str] = {
-            name: self._params_summary(spec) for name, spec in self._function_specs.items()
-        }
 
     def list_functions(self) -> list[AvailableFunction]:
         return [
@@ -57,15 +54,13 @@ class RuntimeCatalog:
                 name=spec.name,
                 summary=spec.summary,
                 use_when=spec.use_when,
-                params_summary=self._params_summaries[spec.name],
-                example=self._representative_example(spec),
             )
             for spec in self._function_specs.values()
         ]
 
     def list_skills(self) -> list[AvailableSkill]:
         return [
-            AvailableSkill(name=skill.name, summary=skill.summary, use_when=skill.use_when, wordlist=skill.wordlist)
+            AvailableSkill(name=skill.name, summary=skill.summary, use_when=skill.use_when)
             for skill in self._skill_docs.values()
         ]
 
@@ -120,43 +115,8 @@ class RuntimeCatalog:
             name=meta.get("name") or path.stem,
             summary=meta.get("summary", ""),
             use_when=meta.get("use_when", ""),
-            wordlist=meta.get("wordlist", ""),
             body=body,
         )
-
-    @staticmethod
-    def _params_summary(spec: FunctionSpec) -> str:
-        if spec.command_mode == "shell":
-            return "command:string(required)"
-        if not spec.args:
-            return ""
-        parts: list[str] = []
-        for arg in spec.args:
-            arg_type = arg.type
-            if arg.repeatable and not arg_type.endswith("_list"):
-                arg_type = f"{arg_type}[]"
-            flags: list[str] = []
-            if arg.required:
-                flags.append("required")
-            if arg.default not in (None, "", [], {}):
-                flags.append(f"default={arg.default}")
-            if arg.enum:
-                flags.append("enum=" + "|".join(str(item) for item in arg.enum))
-            suffix = f"({', '.join(flags)})" if flags else ""
-            parts.append(f"{arg.name}:{arg_type}{suffix}")
-        return ", ".join(parts)
-
-    @staticmethod
-    def _representative_example(spec: FunctionSpec) -> str:
-        if not spec.examples:
-            return ""
-        first = spec.examples[0]
-        label = str(first.get("label") or "").strip()
-        skill_args = first.get("skill_args")
-        if not isinstance(skill_args, dict) or not skill_args:
-            return label
-        rendered = json.dumps(skill_args, ensure_ascii=False, separators=(", ", ": "))
-        return f"{label}: {rendered}" if label else rendered
 
     def render_inspiration(self, selected_skills: list[str]) -> str:
         parts: list[str] = []

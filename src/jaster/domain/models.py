@@ -154,15 +154,12 @@ class AvailableFunction(BaseModel):
     name: str
     summary: str
     use_when: str = ""
-    params_summary: str = ""
-    example: str = ""
 
 
 class AvailableSkill(BaseModel):
     name: str
     summary: str
     use_when: str = ""
-    wordlist: str = ""
 
 
 class ReconInput(BaseModel):
