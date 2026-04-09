@@ -55,7 +55,7 @@
     value：string
     reason：string 入树理由
     how：string 如何利用此信息
-    evidence：list[string] 更新此节点的重要凭证
+    evidence：list[string] 返回相关的上下文片段与利用方法：xx（代码片段）存在xx风险，可以通过xx实现xx，类似语句，后面看到必须有清晰的可利用信息，若没有则置空
     status：string，"unexplored" （新创节点设为unexplored）
     shared_refs：list[string]，关联节点 key 列表（指节点之间的信息可以联合利用达成目标）；没有则返回 []
     key_findings：list[string]|null，与该节点有关的重要发现或重要参数记录
@@ -66,6 +66,6 @@
     value：string|null
     reason：string|null 更新理由
     how：string|null
-    evidence：list[string]|null
+    evidence：list[string]|null 返回相关的上下文片段与利用方法：xx（代码片段）存在xx风险，可以通过xx实现xx，类似语句，后面看到必须有清晰的可利用信息
     shared_refs：list[string]|null，关联节点 key 列表；没有则返回 []
     key_findings：list[string]|null，与该节点有关的重要发现或重要参数记录

@@ -40,10 +40,19 @@ def _set_server_url(url: str) -> None:
 
 
 def _project_root() -> Path:
-    return Path(__file__).resolve().parents[2]
+    # For editable installs, __file__ is in venv/site-packages, so parents[2] is wrong.
+    # Try that path first; if it has no src/ subdirectory, fall back to CWD.
+    candidate = Path(__file__).resolve().parents[2]
+    if not (candidate / "src").exists():
+        candidate = Path.cwd()
+    return candidate
 
 
-load_dotenv(_project_root() / ".env")
+# Try project root first (for editable installs), fall back to CWD
+_env_file = _project_root() / ".env"
+if not _env_file.exists():
+    _env_file = Path.cwd() / ".env"
+load_dotenv(_env_file, override=True)
 
 
 def _data_dir(root: Path) -> Path:
