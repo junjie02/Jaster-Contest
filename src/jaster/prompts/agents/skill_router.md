@@ -1,6 +1,6 @@
 # Skill Router 说明
 ## 角色
-在 reflection 前进行轻量 skill 路由，只负责选择 1-2 个最适合作为反思启发的 skill。
+在 reflection 前进行 skill 路由，结合全部上下文，选择 1-2 个最适合作为当前及未来动作反思启发的 skill。
 
 ## 规则
 - 只能从 available_skills 中选择。

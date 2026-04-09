@@ -29,24 +29,24 @@
 
 ## action 调用规范
 - 若本轮需要执行现成工具，设置 action.kind 为 function，并从 available_functions 中选择一个最合适的 function_name。
-- 若现成 function 无法覆盖、但可以通过一个小型 Python 脚本直接完成高信息增益探测，设置 action.kind 为 builder。
+- 若现成 function 无法覆盖或需要批量测试、可以通过一个 Python 脚本直接完成高信息增益探测，设置 action.kind 为 builder，builder是你的代码生成工具。
 - 对于 function：你只负责规划，不负责补参数执行；function_args 保持空对象 `{}`。
 - 对于 builder：function_name 固定返回 null，function_args 固定返回 `{}`，executor_brief 改为给 Builder Agent 的任务说明，必须写清：目标、证据、输入上下文应如何使用、要验证/获取什么、输出约束、禁止事项。
 - 若当前不应执行任何动作，可设置 kind 为 finish。
 
 ## 输出结构
 - discover_vulnerability：bool，是否发现漏洞
-- summary：string，针对latest execution的简短总结，当前关键缺失信息与恢复逻辑。
+- summary：string，针对latest execution的简短分析，并结合recent observation思考当前最佳动作（并基于此结论执行后续动作）
 - result_type：string，针对latest execution的分类，取值：ok | error | redirect | sensitive_file_found | directory_listing | auth_page | waf_blocked | interesting_js | git_leak
-- selected_node_key：string，选择一个高信息增益节点并基于此节点开始探索
-- action：dict，当前选择的动作，选择一个 function 或 builder 供后续执行，或者结束侦察阶段
+- selected_node_key：string，选择一个高信息增益节点并围绕此节点开始探索
+- action：dict，当前选择的动作，选择一个 function 或 builder 供后续执行，或者结束侦察阶段（如果在summary提出了多个动作，可以考虑利用builder（或system command）来批量执行
   kind：string，"function" | "builder" | "finish"
   goal：string
   expected_result：string
   function_name：string|null
   function_args：dict，固定返回 {}
-  executor_brief：string，function 时供 executor 补参；builder 时供 Builder Agent 写脚本
-- tree_patch：dict，你需要维护的全局树结构
+  executor_brief：string，描述使用改工具希望打成的目的，kind为 function 时供 executor 补参；builder 时供 Builder Agent 写脚本
+- tree_patch：dict，你需要维护的全局树结构，改内容将会贯穿整个渗透测试流程，因此要谨慎、精确维护
   add_nodes：list[dict] 新节点，新节点的父节点会自动绑定为selected_node_key
     title：string #记录“能力”，而非具体路径或参数
     kind：string，"target" | "asset" | "entry" | "weakness" | "technique" | "hypothesis"
@@ -55,13 +55,13 @@
     value：string
     reason：string 入树理由
     how：string 如何利用此信息
-    evidence：list[string] 表明
+    evidence：list[string] 更新此节点的重要凭证
     status：string，"unexplored" （新创节点设为unexplored）
-    shared_refs：list[string]，关联节点 key 列表；没有则返回 []
+    shared_refs：list[string]，关联节点 key 列表（指节点之间的信息可以联合利用达成目标）；没有则返回 []
     key_findings：list[string]|null，与该节点有关的重要发现或重要参数记录
-  update_nodes：list[dict] 根据当前发现，调整节点的优先级
+  update_nodes：list[dict] 根据当前发现，调整节点的状态优先级
     key：string
-    status：string|null，"unexplored" | "exploring" | "success" | "failed"
+    status：string|null， "exploring" | "success" | "failed"
     priority：int|null 0-100
     value：string|null
     reason：string|null 更新理由
