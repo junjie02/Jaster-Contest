@@ -70,6 +70,14 @@ class ExecutionResult(BaseModel):
     task_results: dict[str, "TaskExecutionResult"] = Field(default_factory=dict)
 
 
+class LatestExecutionResult(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    success: bool
+    batch_status: str = ""
+    task_results: dict[str, "TaskExecutionResult"] = Field(default_factory=dict)
+
+
 class TaskExecutionResult(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -196,7 +204,7 @@ class ReconInput(BaseModel):
     tree: AttackTreeSnapshot
     challenge_context: str = ""
     recent_observations: list[RecentObservationRound] = Field(default_factory=list)
-    latest_execution: ExecutionResult | None = None
+    latest_execution: LatestExecutionResult | None = None
     available_artifacts: list[ArtifactRef] = Field(default_factory=list)
     available_functions: list[AvailableFunction] = Field(default_factory=list)
     latest_summary: str = ""
@@ -220,7 +228,7 @@ class StrategyInput(BaseModel):
     challenge_context: str = ""
     latest_summary: str = ""
     recent_observations: list[RecentObservationRound] = Field(default_factory=list)
-    latest_execution: ExecutionResult | None = None
+    latest_execution: LatestExecutionResult | None = None
     available_artifacts: list[ArtifactRef] = Field(default_factory=list)
     available_functions: list[AvailableFunction] = Field(default_factory=list)
 
@@ -242,7 +250,7 @@ class ReflectionInput(BaseModel):
     tree: AttackTreeSnapshot
     challenge_context: str = ""
     recent_observations: list[RecentObservationRound] = Field(default_factory=list)
-    latest_execution: ExecutionResult | None = None
+    latest_execution: LatestExecutionResult | None = None
     available_artifacts: list[ArtifactRef] = Field(default_factory=list)
     last_strategy: str = ""
     latest_summary: str = ""
@@ -263,7 +271,7 @@ class SkillRouterInput(BaseModel):
     tree: AttackTreeSnapshot
     challenge_context: str = ""
     recent_observations: list[RecentObservationRound] = Field(default_factory=list)
-    latest_execution: ExecutionResult | None = None
+    latest_execution: LatestExecutionResult | None = None
     last_strategy: str = ""
     latest_summary: str = ""
     available_skills: list[AvailableSkill] = Field(default_factory=list)

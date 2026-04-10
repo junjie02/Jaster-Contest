@@ -5,7 +5,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from jaster.domain import ArtifactRef, BuilderOutput, ExecutionResult, RecentObservationRound
+from jaster.domain import ArtifactRef, BuilderOutput, ExecutionResult, LatestExecutionResult, RecentObservationRound
 from jaster.runtime.catalog import discover_artifacts, snapshot_work_dir
 from jaster.runtime.json_extract import extract_json_object
 
@@ -20,7 +20,7 @@ class BuilderExecutor:
         working_dir: Path,
         accessible_artifacts: list[ArtifactRef],
         recent_observations: list[RecentObservationRound],
-        latest_execution: ExecutionResult | None,
+        latest_execution: LatestExecutionResult | None,
         repo_root: Path | None = None,
         skills_dir: Path | None = None,
     ) -> ExecutionResult:

@@ -17,6 +17,7 @@ from jaster.domain import (
     ExecutorInput,
     ExecutionResult,
     GlobalFacts,
+    LatestExecutionResult,
     Observation,
     ObservedTaskResult,
     ReconInput,
@@ -660,7 +661,7 @@ class JasterOrchestrator:
                     working_dir=task_dir,
                     accessible_artifacts=list(available_artifacts),
                     recent_observations=list(recent_observations),
-                    latest_execution=latest_execution,
+                    latest_execution=_compact_execution(latest_execution),
                     repo_root=self.catalog.functions_dir.parent,
                     skills_dir=self.catalog.skills_dir,
                 ),
@@ -922,14 +923,12 @@ def _serialize_recent_observations(observations: list[Observation]) -> list[Rece
     return serialized
 
 
-def _compact_execution(execution: ExecutionResult | None) -> ExecutionResult | None:
+def _compact_execution(execution: ExecutionResult | None) -> LatestExecutionResult | None:
     if execution is None:
         return None
-    return ExecutionResult(
+    return LatestExecutionResult(
         success=execution.success,
         batch_status=execution.batch_status,
-        source=execution.source,
-        failure_stage=execution.failure_stage,
         task_results={key: value.model_copy(deep=True) for key, value in execution.task_results.items()},
     )
 
