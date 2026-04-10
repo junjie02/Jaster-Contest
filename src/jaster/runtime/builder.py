@@ -66,7 +66,6 @@ class BuilderExecutor:
             findings=[str(item) for item in output.get("findings", []) if str(item).strip()],
             flag_candidates=[str(item) for item in output.get("flag_candidates", []) if str(item).strip()],
             artifacts=[
-                ArtifactRef(kind="script", path=str(script_path)),
                 *output_artifacts,
                 *discovered_artifacts,
             ],

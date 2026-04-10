@@ -35,7 +35,7 @@ from jaster.domain.models import TreeNodeSnapshot, NodeInfo
 from pydantic import BaseModel, Field
 from jaster.runtime.env import env_int
 from jaster.runtime.llm import LLMError, OpenAIChatClient
-from jaster.runtime.catalog import RuntimeCatalog, FunctionExecutor
+from jaster.runtime.catalog import FunctionExecutor, RuntimeCatalog, filter_available_artifacts
 from jaster.runtime.builder import BuilderExecutor
 from jaster.storage.files import FileRunStore
 
@@ -222,7 +222,10 @@ class JasterOrchestrator:
                     source="recon",
                     execution=latest_execution.model_copy(deep=True),
                 )
-                state.available_artifacts = _merge_artifact_refs(state.available_artifacts, latest_execution.artifacts)
+                state.available_artifacts = _merge_artifact_refs(
+                    state.available_artifacts,
+                    _available_artifacts(latest_execution.artifacts),
+                )
                 tree.merge_facts(_facts_from_execution(latest_execution))
                 state.tree = tree.snapshot()
                 self._append_phase_round(
@@ -396,7 +399,10 @@ class JasterOrchestrator:
                 source="strategy",
                 execution=latest_execution.model_copy(deep=True),
             )
-            state.available_artifacts = _merge_artifact_refs(state.available_artifacts, latest_execution.artifacts)
+            state.available_artifacts = _merge_artifact_refs(
+                state.available_artifacts,
+                _available_artifacts(latest_execution.artifacts),
+            )
             tree.merge_facts(_facts_from_execution(latest_execution))
 
             candidates = _merge_flag_candidates(strategy_out.flag_candidates, latest_execution.flag_candidates)
@@ -911,7 +917,8 @@ def _compact_execution(execution: ExecutionResult | None) -> ExecutionResult | N
 
 
 def _prompt_artifacts(artifacts: list[ArtifactRef], *, limit: int = 20) -> list[ArtifactRef]:
-    return [item.model_copy(deep=True) for item in artifacts[-limit:]]
+    filtered = filter_available_artifacts(artifacts)
+    return [item.model_copy(deep=True) for item in filtered[-limit:]]
 
 
 def _prompt_tree_snapshot(snapshot: AttackTreeSnapshot) -> AttackTreeSnapshot:
@@ -1120,6 +1127,10 @@ def _annotate_artifacts(
             )
         )
     return _merge_artifact_refs([], annotated)
+
+
+def _available_artifacts(artifacts: list[ArtifactRef]) -> list[ArtifactRef]:
+    return filter_available_artifacts(artifacts)
 
 
 def _merge_artifact_refs(left: list[ArtifactRef], right: list[ArtifactRef]) -> list[ArtifactRef]:

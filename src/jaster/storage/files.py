@@ -4,7 +4,8 @@ import json
 import uuid
 from pathlib import Path
 
-from jaster.domain import RunState
+from jaster.domain import ArtifactRef, RunState
+from jaster.runtime.catalog import filter_available_artifacts
 
 
 class FileRunStore:
@@ -33,7 +34,7 @@ class FileRunStore:
                 {
                     "run_id": state.run_id,
                     "challenge": state.challenge.model_dump(),
-                    "available_artifacts": [item.model_dump() for item in state.available_artifacts],
+                    "available_artifacts": [item.model_dump() for item in filter_available_artifacts(state.available_artifacts)],
                     "submitted_flags": state.submitted_flags,
                     "rounds_completed": state.rounds_completed,
                 },
@@ -71,9 +72,13 @@ class FileRunStore:
             observations = [
                 json.loads(line) for line in obs_path.read_text(encoding="utf-8").splitlines() if line.strip()
             ]
+        raw_artifacts = [
+            ArtifactRef.model_validate(item) for item in run_payload.get("available_artifacts", [])
+        ]
         return RunState.model_validate(
             {
                 **run_payload,
+                "available_artifacts": [item.model_dump() for item in filter_available_artifacts(raw_artifacts)],
                 "tree": tree_payload,
                 "observations": observations,
             }
