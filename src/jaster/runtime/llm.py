@@ -49,14 +49,6 @@ class OpenAIChatClient:
         self._rate_limit_lock = threading.Lock()
         self._rate_limit_timestamps: list[float] = []
 
-        # Reusable httpx client
-        self._client: httpx.Client | None = None
-
-    def _get_client(self) -> httpx.Client:
-        if self._client is None:
-            self._client = httpx.Client(timeout=self.timeout)
-        return self._client
-
     def _jitter(self) -> float:
         import random
         return random.uniform(-self.http_retry_jitter, self.http_retry_jitter)
