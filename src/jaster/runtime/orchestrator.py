@@ -371,6 +371,7 @@ class JasterOrchestrator:
                 recent_observations=_compact_observations(state.observations),
                 payload_factory=lambda execution: StrategyInput(
                     objective=f"Exploit the target {state.challenge.target} and capture the flag.",
+                    tree=_prompt_tree_snapshot(tree.snapshot()),
                     target_node=node_context.target_node,
                     path_to_root=node_context.path_to_root,
                     related_nodes=node_context.related_nodes,

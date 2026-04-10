@@ -222,6 +222,7 @@ class ReconOutput(BaseModel):
 
 class StrategyInput(BaseModel):
     objective: str
+    tree: AttackTreeSnapshot
     target_node: NodeInfo
     path_to_root: list[NodeInfo] = Field(default_factory=list)
     related_nodes: list[NodeInfo] = Field(default_factory=list)
