@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import time
 from collections import deque
+import threading
 from typing import Any
 
 import httpx
@@ -76,17 +77,19 @@ class PlatformRateLimiter:
         self._time_fn = time_fn or time.monotonic
         self._sleep_fn = sleep_fn or time.sleep
         self._timestamps: deque[float] = deque()
+        self._lock = threading.Lock()
 
     def acquire(self) -> None:
-        now = self._time_fn()
-        self._trim(now)
-        if len(self._timestamps) >= self.max_requests:
-            wait_seconds = self.window_seconds - (now - self._timestamps[0])
-            if wait_seconds > 0:
-                self._sleep_fn(wait_seconds)
+        with self._lock:
             now = self._time_fn()
             self._trim(now)
-        self._timestamps.append(self._time_fn())
+            if len(self._timestamps) >= self.max_requests:
+                wait_seconds = self.window_seconds - (now - self._timestamps[0])
+                if wait_seconds > 0:
+                    self._sleep_fn(wait_seconds)
+                now = self._time_fn()
+                self._trim(now)
+            self._timestamps.append(self._time_fn())
 
     def _trim(self, now: float) -> None:
         while self._timestamps and now - self._timestamps[0] >= self.window_seconds:

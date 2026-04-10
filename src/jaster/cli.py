@@ -8,7 +8,7 @@ from pathlib import Path
 import typer
 
 from jaster.domain import ChallengeSpec
-from jaster.runtime.contest import create_contest_scheduler
+from jaster.runtime.contest import create_contest_scheduler, create_parallel_contest_coordinator
 from jaster.runtime.env import env_int, load_dotenv
 from jaster.runtime.llm import OpenAIChatClient
 from jaster.runtime.orchestrator import JasterOrchestrator, detect_target_type, detect_zone
@@ -143,6 +143,7 @@ def serve(
 def contest_run(
     host: str = typer.Option(os.environ.get("JASTER_PLATFORM_HOST", ""), help="Platform host, without /api suffix"),
     agent_token: str = typer.Option(os.environ.get("JASTER_AGENT_TOKEN", ""), help="Platform Agent-Token"),
+    parallel_workers: int = typer.Option(3, min=1, help="Number of challenge workers to run in parallel"),
 ) -> None:
     if not host.strip():
         raise typer.BadParameter("JASTER_PLATFORM_HOST is required")
@@ -150,27 +151,68 @@ def contest_run(
         raise typer.BadParameter("JASTER_AGENT_TOKEN is required")
     root = _project_root()
     data_dir = _data_dir(root)
-    orchestrator = JasterOrchestrator(
-        store=FileRunStore(data_dir / "runs"),
-        prompt_root=root / "src" / "jaster" / "prompts",
-        functions_dir=root / "functions",
-        skills_dir=root / "skills",
-        llm=OpenAIChatClient(),
-    )
-    scheduler = create_contest_scheduler(
+    if parallel_workers == 1:
+        orchestrator = JasterOrchestrator(
+            store=FileRunStore(data_dir / "runs"),
+            prompt_root=root / "src" / "jaster" / "prompts",
+            functions_dir=root / "functions",
+            skills_dir=root / "skills",
+            llm=OpenAIChatClient(),
+        )
+        scheduler = create_contest_scheduler(
+            base_url=host,
+            agent_token=agent_token,
+            orchestrator=orchestrator,
+            data_dir=data_dir,
+        )
+        session = scheduler.run()
+        typer.echo(
+            json.dumps(
+                {
+                    "session_id": session.session_id,
+                    "status": session.status,
+                    "current_level": session.current_level,
+                    "session_dir": str(data_dir / "contests" / session.session_id),
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+        return
+
+    def _orchestrator_factory(worker_id: int) -> JasterOrchestrator:
+        return JasterOrchestrator(
+            store=FileRunStore(data_dir / "runs"),
+            prompt_root=root / "src" / "jaster" / "prompts",
+            functions_dir=root / "functions",
+            skills_dir=root / "skills",
+            llm=OpenAIChatClient(),
+        )
+
+    coordinator = create_parallel_contest_coordinator(
         base_url=host,
         agent_token=agent_token,
-        orchestrator=orchestrator,
+        orchestrator_factory=_orchestrator_factory,
         data_dir=data_dir,
+        parallel_workers=parallel_workers,
     )
-    session = scheduler.run()
+    state = coordinator.run()
     typer.echo(
         json.dumps(
             {
-                "session_id": session.session_id,
-                "status": session.status,
-                "current_level": session.current_level,
-                "session_dir": str(data_dir / "contests" / session.session_id),
+                "parallel_id": state.parallel_id,
+                "status": state.status,
+                "current_level": state.current_level,
+                "parallel_workers": state.parallel_workers,
+                "coordinator_dir": str(data_dir / "contests_parallel" / state.parallel_id),
+                "worker_sessions": [
+                    {
+                        "worker_id": worker.worker_id,
+                        "session_id": worker.session_id,
+                        "session_dir": str(data_dir / "contests" / worker.session_id),
+                    }
+                    for worker in coordinator.workers.values()
+                ],
             },
             ensure_ascii=False,
             indent=2,
