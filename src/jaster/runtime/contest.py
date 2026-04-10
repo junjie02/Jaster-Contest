@@ -19,7 +19,7 @@ from jaster.runtime.platform import (
 )
 
 
-DIFFICULTY_ORDER = {"easy": 0, "medium": 1, "hard": 2}
+DIFFICULTY_ORDER = {"low": 0, "medium": 1, "hard": 2}
 
 
 def zone_for_level(level: int) -> str:
@@ -235,7 +235,7 @@ class ContestScheduler:
                     state.last_flag_progress = refreshed_item.flag_got_count
                     return True
                 should_hint = (
-                    challenge.difficulty.lower() in {"easy", "medium"}
+                    challenge.difficulty.lower() in {"low", "medium"}
                     and not hint_injected
                     and not refreshed_item.hint_viewed
                     and run_state.rounds_completed >= 100
