@@ -77,35 +77,36 @@ class OpenAIChatClient:
     def _post_with_retry(self, url: str, headers: dict, body: dict, mode: str) -> httpx.Response:
         last_exc: Exception | None = None
         for attempt in range(self.http_max_retries):
-            client = self._get_client()
-            try:
-                response = client.post(url, headers=headers, json=body)
-                if response.status_code in {429, 500, 502, 503, 504}:
-                    retry_after = response.headers.get("Retry-After")
-                    if retry_after:
-                        delay = float(retry_after)
-                    else:
-                        delay = min(
-                            self.http_retry_base_delay * (2 ** attempt) + self._jitter(),
-                            self.http_retry_max_delay,
-                        )
-                    self._log_retry(mode, response.status_code, attempt + 1, self.http_max_retries, delay)
+            # Always create a fresh client per attempt to avoid connection state pollution
+            with httpx.Client(timeout=self.timeout) as client:
+                try:
+                    response = client.post(url, headers=headers, json=body)
+                    if response.status_code in {429, 500, 502, 503, 504}:
+                        retry_after = response.headers.get("Retry-After")
+                        if retry_after:
+                            delay = float(retry_after)
+                        else:
+                            delay = min(
+                                self.http_retry_base_delay * (2 ** attempt) + self._jitter(),
+                                self.http_retry_max_delay,
+                            )
+                        self._log_retry(mode, response.status_code, attempt + 1, self.http_max_retries, delay)
+                        time.sleep(delay)
+                        continue
+                    response.raise_for_status()
+                    return response
+                except (httpx.TimeoutException, httpx.NetworkError) as exc:
+                    last_exc = exc
+                    delay = min(
+                        self.http_retry_base_delay * (2 ** attempt) + self._jitter(),
+                        self.http_retry_max_delay,
+                    )
+                    self._log_retry(mode, None, attempt + 1, self.http_max_retries, delay)
                     time.sleep(delay)
                     continue
-                response.raise_for_status()
-                return response
-            except (httpx.TimeoutException, httpx.NetworkError) as exc:
-                last_exc = exc
-                delay = min(
-                    self.http_retry_base_delay * (2 ** attempt) + self._jitter(),
-                    self.http_retry_max_delay,
-                )
-                self._log_retry(mode, None, attempt + 1, self.http_max_retries, delay)
-                time.sleep(delay)
-                continue
-            except httpx.HTTPError as exc:
-                last_exc = exc
-                raise LLMError(f"LLM request failed: {exc}", stage="request") from exc
+                except httpx.HTTPError as exc:
+                    last_exc = exc
+                    raise LLMError(f"LLM request failed: {exc}", stage="request") from exc
         raise LLMError(f"LLM request failed after {self.http_max_retries} retries", stage="request") from last_exc
 
     def complete_json(self, *, system: str, prompt: str) -> dict[str, Any]:
