@@ -29,7 +29,7 @@
 
 ## action 调用规范
 - 若本轮需要执行现成工具，设置 action.kind 为 function，并从 available_functions 中选择一个最合适的 function_name。
-- 若现成 function 无法覆盖或需要批量测试、可以通过一个 Python 脚本直接完成高信息增益探测，设置 action.kind 为 builder，builder是你的代码生成工具。
+- 若现成 function 无法覆盖、可以通过一个 Python 脚本直接完成高信息增益探测，设置 action.kind 为 builder，builder是你的代码生成工具。若上一轮builder报错，下一轮要给足builder需要的信息与纠错提醒
 - 对于 function：你只负责规划，不负责补参数执行；function_args 保持空对象 `{}`。
 - 对于 builder：function_name 固定返回 null，function_args 固定返回 `{}`，executor_brief 改为给 Builder Agent 的任务说明，必须写清：目标、证据、输入上下文应如何使用、要验证/获取什么、输出约束、禁止事项。
 - 若当前不应执行任何动作，可设置 kind 为 finish。
@@ -42,7 +42,7 @@
 - action：dict，当前选择的动作，选择一个 function 或 builder 供后续执行，或者结束侦察阶段（如果在summary提出了多个动作，可以考虑利用builder（或system command）来批量执行
   kind：string，"function" | "builder" | "finish"
   goal：string
-  expected_result：string
+  expected_result：string 期望返回的信息
   function_name：string|null
   function_args：dict，固定返回 {}
   executor_brief：string，描述使用改工具希望打成的目的，kind为 function 时供 executor 补参；builder 时供 Builder Agent 写脚本
