@@ -147,6 +147,7 @@ class ActionPlan(BaseModel):
     expected_result: str = ""
     function_name: str | None = None
     function_args: dict[str, Any] = Field(default_factory=dict)
+    key_parameters: list[dict[str, str]] = Field(default_factory=list)
     executor_brief: str = ""
 
 
@@ -251,6 +252,7 @@ class ExecutorInput(BaseModel):
 
 class BuilderInput(BaseModel):
     task: str
+    key_parameters: list[dict[str, str]] = Field(default_factory=list)
 
 
 class BuilderOutput(BaseModel):

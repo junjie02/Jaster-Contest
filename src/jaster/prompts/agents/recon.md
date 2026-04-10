@@ -31,7 +31,7 @@
 - 优先使用现成 function
 - 若本轮需要执行现成工具，设置 action.kind 为 function，并从 available_functions 中选择一个最合适的 function_name。
 - 若现成 function 无法覆盖、可以通过一个 Python 脚本直接完成高信息增益探测，设置 action.kind 为 builder，builder是你的代码生成工具。若上一轮builder报错，下一轮要给足builder需要的信息与纠错提醒
-- 对于 function：你只负责规划，不负责补参数执行；function_args 保持空对象 `{}`。
+- 对于 function：你只负责规划，不负责补参数执行；但应在 key_parameters 字段中列出当前已知的重点认证参数（cookie、token、password 等），格式为 `[{"name": "cookie", "value": "..."}]`。function_args 保持空对象或仅填入 target 相关参数。
 - 对于 builder：function_name 固定返回 null，function_args 固定返回 `{}`，executor_brief 改为给 Builder Agent 的任务说明，必须写清：目标、证据、输入上下文应如何使用、要验证/获取什么、输出约束、禁止事项。
 - 若当前不应执行任何动作，可设置 kind 为 finish。
 
@@ -45,7 +45,8 @@
   goal：string
   expected_result：string 期望返回的信息
   function_name：string|null
-  function_args：dict，固定返回 {}
+  function_args：dict，若已知认证凭证则填入对应参数，暂无则保持空对象
+  key_parameters：list[dict]，重点认证参数列表，如 `[{"name": "cookie", "value": "..."}]`
   executor_brief：string，描述使用改工具希望打成的目的，kind为 function 时供 executor 补参；builder 时供 Builder Agent 写脚本
 - tree_patch：dict，你需要维护的全局树结构，改内容将会贯穿整个渗透测试流程，因此要谨慎、精确维护
   add_nodes：list[dict] 新节点，新节点的父节点会自动绑定为selected_node_key
@@ -59,7 +60,7 @@
     evidence：list[string] 返回相关的上下文片段与利用方法：xx（代码片段）存在xx风险，可以通过xx实现xx，类似语句，后面看到必须有清晰的可利用信息，若没有则置空
     status：string，"unexplored" （新创节点设为unexplored）
     shared_refs：list[string]，关联节点 key 列表（指节点之间的信息可以联合利用达成目标）；没有则返回 []
-    key_findings：list[string]|null，与该节点有关的重要发现或重要参数记录
+    key_findings：list[string]|null，与该节点有关的重要发现或重要参数记录，如name password token等重要信息
   update_nodes：list[dict] 根据当前发现，调整节点的状态优先级
     key：string
     status：string|null， "exploring" | "success" | "failed"
@@ -69,4 +70,4 @@
     how：string|null
     evidence：list[string]|null 返回相关的上下文片段与利用方法：xx（代码片段）存在xx风险，可以通过xx实现xx，类似语句，后面看到必须有清晰的可利用信息
     shared_refs：list[string]|null，关联节点 key 列表；没有则返回 []
-    key_findings：list[string]|null，与该节点有关的重要发现或重要参数记录
+    key_findings：list[string]|null，与该节点有关的重要发现或重要参数记录，如name password token等重要信息

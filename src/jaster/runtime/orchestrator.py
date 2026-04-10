@@ -511,7 +511,10 @@ class JasterOrchestrator:
                     builder_out, _ = self._timed_agent_run(
                         "builder",
                         zone,
-                        BuilderInput(task=action.executor_brief or action.goal),
+                        BuilderInput(
+                            task=action.executor_brief or action.goal,
+                            key_parameters=action.key_parameters,
+                        ),
                     )
                 except Exception as exc:
                     self._last_executor_trace = _agent_trace(self.agents.get("builder"))
