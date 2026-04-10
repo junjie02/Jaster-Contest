@@ -1,6 +1,6 @@
 {
   "name": "kerberos_attack",
-  "bin": "impacket-GetNPUsers",
+  "bin": "GetNPUsers.py",
   "description": "Collect AS-REP Roast or Kerberoast material with structured Kerberos options.",
   "base_argv": [],
   "primary_locator_arg": "target",
@@ -25,8 +25,8 @@
   ],
   "bin_selector_arg": "roast_mode",
   "bin_map": {
-    "asrep": "impacket-GetNPUsers",
-    "kerberoast": "impacket-GetUserSPNs"
+    "asrep": "GetNPUsers.py",
+    "kerberoast": "GetUserSPNs.py"
   },
   "args": [
     {
@@ -138,6 +138,6 @@
     }
   ],
   "summary": "使用 Impacket 的 Kerberos roast 工具提取 AS-REP Roast 或 Kerberoast 材料。",
-  "use_when": "目标是 AD / Kerberos 环境。 已拿到用户名单但还没有有效域凭据，想先检查是否存在“不需要预认证”的账户，此时优先 `impacket-GetNPUsers`。 已有低权域账号，想拉取配置了 SPN 的服务账户票据材料，此时优先 `impacket-GetUserSPNs`。",
+  "use_when": "目标是 AD / Kerberos 环境。 已拿到用户名单但还没有有效域凭据，想先检查是否存在“不需要预认证”的账户，此时优先 `GetNPUsers.py`。 已有低权域账号，想拉取配置了 SPN 的服务账户票据材料，此时优先 `GetUserSPNs.py`。",
   "command_mode": "argv"
 }
