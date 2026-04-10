@@ -71,8 +71,15 @@ Each agent has strict input/output Pydantic models (defined in `src/jaster/domai
 | `OPENAI_API_KEY` | Required | API authentication |
 | `OPENAI_BASE_URL` | `https://api.openai.com/v1` | API endpoint |
 | `OPENAI_MODEL` | `gpt-4o-mini` | Model name |
+| `OPENAI_REASONING_SPLIT` | `false` | Must be explicit `true` to enable (no auto-detection) |
 | `JASTER_DATA_DIR` | `./data` | Run storage path |
 | `JASTER_MAX_ROUNDS` | `12` | Phase iteration budget |
-| `JASTER_LLM_MAX_RETRIES` | `3` | Retries per agent call |
+| `JASTER_LLM_MAX_RETRIES` | `3` | Agent-level retries (JSON/schema errors only, NOT HTTP 5xx) |
 | `JASTER_PHASE_MAX_RETRIES` | `3` | Phase-level self-correction retries |
 | `JASTER_HTTP_TIMEOUT` | `120` | HTTP request timeout |
+| `JASTER_LLM_HTTP_MAX_RETRIES` | `3` | HTTP-level retry count (429/5xx/network errors) |
+| `JASTER_LLM_HTTP_RETRY_BASE_DELAY` | `1.0` | Exponential backoff base delay (seconds) |
+| `JASTER_LLM_HTTP_RETRY_MAX_DELAY` | `8.0` | Exponential backoff max delay cap (seconds) |
+| `JASTER_LLM_HTTP_RETRY_JITTER` | `0.2` | Backoff jitter amplitude (seconds) |
+| `JASTER_LLM_RATE_LIMIT_MAX_REQUESTS` | `2` | Max requests per rate-limit window |
+| `JASTER_LLM_RATE_LIMIT_WINDOW_SECONDS` | `1.0` | Rate-limit window (seconds) |

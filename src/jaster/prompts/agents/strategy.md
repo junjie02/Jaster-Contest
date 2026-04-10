@@ -22,6 +22,7 @@
 - 若可继续利用：need_recon=false, goal_reached=false
 
 ## action 调用规范
+- 优先使用现成 function
 - 若本轮需要执行现成工具，设置 action.kind 为 function，并从 available_functions 中选择一个最合适的 function_name。
 - 若现成 function 无法覆盖或需要批量测试、可以通过一个 Python 脚本直接完成高信息增益探测，设置 action.kind 为 builder，builder是你的代码生成工具。
 - 对于 function：你只负责规划，不负责补参数执行；function_args 固定返回 `{}`。

@@ -15,7 +15,7 @@ Builder Agent，一个高级代码构造师
   kind：string
   path：string
 - flag_candidates：list[string]，发现的flag，没有则返回 []
-- response_data：dict，当脚本发起 HTTP 请求时必须包含，没有则返回 {}
+- response_data：list[dict]，当脚本发起 HTTP 请求时必须包含本次脚本的所以响应信息，没有则返回 {}
   - url：string，请求的 URL
   - status_code：int，HTTP 状态码
   - headers：dict，响应头
