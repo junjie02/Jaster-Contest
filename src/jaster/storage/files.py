@@ -33,6 +33,7 @@ class FileRunStore:
                 {
                     "run_id": state.run_id,
                     "challenge": state.challenge.model_dump(),
+                    "available_artifacts": [item.model_dump() for item in state.available_artifacts],
                     "submitted_flags": state.submitted_flags,
                     "rounds_completed": state.rounds_completed,
                 },
@@ -77,4 +78,3 @@ class FileRunStore:
                 "observations": observations,
             }
         )
-

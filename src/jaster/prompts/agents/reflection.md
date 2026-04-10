@@ -11,6 +11,7 @@
 反思代理在**侦察阶段或渗透测试完成后**运行，此时已有可利用信息或渗透测试结果。
 反思的输出（summary 字段）将作为 latest_summary 传递给后续 agent（strategy），若先前为recon阶段，则后续指导strategy如何挖掘flag，并给出可能的（常见的）ctf flag位置，若先前为strategy阶段，则总结strategy的发现。
 `selected_skills` 和 `inspiration` 是 skill router 根据当前上下文选出的启发，内置常见方法，具有借鉴意义。但只用于帮助你反思与规划，不代表对应执行方法。若 `inspiration` 中的内容有可以借鉴的内容，结合当前题目分析适配的内容，并在summary中给出具体的思路。
+`available_artifacts` 是前面轮次累计可复用的本地文件或目录绝对路径列表。若反思涉及源码、日志、扫描结果或其它下载产物，应优先基于这些绝对路径判断后续方向，不要假设旧文件仍在当前 task 工作目录。
 
 ## 反思重点
 1. 根据全局信息，当前渗透方向是否正确？

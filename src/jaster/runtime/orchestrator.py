@@ -2,13 +2,16 @@ from __future__ import annotations
 
 import re
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
 from jaster.agents import build_agents
+from jaster.agents.roles import BuilderAgent, ExecutorAgent
 from jaster.domain import (
     ActionPlan,
+    ArtifactRef,
     AttackTree,
     AttackTreeSnapshot,
     BuilderInput,
@@ -26,6 +29,7 @@ from jaster.domain import (
     StrategyInput,
     StrategyOutput,
     SubmissionInput,
+    TaskExecutionResult,
 )
 from jaster.domain.models import TreeNodeSnapshot, NodeInfo
 from pydantic import BaseModel, Field
@@ -123,8 +127,10 @@ class JasterOrchestrator:
         self.agents = build_agents(prompt_root, llm)
         self.verbose = verbose
         self.phase_max_retries = env_int("JASTER_PHASE_MAX_RETRIES", 3)
+        self.parallel_workers = env_int("JASTER_PARALLEL_FUNC_WORKERS", 4)
+        self.prep_workers = env_int("JASTER_PREP_WORKERS", self.parallel_workers)
         self._on_tree_update = on_tree_update
-        self._last_executor_trace: dict | None = None
+        self._last_executor_trace: dict[str, dict[str, object]] = {}
 
     def run(
         self,
@@ -193,6 +199,7 @@ class JasterOrchestrator:
                         challenge_context=_challenge_context(state.challenge),
                         recent_observations=_compact_observations(state.observations[-50:]),
                         latest_execution=_compact_execution(execution),
+                        available_artifacts=_prompt_artifacts(state.available_artifacts),
                         available_functions=self.catalog.list_functions(),
                         latest_summary=strategy_summary,
                     ),
@@ -200,8 +207,8 @@ class JasterOrchestrator:
                 )
                 self._log(f"    Phase time: {recon_elapsed:.2f}s")
                 self._log(
-                    f"    Action: {recon_out.action.kind}"
-                    + (f" | function={recon_out.action.function_name}" if recon_out.action.function_name else "")
+                    "    Actions: "
+                    + ", ".join(_describe_action(action) for action in recon_out.actions)
                 )
                 tree.apply_patch(recon_out.tree_patch)
 
@@ -215,6 +222,7 @@ class JasterOrchestrator:
                     source="recon",
                     execution=latest_execution.model_copy(deep=True),
                 )
+                state.available_artifacts = _merge_artifact_refs(state.available_artifacts, latest_execution.artifacts)
                 tree.merge_facts(_facts_from_execution(latest_execution))
                 state.tree = tree.snapshot()
                 self._append_phase_round(
@@ -237,7 +245,7 @@ class JasterOrchestrator:
                     self._log("[*] Run stopping: requested by round hook")
                     break
 
-                if recon_out.discover_vulnerability or recon_out.action.kind == "finish":
+                if recon_out.discover_vulnerability or _is_finish_only(recon_out.actions):
                     self._log("[*] Recon complete: exploitable point found")
                     node_context = _resolve_node_context(tree, recon_out.selected_node_key)
                     recon_summary = recon_out.summary
@@ -274,6 +282,7 @@ class JasterOrchestrator:
                                 challenge_context=_challenge_context(state.challenge),
                                 recent_observations=_compact_observations(state.observations[-50:]),
                                 latest_execution=_compact_execution(latest_execution),
+                                available_artifacts=_prompt_artifacts(state.available_artifacts),
                                 last_strategy=node_context.target_node.title if node_context else "",
                                 latest_summary=recon_summary if _reflection_entry == "recon" else strategy_summary,
                                 available_skills=available_skills,
@@ -298,6 +307,7 @@ class JasterOrchestrator:
                         challenge_context=_challenge_context(state.challenge),
                         recent_observations=_compact_observations(state.observations[-50:]),
                         latest_execution=_compact_execution(latest_execution),
+                        available_artifacts=_prompt_artifacts(state.available_artifacts),
                         last_strategy=node_context.target_node.title if node_context else "",
                         latest_summary=recon_summary if _reflection_entry == "recon" else strategy_summary,
                         selected_skills=selected_skills,
@@ -365,14 +375,15 @@ class JasterOrchestrator:
                     latest_summary=reflection_summary,
                     recent_observations=_compact_observations(state.observations[-50:]),
                     latest_execution=_compact_execution(execution),
+                    available_artifacts=_prompt_artifacts(state.available_artifacts),
                     available_functions=self.catalog.list_functions(),
                 ),
                 label=f"Round {phase_round}: strategy",
             )
             self._log(f"    Phase time: {strategy_elapsed:.2f}s")
             self._log(
-                f"    Action: {strategy_out.action.kind}"
-                + (f" | function={strategy_out.action.function_name}" if strategy_out.action.function_name else "")
+                "    Actions: "
+                + ", ".join(_describe_action(action) for action in strategy_out.actions)
             )
             tree.apply_patch(strategy_out.tree_patch)
             self._log(
@@ -385,6 +396,7 @@ class JasterOrchestrator:
                 source="strategy",
                 execution=latest_execution.model_copy(deep=True),
             )
+            state.available_artifacts = _merge_artifact_refs(state.available_artifacts, latest_execution.artifacts)
             tree.merge_facts(_facts_from_execution(latest_execution))
 
             candidates = _merge_flag_candidates(strategy_out.flag_candidates, latest_execution.flag_candidates)
@@ -487,99 +499,241 @@ class JasterOrchestrator:
         }
         self.store.append_round(run_id, round_num, body)
 
-    def _execute_action(
+    def _execute_actions(
         self,
         *,
         run_id: str,
+        agent_name: str,
         zone: str,
-        action: ActionPlan,
+        actions: list[ActionPlan],
         challenge: ChallengeSpec | None = None,
         recent_observations: list[Observation] | None = None,
         latest_execution: ExecutionResult | None = None,
+        available_artifacts: list[ArtifactRef] | None = None,
     ) -> ExecutionResult:
         run_dir = self.store.run_dir(run_id)
-        artifacts_dir = run_dir / "artifacts"
-        self._last_executor_trace = None
-        self._log(f"    Work dir: {artifacts_dir}")
-        if action.kind == "finish":
-            self._log(f"    Finish action: {action.goal}")
-            return ExecutionResult(success=True, summary=action.goal)
-        if not action.function_name:
-            if action.kind == "builder":
-                self._log("    Calling builder agent")
-                try:
-                    builder_out, _ = self._timed_agent_run(
-                        "builder",
-                        zone,
-                        BuilderInput(
-                            task=action.executor_brief or action.goal,
-                            key_parameters=action.key_parameters,
-                        ),
+        batch_dir = run_dir / "artifacts" / f"{agent_name}_{time.time_ns()}"
+        self._last_executor_trace = {}
+        self._log(f"    Work dir: {batch_dir}")
+        if _is_finish_only(actions):
+            finish_action = actions[0]
+            self._log(f"    Finish action: {finish_action.goal}")
+            task_result = TaskExecutionResult(
+                task_id=finish_action.task_id,
+                kind="finish",
+                success=True,
+                summary=finish_action.goal,
+                source=agent_name,
+            )
+            return _build_batch_execution(agent_name, [task_result])
+
+        immediate_results: list[TaskExecutionResult] = []
+        for action in actions:
+            if not action.function_name:
+                if action.kind != "builder":
+                    immediate_results.append(
+                        TaskExecutionResult(
+                            task_id=action.task_id,
+                            kind=action.kind,
+                            success=False,
+                            summary="Missing function_name",
+                            stderr="missing function_name",
+                            source=agent_name,
+                            failure_stage="executor_tool_call",
+                        )
                     )
-                except Exception as exc:
-                    self._last_executor_trace = _agent_trace(self.agents.get("builder"))
-                    return ExecutionResult(
+                continue
+
+        task_results_by_id: dict[str, TaskExecutionResult] = {result.task_id: result for result in immediate_results}
+        runnable_actions = [action for action in actions if action.task_id not in task_results_by_id]
+        if runnable_actions:
+            prep_workers = max(1, min(self.prep_workers, len(runnable_actions)))
+            exec_workers = max(1, min(self.parallel_workers, len(runnable_actions)))
+            with ThreadPoolExecutor(max_workers=prep_workers) as prepare_pool, ThreadPoolExecutor(
+                max_workers=exec_workers
+            ) as execution_pool:
+                prepare_futures = {
+                    prepare_pool.submit(
+                        self._prepare_action,
+                        action=action,
+                        agent_name=agent_name,
+                        zone=zone,
+                        challenge=challenge,
+                        latest_execution=latest_execution,
+                        available_artifacts=available_artifacts or [],
+                        recent_observations=recent_observations or [],
+                        batch_dir=batch_dir,
+                    ): action
+                    for action in runnable_actions
+                }
+                execution_futures: dict[object, ActionPlan] = {}
+
+                for prepare_future in as_completed(prepare_futures):
+                    action = prepare_futures[prepare_future]
+                    prepared = prepare_future.result()
+                    self._last_executor_trace[action.task_id] = prepared["trace"]
+                    task_result = prepared["task_result"]
+                    if task_result is not None:
+                        task_results_by_id[action.task_id] = task_result
+                        continue
+                    self._log(f"    Submitting execution: {action.task_id}")
+                    execution_futures[execution_pool.submit(prepared["run_callable"])] = action
+
+                for execution_future in as_completed(execution_futures):
+                    action = execution_futures[execution_future]
+                    try:
+                        result = execution_future.result()
+                    except Exception as exc:
+                        result = ExecutionResult(
+                            success=False,
+                            summary=f"Unhandled execution error for {action.task_id}",
+                            stderr=str(exc),
+                            failure_stage="function_execution",
+                            source=agent_name,
+                        )
+                    task_result = _to_task_result(action, result, source=agent_name)
+                    self._log(
+                        f"    Execution finished: {action.task_id} | {'OK' if task_result.success else 'FAIL'}"
+                    )
+                    task_results_by_id[action.task_id] = task_result
+
+        ordered_task_results = [task_results_by_id[action.task_id] for action in actions if action.task_id in task_results_by_id]
+        return _build_batch_execution(agent_name, ordered_task_results)
+
+    def _prepare_action(
+        self,
+        *,
+        action: ActionPlan,
+        agent_name: str,
+        zone: str,
+        challenge: ChallengeSpec | None,
+        latest_execution: ExecutionResult | None,
+        available_artifacts: list[ArtifactRef],
+        recent_observations: list[Observation],
+        batch_dir: Path,
+    ) -> dict[str, object]:
+        task_dir = batch_dir / action.task_id
+        if action.kind == "builder":
+            self._log(f"    Preparing builder: {action.task_id}")
+            agent = self._new_builder_agent()
+            try:
+                started = time.monotonic()
+                builder_out = agent.run(
+                    zone,
+                    BuilderInput(
+                        task=action.executor_brief or action.goal,
+                        key_parameters=action.key_parameters,
+                        accessible_artifacts=list(available_artifacts),
+                    ),
+                )
+                self._log(
+                    f"    Prepared builder: {action.task_id} | elapsed={time.monotonic() - started:.2f}s"
+                )
+            except Exception as exc:
+                return {
+                    "trace": _agent_trace(agent) or {},
+                    "task_result": TaskExecutionResult(
+                        task_id=action.task_id,
+                        kind="builder",
                         success=False,
                         summary="Builder agent failed",
                         stderr=str(exc),
+                        source=agent_name,
                         failure_stage="builder_generation",
-                    )
-                self._last_executor_trace = _agent_trace(self.agents.get("builder"))
-                self._log("    Running builder-generated script")
-                return self.builder_executor.run(
+                    ),
+                    "run_callable": None,
+                }
+            return {
+                "trace": _agent_trace(agent) or {},
+                "task_result": None,
+                "run_callable": lambda builder_out=builder_out, task_dir=task_dir: self.builder_executor.run(
                     builder_out,
                     target=challenge.target if challenge else "",
                     target_type=challenge.target_type if challenge else "http",
-                    working_dir=artifacts_dir,
-                    accessible_artifacts=list(latest_execution.artifacts) if latest_execution else [],
-                    recent_observations=list(recent_observations or []),
+                    working_dir=task_dir,
+                    accessible_artifacts=list(available_artifacts),
+                    recent_observations=list(recent_observations),
                     latest_execution=latest_execution,
                     repo_root=self.catalog.functions_dir.parent,
                     skills_dir=self.catalog.skills_dir,
-                )
-            return ExecutionResult(
-                success=False,
-                summary="Missing function_name",
-                stderr="missing function_name",
-                failure_stage="executor_tool_call",
-            )
-        function_spec = self.catalog.get_function(action.function_name)
+                ),
+            }
+
+        function_spec = self.catalog.get_function(action.function_name or "")
         if function_spec is None:
-            return ExecutionResult(
-                success=False,
-                summary=f"Unknown function: {action.function_name}",
-                stderr="unknown function",
-                failure_stage="executor_tool_call",
-            )
-        self._log(f"    Calling executor for function: {action.function_name}")
+            return {
+                "trace": {},
+                "task_result": TaskExecutionResult(
+                    task_id=action.task_id,
+                    kind=action.kind,
+                    function_name=action.function_name,
+                    success=False,
+                    summary=f"Unknown function: {action.function_name}",
+                    stderr="unknown function",
+                    source=agent_name,
+                    failure_stage="executor_tool_call",
+                ),
+                "run_callable": None,
+            }
+
+        self._log(f"    Preparing function: {action.function_name} ({action.task_id})")
+        agent = self._new_executor_agent()
         try:
-            tool_call = self.agents["executor"].run(
+            started = time.monotonic()
+            tool_call = agent.run(
                 zone,
                 ExecutorInput(
                     target=challenge.target if challenge else "",
-                    function_name=action.function_name,
+                    function_name=action.function_name or "",
                     function_summary=function_spec.summary,
-                    function_schema_text=self.catalog.tool_prompt_text(action.function_name),
-                    function_definition_json=self.catalog.get_function_definition_text(action.function_name),
+                    function_schema_text=self.catalog.tool_prompt_text(action.function_name or ""),
+                    function_definition_json=self.catalog.get_function_definition_text(action.function_name or ""),
                     executor_brief=action.executor_brief,
+                    accessible_artifacts=list(available_artifacts),
                 ),
-                tool_name=action.function_name,
-                tools=[self.catalog.build_tool(action.function_name)],
+                tool_name=action.function_name or "",
+                tools=[self.catalog.build_tool(action.function_name or "")],
+            )
+            self._log(
+                f"    Prepared function: {action.function_name} ({action.task_id}) | elapsed={time.monotonic() - started:.2f}s"
             )
         except Exception as exc:
-            self._last_executor_trace = _agent_trace(self.agents.get("executor"))
             raw_text = exc.raw_text if isinstance(exc, LLMError) else ""
-            return ExecutionResult(
-                success=False,
-                summary=f"Executor failed for {action.function_name}",
-                stderr=str(exc),
-                findings=[raw_text] if raw_text else [],
-                failure_stage="executor_tool_call",
-            )
-        self._last_executor_trace = _agent_trace(self.agents.get("executor"))
-        action.function_args = dict(tool_call.get("arguments") or {})
-        self._log(f"    Running function: {action.function_name} | args={action.function_args}")
-        return self.function_executor.run_function(action.function_name, action.function_args, cwd=artifacts_dir)
+            return {
+                "trace": _agent_trace(agent) or {},
+                "task_result": TaskExecutionResult(
+                    task_id=action.task_id,
+                    kind=action.kind,
+                    function_name=action.function_name,
+                    success=False,
+                    summary=f"Executor failed for {action.function_name}",
+                    findings=[raw_text] if raw_text else [],
+                    stderr=str(exc),
+                    source=agent_name,
+                    failure_stage="executor_tool_call",
+                ),
+                "run_callable": None,
+            }
+
+        function_args = dict(tool_call.get("arguments") or {})
+        action.function_args = function_args
+        return {
+            "trace": _agent_trace(agent) or {},
+            "task_result": None,
+            "run_callable": lambda action=action, function_args=function_args, task_dir=task_dir: self.function_executor.run_function(
+                action.function_name or "",
+                function_args,
+                cwd=task_dir,
+            ),
+        }
+
+    def _new_executor_agent(self) -> ExecutorAgent:
+        current = self.agents["executor"]
+        return ExecutorAgent(current.llm, current.prompts)
+
+    def _new_builder_agent(self) -> BuilderAgent:
+        current = self.agents["builder"]
+        return BuilderAgent(current.llm, current.prompts)
 
     def _log(self, message: str) -> None:
         if getattr(self, "verbose", True):
@@ -630,11 +784,12 @@ class JasterOrchestrator:
 
         for attempt in range(1, max_attempts + 1):
             self._log(f"[*] {label}: phase attempt {attempt}/{max_attempts}")
+            payload = payload_factory(current_execution)
             try:
                 agent_out, agent_elapsed = self._timed_agent_run(
                     agent_name,
                     zone,
-                    payload_factory(current_execution),
+                    payload,
                     retry_context=retry_context,
                 )
             except Exception as exc:
@@ -644,22 +799,24 @@ class JasterOrchestrator:
                 ) from exc
             total_elapsed += agent_elapsed
             self._log(f"    \033[92m{agent_out.summary or '(empty)'}\033[0m")
-            execution = self._execute_action(
+            execution = self._execute_actions(
                 run_id=run_id,
+                agent_name=agent_name,
                 zone=zone,
-                action=agent_out.action,
+                actions=agent_out.actions,
                 challenge=challenge,
                 recent_observations=recent_observations or [],
                 latest_execution=current_execution,
+                available_artifacts=(list(payload.available_artifacts) if hasattr(payload, "available_artifacts") else []),
             )
             execution.source = agent_name
-            if execution.success or agent_out.action.kind == "finish":
+            if execution.success or _is_finish_only(agent_out.actions):
                 return agent_out, execution, total_elapsed
             current_execution = execution
             retry_context = _build_action_retry_context(
                 attempt=attempt,
                 max_attempts=max_attempts,
-                action=agent_out.action,
+                actions=agent_out.actions,
                 execution=execution,
             )
             self._log(
@@ -695,6 +852,18 @@ def _flush_pending_observation(
 ) -> None:
     if pending is None:
         return
+    if pending.execution.task_results:
+        for task_id, task_result in pending.execution.task_results.items():
+            state.observations.append(
+                Observation(
+                    round=pending.round,
+                    source=f"{pending.source}:{task_id}",
+                    command=task_result.command,
+                    result_type=result_type,
+                    summary=task_result.summary or summary,
+                )
+            )
+        return
     state.observations.append(
         Observation(
             round=pending.round,
@@ -725,10 +894,11 @@ def _compact_execution(execution: ExecutionResult | None) -> ExecutionResult | N
         return None
     return ExecutionResult(
         success=execution.success,
+        batch_status=execution.batch_status,
         summary=execution.summary,
         findings=list(execution.findings),
         flag_candidates=list(execution.flag_candidates),
-        artifacts=execution.artifacts[:3],
+        artifacts=list(execution.artifacts),
         stdout=execution.stdout,
         stderr=execution.stderr,
         exit_code=execution.exit_code,
@@ -736,7 +906,12 @@ def _compact_execution(execution: ExecutionResult | None) -> ExecutionResult | N
         script_path=execution.script_path,
         source=execution.source,
         failure_stage=execution.failure_stage,
+        task_results={key: value.model_copy(deep=True) for key, value in execution.task_results.items()},
     )
+
+
+def _prompt_artifacts(artifacts: list[ArtifactRef], *, limit: int = 20) -> list[ArtifactRef]:
+    return [item.model_copy(deep=True) for item in artifacts[-limit:]]
 
 
 def _prompt_tree_snapshot(snapshot: AttackTreeSnapshot) -> AttackTreeSnapshot:
@@ -804,7 +979,7 @@ def _build_action_retry_context(
     *,
     attempt: int,
     max_attempts: int,
-    action: ActionPlan,
+    actions: list[ActionPlan],
     execution: ExecutionResult,
 ) -> dict[str, Any]:
     return {
@@ -813,10 +988,11 @@ def _build_action_retry_context(
         "failure_stage": execution.failure_stage or "action_execution",
         "error_type": "ActionExecutionFailed",
         "error_message": execution.summary or execution.stderr or execution.stdout or "Action execution failed",
-        "previous_action": action.model_dump(),
+        "previous_actions": [action.model_dump() for action in actions],
         "latest_execution": {
             "summary": execution.summary,
             "success": execution.success,
+            "batch_status": execution.batch_status,
             "command": execution.command,
             "exit_code": execution.exit_code,
             "stdout_excerpt": _excerpt(execution.stdout),
@@ -831,3 +1007,128 @@ def _excerpt(value: str, limit: int = 600) -> str:
     if len(rendered) <= limit:
         return rendered
     return rendered[: limit - 3] + "..."
+
+
+def _describe_action(action: ActionPlan) -> str:
+    label = f"{action.task_id}:{action.kind}"
+    if action.function_name:
+        label += f"({action.function_name})"
+    return label
+
+
+def _is_finish_only(actions: list[ActionPlan]) -> bool:
+    return len(actions) == 1 and actions[0].kind == "finish"
+
+
+def _to_task_result(action: ActionPlan, execution: ExecutionResult, *, source: str) -> TaskExecutionResult:
+    return TaskExecutionResult(
+        task_id=action.task_id,
+        kind=action.kind,
+        function_name=action.function_name,
+        success=execution.success,
+        summary=execution.summary,
+        findings=list(execution.findings),
+        flag_candidates=list(execution.flag_candidates),
+        artifacts=_annotate_artifacts(
+            execution.artifacts,
+            producer_phase=source,
+            producer_task_id=action.task_id,
+            producer_function_name=action.function_name or action.kind,
+            producer_success=execution.success,
+        ),
+        stdout=execution.stdout,
+        stderr=execution.stderr,
+        exit_code=execution.exit_code,
+        command=execution.command,
+        script_path=execution.script_path,
+        source=source,
+        failure_stage=execution.failure_stage,
+    )
+
+
+def _build_batch_execution(source: str, task_results: list[TaskExecutionResult]) -> ExecutionResult:
+    success_count = sum(1 for item in task_results if item.success)
+    if not task_results:
+        batch_status = "full_fail"
+        success = False
+    elif success_count == len(task_results):
+        batch_status = "full_success"
+        success = True
+    elif success_count == 0:
+        batch_status = "full_fail"
+        success = False
+    else:
+        batch_status = "partial_success"
+        success = True
+
+    summaries = [f"[{item.task_id}] {item.summary}" for item in task_results if item.summary]
+    commands = [f"[{item.task_id}] {item.command}" for item in task_results if item.command]
+    stdout_parts = [f"[{item.task_id}]\n{item.stdout}" for item in task_results if item.stdout]
+    stderr_parts = [f"[{item.task_id}]\n{item.stderr}" for item in task_results if item.stderr]
+
+    findings: list[str] = []
+    flag_candidates: list[str] = []
+    artifacts: list[ArtifactRef] = []
+    for item in task_results:
+        for finding in item.findings:
+            if finding not in findings:
+                findings.append(finding)
+        for flag in item.flag_candidates:
+            if flag not in flag_candidates:
+                flag_candidates.append(flag)
+        artifacts = _merge_artifact_refs(artifacts, item.artifacts)
+
+    failure_stage = ""
+    if batch_status == "full_fail":
+        failure_stage = next((item.failure_stage for item in task_results if item.failure_stage), "action_execution")
+
+    return ExecutionResult(
+        success=success,
+        batch_status=batch_status,
+        summary="\n".join(summaries),
+        findings=findings,
+        flag_candidates=flag_candidates,
+        artifacts=artifacts,
+        stdout="\n\n".join(stdout_parts),
+        stderr="\n\n".join(stderr_parts),
+        exit_code=0 if success else 1,
+        command="\n".join(commands),
+        source=source,
+        failure_stage=failure_stage,
+        task_results={item.task_id: item for item in task_results},
+    )
+
+
+def _annotate_artifacts(
+    artifacts: list[ArtifactRef],
+    *,
+    producer_phase: str,
+    producer_task_id: str,
+    producer_function_name: str,
+    producer_success: bool,
+) -> list[ArtifactRef]:
+    annotated: list[ArtifactRef] = []
+    for artifact in artifacts:
+        annotated.append(
+            artifact.model_copy(
+                update={
+                    "producer_phase": producer_phase,
+                    "producer_task_id": producer_task_id,
+                    "producer_function_name": producer_function_name,
+                    "producer_success": producer_success,
+                }
+            )
+        )
+    return _merge_artifact_refs([], annotated)
+
+
+def _merge_artifact_refs(left: list[ArtifactRef], right: list[ArtifactRef]) -> list[ArtifactRef]:
+    merged: list[ArtifactRef] = []
+    seen: set[tuple[str, str]] = set()
+    for artifact in [*left, *right]:
+        key = (artifact.kind, artifact.path)
+        if key in seen:
+            continue
+        seen.add(key)
+        merged.append(artifact)
+    return merged

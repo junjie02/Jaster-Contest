@@ -25,6 +25,10 @@ class NodeStatus(str, Enum):
 class ArtifactRef(BaseModel):
     kind: str
     path: str
+    producer_phase: str = ""
+    producer_task_id: str = ""
+    producer_function_name: str = ""
+    producer_success: bool | None = None
 
 
 class Observation(BaseModel):
@@ -38,6 +42,28 @@ class Observation(BaseModel):
 class ExecutionResult(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
+    success: bool
+    batch_status: str = ""
+    summary: str = ""
+    findings: list[str] = Field(default_factory=list)
+    flag_candidates: list[str] = Field(default_factory=list)
+    artifacts: list[ArtifactRef] = Field(default_factory=list)
+    stdout: str = ""
+    stderr: str = ""
+    exit_code: int = 0
+    command: str = ""
+    script_path: str = ""
+    source: str = ""
+    failure_stage: str = ""
+    task_results: dict[str, "TaskExecutionResult"] = Field(default_factory=dict)
+
+
+class TaskExecutionResult(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    task_id: str
+    kind: Literal["function", "builder", "finish"]
+    function_name: str | None = None
     success: bool
     summary: str = ""
     findings: list[str] = Field(default_factory=list)
@@ -142,6 +168,7 @@ class TreePatch(BaseModel):
 class ActionPlan(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
+    task_id: str = ""
     kind: Literal["function", "builder", "finish"]
     goal: str
     expected_result: str = ""
@@ -169,6 +196,7 @@ class ReconInput(BaseModel):
     challenge_context: str = ""
     recent_observations: list[Observation] = Field(default_factory=list)
     latest_execution: ExecutionResult | None = None
+    available_artifacts: list[ArtifactRef] = Field(default_factory=list)
     available_functions: list[AvailableFunction] = Field(default_factory=list)
     latest_summary: str = ""
 
@@ -177,7 +205,7 @@ class ReconOutput(BaseModel):
     summary: str
     discover_vulnerability: bool = False
     selected_node_key: str = ""
-    action: ActionPlan
+    actions: list[ActionPlan] = Field(default_factory=list)
     tree_patch: TreePatch = Field(default_factory=TreePatch)
     key_findings: list[str] = Field(default_factory=list)
     result_type: str = ""
@@ -192,13 +220,14 @@ class StrategyInput(BaseModel):
     latest_summary: str = ""
     recent_observations: list[Observation] = Field(default_factory=list)
     latest_execution: ExecutionResult | None = None
+    available_artifacts: list[ArtifactRef] = Field(default_factory=list)
     available_functions: list[AvailableFunction] = Field(default_factory=list)
 
 
 class StrategyOutput(BaseModel):
     summary: str
     selected_node_key: str = ""
-    action: ActionPlan
+    actions: list[ActionPlan] = Field(default_factory=list)
     flag_candidates: list[str] = Field(default_factory=list)
     goal_reached: bool = False
     need_recon: bool = False
@@ -213,6 +242,7 @@ class ReflectionInput(BaseModel):
     challenge_context: str = ""
     recent_observations: list[Observation] = Field(default_factory=list)
     latest_execution: ExecutionResult | None = None
+    available_artifacts: list[ArtifactRef] = Field(default_factory=list)
     last_strategy: str = ""
     latest_summary: str = ""
     selected_skills: list[str] = Field(default_factory=list)
@@ -248,11 +278,13 @@ class ExecutorInput(BaseModel):
     function_schema_text: str
     function_definition_json: str = ""
     executor_brief: str
+    accessible_artifacts: list[ArtifactRef] = Field(default_factory=list)
 
 
 class BuilderInput(BaseModel):
     task: str
     key_parameters: list[dict[str, str]] = Field(default_factory=list)
+    accessible_artifacts: list[ArtifactRef] = Field(default_factory=list)
 
 
 class BuilderOutput(BaseModel):
@@ -298,6 +330,7 @@ class RunState(BaseModel):
     run_id: str
     challenge: ChallengeSpec
     tree: AttackTreeSnapshot
+    available_artifacts: list[ArtifactRef] = Field(default_factory=list)
     observations: list[Observation] = Field(default_factory=list)
     submitted_flags: list[str] = Field(default_factory=list)
     rounds_completed: int = 0

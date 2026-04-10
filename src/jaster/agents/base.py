@@ -111,7 +111,7 @@ def _normalize_agent_response(role: str, payload: dict) -> dict:
             normalized.get("tree_patch") or {}, role=role, parent_key=parent_key
         )
     if role in {"recon", "strategy"}:
-        normalized["action"] = _normalize_action(normalized.get("action") or {}, parent=normalized)
+        normalized["actions"] = _normalize_actions(normalized, parent=normalized)
     if role == "recon":
         normalized.setdefault("summary", str(normalized.get("recon_summary") or normalized.get("reason") or ""))
         normalized["done"] = bool(normalized.get("done", normalized.get("recon_complete", False)))
@@ -146,6 +146,7 @@ def _normalize_agent_response(role: str, payload: dict) -> dict:
 def _normalize_action(action: dict, *, parent: dict) -> dict:
     source = dict(action or {})
     normalized: dict[str, object] = {}
+    normalized["task_id"] = str(source.get("task_id") or "").strip()
     if "kind" not in source:
         if source.get("function") or source.get("function_name") or parent.get("use_function"):
             normalized["kind"] = "function"
@@ -190,6 +191,44 @@ def _normalize_action(action: dict, *, parent: dict) -> dict:
         normalized["function_args"] = {}
     if normalized["kind"] == "function" and not normalized["function_name"]:
         normalized["kind"] = "finish"
+    return normalized
+
+
+def _normalize_actions(payload: dict, *, parent: dict) -> list[dict]:
+    raw_actions = payload.get("actions")
+    if raw_actions is None:
+        raw_actions = payload.get("action")
+    if isinstance(raw_actions, dict):
+        raw_actions = [raw_actions]
+    if not isinstance(raw_actions, list):
+        raw_actions = []
+
+    normalized: list[dict] = []
+    seen_task_ids: set[str] = set()
+    builder_count = 0
+    finish_count = 0
+    for index, item in enumerate(raw_actions, start=1):
+        if not isinstance(item, dict):
+            continue
+        action = _normalize_action(item, parent=parent)
+        task_id = str(action.get("task_id") or f"task{index}").strip() or f"task{index}"
+        while task_id in seen_task_ids:
+            task_id = f"{task_id}_{index}"
+        action["task_id"] = task_id
+        seen_task_ids.add(task_id)
+        kind = action.get("kind")
+        if kind == "builder":
+            builder_count += 1
+        if kind == "finish":
+            finish_count += 1
+        normalized.append(action)
+
+    if not normalized:
+        normalized = [_normalize_action({"task_id": "task1", "kind": "finish"}, parent=parent)]
+    if finish_count and len(normalized) > 1:
+        raise ValueError("finish action must be the only action in actions")
+    if builder_count > 1:
+        raise ValueError("at most one builder action is allowed")
     return normalized
 
 
@@ -309,10 +348,10 @@ def _build_retry_context(
     response = attempt_trace.get("raw_response")
     if not previous_response_excerpt and response is not None:
         previous_response_excerpt = _excerpt(json.dumps(response, ensure_ascii=False))
-    previous_action = None
+    previous_actions = None
     normalized = attempt_trace.get("normalized_response")
     if isinstance(normalized, dict):
-        previous_action = normalized.get("action")
+        previous_actions = normalized.get("actions")
     return {
         "role": role,
         "attempt": attempt,
@@ -321,7 +360,7 @@ def _build_retry_context(
         "error_type": type(error).__name__,
         "error_message": str(error),
         "previous_response_excerpt": previous_response_excerpt,
-        "previous_action": previous_action,
+        "previous_actions": previous_actions,
     }
 
 

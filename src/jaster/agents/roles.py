@@ -85,6 +85,7 @@ class ExecutorAgent:
                         "function_schema_text",
                         "function_definition_json",
                         "executor_brief",
+                        "accessible_artifacts",
                     )
                 }
             ).model_dump_json(indent=2)

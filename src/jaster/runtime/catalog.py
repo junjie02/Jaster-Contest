@@ -234,7 +234,8 @@ class FunctionExecutor:
         if not shutil.which(binary):
             return ExecutionResult(success=False, summary=f"Function binary not found: {spec.bin}", stderr="missing binary")
         try:
-            command = self._build_command(spec, function_args, cwd=cwd)
+            normalized_args = self._normalize_args(spec, function_args or {}, cwd=cwd) if spec.args else dict(function_args or {})
+            command = self._build_command_from_normalized(spec, normalized_args)
         except ValueError as exc:
             return ExecutionResult(
                 success=False,
@@ -242,8 +243,13 @@ class FunctionExecutor:
                 stderr=str(exc),
                 failure_stage="function_execution",
             )
+        before_paths = snapshot_work_dir(cwd)
         completed = subprocess.run(command, cwd=cwd, capture_output=True, text=True, errors="replace")
-        artifacts = [ArtifactRef(kind="work_dir", path=str(cwd))]
+        artifacts = discover_artifacts(
+            cwd,
+            before_paths=before_paths,
+            declared_outputs=self._declared_output_paths(spec, normalized_args, cwd=cwd),
+        )
         summary = completed.stdout.strip().splitlines()[0] if completed.stdout.strip() else ""
         return ExecutionResult(
             success=completed.returncode == 0,
@@ -268,14 +274,18 @@ class FunctionExecutor:
         return spec.bin
 
     def _build_command(self, spec: FunctionSpec, function_args: dict[str, Any], *, cwd: Path) -> list[str]:
+        normalized = self._normalize_args(spec, function_args or {}, cwd=cwd)
+        return self._build_command_from_normalized(spec, normalized)
+
+    def _build_command_from_normalized(self, spec: FunctionSpec, normalized: dict[str, Any]) -> list[str]:
         if spec.command_mode == "shell":
-            command = str((function_args or {}).get("command", "")).strip()
+            command = str((normalized or {}).get("command", "")).strip()
             if not command:
                 raise ValueError("command is required")
             return [spec.bin, "-lc", command]
         if not spec.args:
             command = [spec.bin]
-            for key, value in function_args.items():
+            for key, value in normalized.items():
                 if value is None or value is False:
                     continue
                 flag = f"--{key.replace('_', '-')}"
@@ -285,7 +295,6 @@ class FunctionExecutor:
                     command.extend([flag, str(value)])
             return command
 
-        normalized = self._normalize_args(spec, function_args or {}, cwd=cwd)
         command = [self._resolve_bin(spec, normalized), *spec.base_argv]
         positional_parts: list[tuple[int, list[str]]] = []
         for arg in spec.args:
@@ -312,6 +321,23 @@ class FunctionExecutor:
         for _, parts in sorted(positional_parts, key=lambda item: item[0]):
             command.extend(parts)
         return command
+
+    def _declared_output_paths(self, spec: FunctionSpec, normalized_args: dict[str, Any], *, cwd: Path) -> list[Path]:
+        outputs: list[Path] = []
+        for arg in spec.args:
+            if arg.path_policy != "work_dir_output" or arg.name not in normalized_args:
+                continue
+            value = normalized_args[arg.name]
+            if isinstance(value, list):
+                candidates = value
+            else:
+                candidates = [value]
+            for candidate in candidates:
+                path = Path(str(candidate))
+                resolved = path if path.is_absolute() else (cwd / path).resolve(strict=False)
+                if resolved.exists():
+                    outputs.append(resolved)
+        return outputs
 
     def _normalize_args(self, spec: FunctionSpec, function_args: dict[str, Any], *, cwd: Path) -> dict[str, Any]:
         known = {arg.name for arg in spec.args}
@@ -392,3 +418,59 @@ class FunctionExecutor:
         except ValueError as exc:
             raise ValueError(f"{arg.name} escapes work_dir") from exc
         return str(relative) if str(relative) else "."
+
+
+def snapshot_work_dir(cwd: Path) -> set[str]:
+    if not cwd.exists():
+        return set()
+    snapshots: set[str] = set()
+    for path in cwd.rglob("*"):
+        try:
+            relative = path.relative_to(cwd)
+        except ValueError:
+            continue
+        rendered = str(relative)
+        if rendered:
+            snapshots.add(rendered)
+    return snapshots
+
+
+def discover_artifacts(cwd: Path, *, before_paths: set[str], declared_outputs: list[Path] | None = None) -> list[ArtifactRef]:
+    artifacts: list[ArtifactRef] = [ArtifactRef(kind="work_dir", path=str(cwd))]
+    declared_outputs = declared_outputs or []
+    for path in declared_outputs:
+        if path.resolve(strict=False) == cwd.resolve(strict=False):
+            continue
+        artifacts.append(_artifact_for_path(path))
+
+    after_paths = snapshot_work_dir(cwd)
+    new_paths = sorted(after_paths - before_paths, key=lambda item: (item.count("/"), item))
+    selected_dirs: list[str] = []
+    for relative in new_paths:
+        if any(relative == parent or relative.startswith(parent + "/") for parent in selected_dirs):
+            continue
+        absolute = (cwd / relative).resolve(strict=False)
+        if not absolute.exists():
+            continue
+        artifact = _artifact_for_path(absolute)
+        artifacts.append(artifact)
+        if absolute.is_dir():
+            selected_dirs.append(relative)
+    return _dedupe_artifacts(artifacts)
+
+
+def _artifact_for_path(path: Path) -> ArtifactRef:
+    resolved = path.resolve(strict=False)
+    return ArtifactRef(kind="directory" if resolved.is_dir() else "file", path=str(resolved))
+
+
+def _dedupe_artifacts(artifacts: list[ArtifactRef]) -> list[ArtifactRef]:
+    deduped: list[ArtifactRef] = []
+    seen: set[tuple[str, str]] = set()
+    for artifact in artifacts:
+        key = (artifact.kind, artifact.path)
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(artifact)
+    return deduped
