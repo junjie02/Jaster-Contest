@@ -113,14 +113,24 @@ def _normalize_agent_response(role: str, payload: dict) -> dict:
     if role in {"recon", "strategy"}:
         normalized["actions"] = _normalize_actions(normalized, parent=normalized)
     if role == "recon":
-        normalized.setdefault("summary", str(normalized.get("recon_summary") or normalized.get("reason") or ""))
+        normalized.setdefault(
+            "phase_summary",
+            str(normalized.get("phase_summary") or normalized.get("recon_summary") or normalized.get("reason") or ""),
+        )
         normalized["done"] = bool(normalized.get("done", normalized.get("recon_complete", False)))
+        normalized["observed_task_results"] = normalized.get("observed_task_results") or []
+        normalized["credentials"] = _string_list(normalized.get("credentials") or [])
     if role == "strategy":
-        normalized.setdefault("summary", str(normalized.get("reasoning") or normalized.get("summary") or ""))
+        normalized.setdefault(
+            "phase_summary",
+            str(normalized.get("phase_summary") or normalized.get("reasoning") or normalized.get("summary") or ""),
+        )
         normalized["goal_reached"] = bool(normalized.get("goal_reached", normalized.get("mission_complete", False)))
         normalized["flag_candidates"] = _string_list(
             normalized.get("flag_candidates") or normalized.get("flags_found") or []
         )
+        normalized["observed_task_results"] = normalized.get("observed_task_results") or []
+        normalized["credentials"] = _string_list(normalized.get("credentials") or [])
     if role == "reflection":
         normalized.setdefault("summary", str(normalized.get("summary") or normalized.get("progress") or ""))
         normalized["next_focus_key"] = str(normalized.get("next_focus_key") or normalized.get("selected_node_key") or "")
@@ -128,6 +138,7 @@ def _normalize_agent_response(role: str, payload: dict) -> dict:
         normalized["flag_candidates"] = _string_list(
             normalized.get("flag_candidates") or normalized.get("flags_found") or []
         )
+        normalized["credentials"] = _string_list(normalized.get("credentials") or [])
     if role == "skill_router":
         selected = normalized.get("selected_skills") or normalized.get("skills") or normalized.get("skill_names") or []
         if isinstance(selected, str):
@@ -238,13 +249,7 @@ def _normalize_tree_patch(tree_patch: dict, *, role: str, parent_key: str = "") 
     update_nodes = [_normalize_node_update(item) for item in normalized.get("update_nodes", []) if isinstance(item, dict)]
     valid_add_nodes = []
     for node in add_nodes:
-        has_content = bool(
-            node.get("locator")
-            or node.get("value")
-            or node.get("reason")
-            or node.get("how")
-            or node.get("evidence")
-        )
+        has_content = bool(node.get("title") or node.get("reason") or node.get("how"))
         if not has_content:
             continue
         if parent_key:
@@ -261,26 +266,17 @@ def _normalize_node_patch(node: dict, *, role: str) -> dict:
     kind = _NODE_KIND_ALIASES.get(kind, kind)
     status = str(node.get("status") or "").strip().lower()
     status = _NODE_STATUS_ALIASES.get(status, status or "unexplored")
-    locator = node.get("locator") or node.get("scope_locator") or node.get("scope") or node.get("target") or ""
-    evidence = node.get("evidence") or node.get("evidence_refs") or []
-    if not isinstance(evidence, list):
-        evidence = [str(evidence)]
     parent_key = str(node.get("parent_key") or node.get("parent_hint") or "")
     shared_refs = _string_list(node.get("shared_refs") or [])
-    key_findings = _string_list(node.get("key_findings") or [])
     return {
         "parent_key": parent_key,
-        "title": str(node.get("title") or locator or kind),
+        "title": str(node.get("title") or kind),
         "kind": kind,
-        "locator": str(locator),
         "priority": _normalize_priority(node.get("priority") or node.get("priority_weight")),
-        "value": str(node.get("value") or node.get("high_value_info") or node.get("reason") or ""),
         "reason": str(node.get("reason") or node.get("why") or ""),
         "how": str(node.get("how") or node.get("exploit_method") or node.get("label") or ""),
-        "evidence": _string_list(evidence),
         "status": status,
         "shared_refs": shared_refs,
-        "key_findings": key_findings,
     }
 
 
@@ -289,19 +285,15 @@ def _normalize_node_update(node: dict) -> dict:
     if status is not None:
         status = _NODE_STATUS_ALIASES.get(str(status).strip().lower(), str(status).strip().lower())
     shared_refs = _string_list(node.get("shared_refs") or []) if node.get("shared_refs") is not None else None
-    key_findings = _string_list(node.get("key_findings") or []) if node.get("key_findings") is not None else None
     return {
         "key": str(node.get("key") or node.get("node_key") or ""),
         "status": status,
         "priority": _normalize_priority(node.get("priority") or node.get("priority_weight"))
         if node.get("priority") is not None or node.get("priority_weight") is not None
         else None,
-        "value": node.get("value"),
         "reason": node.get("reason"),
         "how": node.get("how"),
-        "evidence": _string_list(node.get("evidence") or []) if node.get("evidence") is not None else None,
         "shared_refs": shared_refs,
-        "key_findings": key_findings,
     }
 
 

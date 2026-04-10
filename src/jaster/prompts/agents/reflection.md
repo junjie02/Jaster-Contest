@@ -22,7 +22,7 @@
 3. 所有探测路径与文件名称必须基于已有证据或常见敏感路径，不允许私自编造，若前置agent有此类行为应指出并纠正
 
 ## 目标
-- 复盘侦察发现或渗透过程，组织关键线索（key findings）
+- 复盘侦察发现或渗透过程，组织关键线索
 - 纠正执行偏差，设定策略阶段聚焦方向
 - 仅在前沿节点耗尽时，添加假设性节点
 
@@ -30,26 +30,21 @@
 - summary：string，反思总结（将作为指导信息传递给后续agent，必须结合已有信息认真思考做出判断）
 - next_focus_key：string，反思后确定的下一轮 strategy 聚焦节点 key；必须返回
 - flag_candidates：list[string]，候选 Flag 列表；没有则返回 []
+- credentials：list[string]，当前已确认的重要凭据、口令、token、secret、key、账号组合等；必须由你基于已有证据总结生成，没有则返回 []
 - tree_patch：dict 结合已拥有的信息，可以通过以下方法新增节点或调整节点优先级。节点信息是重要的利用资产，新增与更新节点都务必谨慎准确。
   add_nodes：list[dict]
     parent_key：string  新增节点会挂在parent_key节点后面，这表明通过利用parent_key的信息可以产生新节点的信息
     title：string 记录“能力”，而非具体路径或参数
     kind：string，"target" | "asset" | "entry" | "weakness" | "technique" | "hypothesis"
-    locator：string
     priority：int
-    value：string
     reason：string 入树理由
     how：string 如何利用此信息
-    evidence：list[string] 返回相关的上下文片段与利用方法：xx（代码片段）存在xx风险，可以通过xx实现xx，类似语句，后面看到必须有清晰的可利用信息，若没有则置空
     status：string，"unexplored" | "exploring" | "success" 
-    key_findings：list[string]|null，与该节点有关的重要发现或重要参数记录
+    shared_refs：list[string]|null，关联节点 key 列表；没有则返回 []
   update_nodes：list[dict] 根据当前发现，调整节点的状态优先级。若认为某个节点完全行不通，将状态设置为failed。
     key：string
     status：string|null， "exploring" | "success" | "failed"
     priority：int|null 0-100
-    value：string|null
     reason：string|null 更新理由
     how：string|null
-    evidence：list[string]|null 返回相关的上下文片段与利用方法：xx（代码片段）存在xx风险，可以通过xx实现xx，类似语句，后面看到必须有清晰的可利用信息，若没有则置空
     shared_refs：list[string]|null，关联节点 key 列表；没有则返回 []
-    key_findings：list[string]|null，与该节点有关的重要发现或重要参数记录

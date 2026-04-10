@@ -34,9 +34,21 @@ class ArtifactRef(BaseModel):
 class Observation(BaseModel):
     round: int = 0
     source: str = ""
-    command: str = ""
-    result_type: str = ""
-    summary: str = ""
+    task_id: str = ""
+    task: str = ""
+    target: str = ""
+    result: str = ""
+
+
+class RecentObservationAction(BaseModel):
+    task: str = ""
+    target: str = ""
+    result: str = ""
+
+
+class RecentObservationRound(BaseModel):
+    round: int = 0
+    actions: list[RecentObservationAction] = Field(default_factory=list)
 
 
 class ExecutionResult(BaseModel):
@@ -78,11 +90,15 @@ class TaskExecutionResult(BaseModel):
     failure_stage: str = ""
 
 
+class ObservedTaskResult(BaseModel):
+    task_id: str
+    target: str = ""
+    result: str = ""
+
+
 class GlobalFacts(BaseModel):
     flags: list[str] = Field(default_factory=list)
     credentials: list[str] = Field(default_factory=list)
-    services: list[str] = Field(default_factory=list)
-    artifacts: list[str] = Field(default_factory=list)
 
 
 class TreeNodeSnapshot(BaseModel):
@@ -92,15 +108,11 @@ class TreeNodeSnapshot(BaseModel):
     parent_key: str = ""
     title: str
     kind: NodeKind
-    locator: str = ""
     status: NodeStatus = NodeStatus.unexplored
     priority: int = 0
-    value: str = ""
     reason: str = ""
     how: str = ""
-    evidence: list[str] = Field(default_factory=list)
     shared_refs: list[str] = Field(default_factory=list)
-    key_findings: list[str] = Field(default_factory=list)
 
 
 class NodeInfo(BaseModel):
@@ -109,15 +121,11 @@ class NodeInfo(BaseModel):
     parent_key: str = ""
     title: str
     kind: NodeKind
-    locator: str = ""
     status: NodeStatus = NodeStatus.unexplored
     priority: int = 0
-    value: str = ""
     reason: str = ""
     how: str = ""
-    evidence: list[str] = Field(default_factory=list)
     shared_refs: list[str] = Field(default_factory=list)
-    key_findings: list[str] = Field(default_factory=list)
 
 
 class AttackTreeSnapshot(BaseModel):
@@ -133,15 +141,11 @@ class NodePatch(BaseModel):
     parent_key: str
     title: str
     kind: NodeKind
-    locator: str
     priority: int = 0
-    value: str = ""
     reason: str = ""
     how: str = ""
-    evidence: list[str] = Field(default_factory=list)
     status: NodeStatus = NodeStatus.unexplored
     shared_refs: list[str] = Field(default_factory=list)
-    key_findings: list[str] = Field(default_factory=list)
 
 
 class NodeUpdatePatch(BaseModel):
@@ -150,12 +154,9 @@ class NodeUpdatePatch(BaseModel):
     key: str
     status: NodeStatus | None = None
     priority: int | None = None
-    value: str | None = None
     reason: str | None = None
     how: str | None = None
-    evidence: list[str] | None = None
     shared_refs: list[str] | None = None
-    key_findings: list[str] | None = None
 
 
 class TreePatch(BaseModel):
@@ -194,7 +195,7 @@ class ReconInput(BaseModel):
     objective: str
     tree: AttackTreeSnapshot
     challenge_context: str = ""
-    recent_observations: list[Observation] = Field(default_factory=list)
+    recent_observations: list[RecentObservationRound] = Field(default_factory=list)
     latest_execution: ExecutionResult | None = None
     available_artifacts: list[ArtifactRef] = Field(default_factory=list)
     available_functions: list[AvailableFunction] = Field(default_factory=list)
@@ -202,13 +203,13 @@ class ReconInput(BaseModel):
 
 
 class ReconOutput(BaseModel):
-    summary: str
+    phase_summary: str
     discover_vulnerability: bool = False
     selected_node_key: str = ""
     actions: list[ActionPlan] = Field(default_factory=list)
     tree_patch: TreePatch = Field(default_factory=TreePatch)
-    key_findings: list[str] = Field(default_factory=list)
-    result_type: str = ""
+    observed_task_results: list[ObservedTaskResult] = Field(default_factory=list)
+    credentials: list[str] = Field(default_factory=list)
 
 
 class StrategyInput(BaseModel):
@@ -218,29 +219,29 @@ class StrategyInput(BaseModel):
     related_nodes: list[NodeInfo] = Field(default_factory=list)
     challenge_context: str = ""
     latest_summary: str = ""
-    recent_observations: list[Observation] = Field(default_factory=list)
+    recent_observations: list[RecentObservationRound] = Field(default_factory=list)
     latest_execution: ExecutionResult | None = None
     available_artifacts: list[ArtifactRef] = Field(default_factory=list)
     available_functions: list[AvailableFunction] = Field(default_factory=list)
 
 
 class StrategyOutput(BaseModel):
-    summary: str
+    phase_summary: str
     selected_node_key: str = ""
     actions: list[ActionPlan] = Field(default_factory=list)
     flag_candidates: list[str] = Field(default_factory=list)
     goal_reached: bool = False
     need_recon: bool = False
     tree_patch: TreePatch = Field(default_factory=TreePatch)
-    key_findings: list[str] = Field(default_factory=list)
-    result_type: str = ""
+    observed_task_results: list[ObservedTaskResult] = Field(default_factory=list)
+    credentials: list[str] = Field(default_factory=list)
 
 
 class ReflectionInput(BaseModel):
     objective: str
     tree: AttackTreeSnapshot
     challenge_context: str = ""
-    recent_observations: list[Observation] = Field(default_factory=list)
+    recent_observations: list[RecentObservationRound] = Field(default_factory=list)
     latest_execution: ExecutionResult | None = None
     available_artifacts: list[ArtifactRef] = Field(default_factory=list)
     last_strategy: str = ""
@@ -254,13 +255,14 @@ class ReflectionOutput(BaseModel):
     next_focus_key: str = ""
     flag_candidates: list[str] = Field(default_factory=list)
     tree_patch: TreePatch = Field(default_factory=TreePatch)
+    credentials: list[str] = Field(default_factory=list)
 
 
 class SkillRouterInput(BaseModel):
     objective: str
     tree: AttackTreeSnapshot
     challenge_context: str = ""
-    recent_observations: list[Observation] = Field(default_factory=list)
+    recent_observations: list[RecentObservationRound] = Field(default_factory=list)
     latest_execution: ExecutionResult | None = None
     last_strategy: str = ""
     latest_summary: str = ""
@@ -294,7 +296,7 @@ class BuilderOutput(BaseModel):
 
 class SubmissionInput(BaseModel):
     candidates: list[str] = Field(default_factory=list)
-    recent_observations: list[Observation] = Field(default_factory=list)
+    recent_observations: list[RecentObservationRound] = Field(default_factory=list)
     submitted_flags: list[str] = Field(default_factory=list)
 
 

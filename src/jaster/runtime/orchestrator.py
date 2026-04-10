@@ -1,6 +1,4 @@
 from __future__ import annotations
-
-import re
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from collections.abc import Callable
@@ -20,8 +18,11 @@ from jaster.domain import (
     ExecutionResult,
     GlobalFacts,
     Observation,
+    ObservedTaskResult,
     ReconInput,
     ReconOutput,
+    RecentObservationAction,
+    RecentObservationRound,
     ReflectionInput,
     RunState,
     SkillRouterInput,
@@ -51,6 +52,7 @@ class PendingObservation(BaseModel):
     round: int
     source: str
     execution: ExecutionResult
+    tasks: list[dict[str, str]] = Field(default_factory=list)
 
 
 def _tree_node_to_info(node: TreeNodeSnapshot) -> NodeInfo:
@@ -60,15 +62,11 @@ def _tree_node_to_info(node: TreeNodeSnapshot) -> NodeInfo:
         parent_key=node.parent_key,
         title=node.title,
         kind=node.kind,
-        locator=node.locator,
         status=node.status,
         priority=node.priority,
-        value=node.value,
         reason=node.reason,
         how=node.how,
-        evidence=list(node.evidence),
         shared_refs=list(node.shared_refs),
-        key_findings=list(node.key_findings),
     )
 
 
@@ -192,12 +190,12 @@ class JasterOrchestrator:
                     run_id=run_id,
                     challenge=state.challenge,
                     latest_execution=prev_execution,
-                    recent_observations=_compact_observations(state.observations[-50:]),
+                    recent_observations=_compact_observations(state.observations),
                     payload_factory=lambda execution: ReconInput(
                         objective=f"Recon the target {state.challenge.target} and expand the global attack tree.",
                         tree=_prompt_tree_snapshot(tree.snapshot()),
                         challenge_context=_challenge_context(state.challenge),
-                        recent_observations=_compact_observations(state.observations[-50:]),
+                        recent_observations=_compact_observations(state.observations),
                         latest_execution=_compact_execution(execution),
                         available_artifacts=_prompt_artifacts(state.available_artifacts),
                         available_functions=self.catalog.list_functions(),
@@ -214,19 +212,21 @@ class JasterOrchestrator:
 
                 self._log(
                     f"    Result: {'OK' if latest_execution.success else 'FAIL'}"
-                    f" | {latest_execution.summary or '(no summary)'}"
+                    f" | {_execution_message(latest_execution)}"
                 )
-                _flush_pending_observation(state, pending_observation, recon_out.summary, recon_out.result_type)
+                _flush_pending_observation(state, pending_observation, recon_out.observed_task_results)
                 pending_observation = PendingObservation(
                     round=phase_round,
                     source="recon",
                     execution=latest_execution.model_copy(deep=True),
+                    tasks=_pending_observation_tasks(recon_out.actions),
                 )
                 state.available_artifacts = _merge_artifact_refs(
                     state.available_artifacts,
                     _available_artifacts(latest_execution.artifacts),
                 )
                 tree.merge_facts(_facts_from_execution(latest_execution))
+                tree.merge_facts(GlobalFacts(credentials=recon_out.credentials))
                 state.tree = tree.snapshot()
                 self._append_phase_round(
                     run_id,
@@ -251,7 +251,7 @@ class JasterOrchestrator:
                 if recon_out.discover_vulnerability or _is_finish_only(recon_out.actions):
                     self._log("[*] Recon complete: exploitable point found")
                     node_context = _resolve_node_context(tree, recon_out.selected_node_key)
-                    recon_summary = recon_out.summary
+                    recon_summary = recon_out.phase_summary
                     _reflection_entry = "recon"
                     next_phase = "reflection"
                     continue
@@ -259,7 +259,7 @@ class JasterOrchestrator:
                 # 每 5 轮强制 Reflection，对当前侦察方向做阶段性思考
                 if phase_round > 0 and phase_round % 5 == 0:
                     self._log(f"[*] Periodic reflection: round {phase_round}")
-                    recon_summary = recon_out.summary
+                    recon_summary = recon_out.phase_summary
                     _reflection_entry = "recon"
                     next_phase = "reflection"
                     continue
@@ -283,7 +283,7 @@ class JasterOrchestrator:
                                 objective="Select 1-2 skills as inspiration before reflection.",
                                 tree=_prompt_tree_snapshot(tree.snapshot()),
                                 challenge_context=_challenge_context(state.challenge),
-                                recent_observations=_compact_observations(state.observations[-50:]),
+                                recent_observations=_compact_observations(state.observations),
                                 latest_execution=_compact_execution(latest_execution),
                                 available_artifacts=_prompt_artifacts(state.available_artifacts),
                                 last_strategy=node_context.target_node.title if node_context else "",
@@ -308,7 +308,7 @@ class JasterOrchestrator:
                         objective="Reflect on the exploitable point found by recon, organize key findings, and provide strategic guidance.",
                         tree=_prompt_tree_snapshot(tree.snapshot()),
                         challenge_context=_challenge_context(state.challenge),
-                        recent_observations=_compact_observations(state.observations[-50:]),
+                        recent_observations=_compact_observations(state.observations),
                         latest_execution=_compact_execution(latest_execution),
                         available_artifacts=_prompt_artifacts(state.available_artifacts),
                         last_strategy=node_context.target_node.title if node_context else "",
@@ -320,9 +320,8 @@ class JasterOrchestrator:
                 self._log(f"    LLM time: {reflection_elapsed:.2f}s")
                 reflection_summary = reflection_out.summary
                 self._log(f"    Summary: {reflection_out.summary or '(empty)'}")
-                _flush_pending_observation(state, pending_observation, reflection_out.summary, "")
-                pending_observation = None
                 tree.apply_patch(reflection_out.tree_patch)
+                tree.merge_facts(GlobalFacts(credentials=reflection_out.credentials))
                 state.tree = tree.snapshot()
                 # 用 reflection 的 next_focus_key 更新 node_context
                 if reflection_out.next_focus_key:
@@ -368,7 +367,7 @@ class JasterOrchestrator:
                 run_id=run_id,
                 challenge=state.challenge,
                 latest_execution=prev_execution,
-                recent_observations=_compact_observations(state.observations[-50:]),
+                recent_observations=_compact_observations(state.observations),
                 payload_factory=lambda execution: StrategyInput(
                     objective=f"Exploit the target {state.challenge.target} and capture the flag.",
                     target_node=node_context.target_node,
@@ -376,7 +375,7 @@ class JasterOrchestrator:
                     related_nodes=node_context.related_nodes,
                     challenge_context=_challenge_context(state.challenge),
                     latest_summary=reflection_summary,
-                    recent_observations=_compact_observations(state.observations[-50:]),
+                    recent_observations=_compact_observations(state.observations),
                     latest_execution=_compact_execution(execution),
                     available_artifacts=_prompt_artifacts(state.available_artifacts),
                     available_functions=self.catalog.list_functions(),
@@ -391,19 +390,21 @@ class JasterOrchestrator:
             tree.apply_patch(strategy_out.tree_patch)
             self._log(
                 f"    Execution: {'OK' if latest_execution.success else 'FAIL'}"
-                f" | {latest_execution.summary or '(no summary)'}"
+                f" | {_execution_message(latest_execution)}"
             )
-            _flush_pending_observation(state, pending_observation, strategy_out.summary, strategy_out.result_type)
+            _flush_pending_observation(state, pending_observation, strategy_out.observed_task_results)
             pending_observation = PendingObservation(
                 round=phase_round,
                 source="strategy",
                 execution=latest_execution.model_copy(deep=True),
+                tasks=_pending_observation_tasks(strategy_out.actions),
             )
             state.available_artifacts = _merge_artifact_refs(
                 state.available_artifacts,
                 _available_artifacts(latest_execution.artifacts),
             )
             tree.merge_facts(_facts_from_execution(latest_execution))
+            tree.merge_facts(GlobalFacts(credentials=strategy_out.credentials))
 
             candidates = _merge_flag_candidates(strategy_out.flag_candidates, latest_execution.flag_candidates)
             submission_out = None
@@ -414,7 +415,7 @@ class JasterOrchestrator:
                     state.challenge.zone,
                     SubmissionInput(
                         candidates=candidates,
-                        recent_observations=_compact_observations(state.observations[-50:]),
+                        recent_observations=_compact_observations(state.observations),
                         submitted_flags=state.submitted_flags,
                     ),
                 )
@@ -477,14 +478,14 @@ class JasterOrchestrator:
 
             if strategy_out.need_recon:
                 self._log("[*] Strategy requests more recon")
-                strategy_summary = strategy_out.summary
+                strategy_summary = strategy_out.phase_summary
                 next_phase = "recon"
                 continue
 
             # 每 5 轮强制 Reflection，对当前渗透方向做阶段性思考
             if phase_round > 0 and phase_round % 5 == 0:
                 self._log(f"[*] Periodic reflection: round {phase_round}")
-                strategy_summary = strategy_out.summary
+                strategy_summary = strategy_out.phase_summary
                 _reflection_entry = "strategy"
                 next_phase = "reflection"
                 continue
@@ -513,7 +514,7 @@ class JasterOrchestrator:
         zone: str,
         actions: list[ActionPlan],
         challenge: ChallengeSpec | None = None,
-        recent_observations: list[Observation] | None = None,
+        recent_observations: list[RecentObservationRound] | None = None,
         latest_execution: ExecutionResult | None = None,
         available_artifacts: list[ArtifactRef] | None = None,
     ) -> ExecutionResult:
@@ -615,7 +616,7 @@ class JasterOrchestrator:
         challenge: ChallengeSpec | None,
         latest_execution: ExecutionResult | None,
         available_artifacts: list[ArtifactRef],
-        recent_observations: list[Observation],
+        recent_observations: list[RecentObservationRound],
         batch_dir: Path,
     ) -> dict[str, object]:
         task_dir = batch_dir / action.task_id
@@ -779,7 +780,7 @@ class JasterOrchestrator:
         run_id: str,
         challenge: ChallengeSpec | None = None,
         latest_execution: ExecutionResult | None,
-        recent_observations: list[Observation] | None = None,
+        recent_observations: list[RecentObservationRound] | None = None,
         payload_factory: Callable[[ExecutionResult | None], object],
         label: str,
     ) -> tuple[ReconOutput | StrategyOutput, ExecutionResult, float]:
@@ -804,7 +805,7 @@ class JasterOrchestrator:
                     "This means the agent exhausted its own LLM/JSON retry budget before producing a valid action."
                 ) from exc
             total_elapsed += agent_elapsed
-            self._log(f"    \033[92m{agent_out.summary or '(empty)'}\033[0m")
+            self._log(f"    \033[92m{agent_out.phase_summary or '(empty)'}\033[0m")
             execution = self._execute_actions(
                 run_id=run_id,
                 agent_name=agent_name,
@@ -826,12 +827,12 @@ class JasterOrchestrator:
                 execution=execution,
             )
             self._log(
-                f"    Action failed: {execution.summary or '(no summary)'}"
+                f"    Action failed: {_execution_message(execution)}"
                 f" | retrying current phase ({attempt}/{max_attempts})"
             )
         raise RuntimeError(
             f"{agent_name} phase failed after {max_attempts} attempts: "
-            f"{current_execution.summary if current_execution else 'unknown error'}"
+            f"{_execution_message(current_execution) if current_execution else 'unknown error'}"
         )
 
 
@@ -853,46 +854,72 @@ def detect_zone(description: str) -> str:
 def _flush_pending_observation(
     state: RunState,
     pending: PendingObservation | None,
-    summary: str,
-    result_type: str,
+    observed_task_results: list[ObservedTaskResult],
 ) -> None:
     if pending is None:
         return
-    if pending.execution.task_results:
-        for task_id, task_result in pending.execution.task_results.items():
-            state.observations.append(
-                Observation(
-                    round=pending.round,
-                    source=f"{pending.source}:{task_id}",
-                    command=task_result.command,
-                    result_type=result_type,
-                    summary=task_result.summary or summary,
-                )
-            )
+    if not pending.tasks:
         return
-    state.observations.append(
-        Observation(
-            round=pending.round,
-            source=pending.source,
-            command=pending.execution.command,
-            result_type=result_type,
-            summary=summary,
+    by_task_id = {
+        item.task_id: item
+        for item in observed_task_results
+        if item.task_id and (item.target or item.result)
+    }
+    missing = [item["task_id"] for item in pending.tasks if item["task_id"] not in by_task_id]
+    if missing:
+        raise ValueError(f"Missing observed_task_results for task ids: {', '.join(missing)}")
+    for task in pending.tasks:
+        observed = by_task_id[task["task_id"]]
+        state.observations.append(
+            Observation(
+                round=pending.round,
+                source=pending.source,
+                task_id=task["task_id"],
+                task=task["task"],
+                target=observed.target,
+                result=observed.result,
+            )
         )
-    )
 
 
 def _facts_from_execution(result: ExecutionResult) -> GlobalFacts:
-    credentials = re.findall(r"(?:password|token|secret|key)[:=]\s*(\S+)", "\n".join(result.findings), re.I)
-    artifacts = [artifact.path for artifact in result.artifacts]
     return GlobalFacts(
         flags=result.flag_candidates,
-        credentials=credentials,
-        artifacts=artifacts,
     )
 
 
-def _compact_observations(observations: list[Observation], *, limit: int = 50) -> list[Observation]:
-    return [item.model_copy() for item in observations[-limit:]]
+def _compact_observations(
+    observations: list[Observation],
+    *,
+    limit: int = 50,
+) -> list[RecentObservationRound]:
+    grouped = _serialize_recent_observations(observations)
+    return [item.model_copy(deep=True) for item in grouped[-limit:]]
+
+
+def _serialize_recent_observations(observations: list[Observation]) -> list[RecentObservationRound]:
+    rounds: dict[int, list[RecentObservationAction]] = {}
+    ordered_rounds: list[int] = []
+    for item in observations:
+        round_num = item.round
+        if round_num not in rounds:
+            rounds[round_num] = []
+            ordered_rounds.append(round_num)
+        action = RecentObservationAction(
+            task=item.task,
+            target=item.target,
+            result=item.result,
+        )
+        rounds[round_num].append(action)
+    serialized: list[RecentObservationRound] = []
+    for round_num in ordered_rounds:
+        serialized.append(
+            RecentObservationRound(
+                round=round_num,
+                actions=rounds[round_num],
+            )
+        )
+    return serialized
 
 
 def _compact_execution(execution: ExecutionResult | None) -> ExecutionResult | None:
@@ -901,15 +928,6 @@ def _compact_execution(execution: ExecutionResult | None) -> ExecutionResult | N
     return ExecutionResult(
         success=execution.success,
         batch_status=execution.batch_status,
-        summary=execution.summary,
-        findings=list(execution.findings),
-        flag_candidates=list(execution.flag_candidates),
-        artifacts=list(execution.artifacts),
-        stdout=execution.stdout,
-        stderr=execution.stderr,
-        exit_code=execution.exit_code,
-        command=execution.command,
-        script_path=execution.script_path,
         source=execution.source,
         failure_stage=execution.failure_stage,
         task_results={key: value.model_copy(deep=True) for key, value in execution.task_results.items()},
@@ -927,8 +945,6 @@ def _prompt_tree_snapshot(snapshot: AttackTreeSnapshot) -> AttackTreeSnapshot:
         facts=GlobalFacts(
             flags=list(snapshot.facts.flags),
             credentials=list(snapshot.facts.credentials),
-            services=list(snapshot.facts.services),
-            artifacts=list(snapshot.facts.artifacts[-8:]),
         ),
     )
 
@@ -989,22 +1005,31 @@ def _build_action_retry_context(
     actions: list[ActionPlan],
     execution: ExecutionResult,
 ) -> dict[str, Any]:
+    task_failures = [
+        {
+            "task_id": item.task_id,
+            "success": item.success,
+            "summary": item.summary,
+            "exit_code": item.exit_code,
+            "failure_stage": item.failure_stage,
+            "stdout_excerpt": _excerpt(item.stdout),
+            "stderr_excerpt": _excerpt(item.stderr),
+        }
+        for item in execution.task_results.values()
+    ]
     return {
         "attempt": attempt,
         "max_attempts": max_attempts,
         "failure_stage": execution.failure_stage or "action_execution",
         "error_type": "ActionExecutionFailed",
-        "error_message": execution.summary or execution.stderr or execution.stdout or "Action execution failed",
+        "error_message": _execution_message(execution),
         "previous_actions": [action.model_dump() for action in actions],
         "latest_execution": {
-            "summary": execution.summary,
             "success": execution.success,
             "batch_status": execution.batch_status,
-            "command": execution.command,
-            "exit_code": execution.exit_code,
-            "stdout_excerpt": _excerpt(execution.stdout),
-            "stderr_excerpt": _excerpt(execution.stderr),
-            "findings": execution.findings[:5],
+            "source": execution.source,
+            "failure_stage": execution.failure_stage,
+            "task_results": task_failures,
         },
     }
 
@@ -1021,6 +1046,37 @@ def _describe_action(action: ActionPlan) -> str:
     if action.function_name:
         label += f"({action.function_name})"
     return label
+
+
+def _task_name_from_action(action: ActionPlan) -> str:
+    if action.kind == "function" and action.function_name:
+        return action.function_name
+    if action.kind == "builder":
+        return "builder"
+    if action.kind == "finish":
+        return "finish"
+    return action.kind
+
+
+def _pending_observation_tasks(actions: list[ActionPlan]) -> list[dict[str, str]]:
+    return [
+        {
+            "task_id": action.task_id,
+            "task": _task_name_from_action(action),
+        }
+        for action in actions
+    ]
+
+
+def _execution_message(execution: ExecutionResult) -> str:
+    for item in execution.task_results.values():
+        if item.summary:
+            return f"[{item.task_id}] {item.summary}"
+        if item.stderr.strip():
+            return f"[{item.task_id}] {item.stderr.strip().splitlines()[0]}"
+        if item.stdout.strip():
+            return f"[{item.task_id}] {item.stdout.strip().splitlines()[0]}"
+    return "Action execution failed"
 
 
 def _is_finish_only(actions: list[ActionPlan]) -> bool:

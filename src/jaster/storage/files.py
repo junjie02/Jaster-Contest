@@ -70,7 +70,9 @@ class FileRunStore:
         obs_path = run_dir / "observations.jsonl"
         if obs_path.exists():
             observations = [
-                json.loads(line) for line in obs_path.read_text(encoding="utf-8").splitlines() if line.strip()
+                _normalize_observation_payload(json.loads(line))
+                for line in obs_path.read_text(encoding="utf-8").splitlines()
+                if line.strip()
             ]
         raw_artifacts = [
             ArtifactRef.model_validate(item) for item in run_payload.get("available_artifacts", [])
@@ -83,3 +85,17 @@ class FileRunStore:
                 "observations": observations,
             }
         )
+
+
+def _normalize_observation_payload(payload: dict) -> dict:
+    normalized = dict(payload or {})
+    source = str(normalized.get("source") or "")
+    task_id = str(normalized.get("task_id") or "")
+    if not task_id and ":" in source:
+        _, _, task_id = source.partition(":")
+    normalized["task_id"] = task_id
+    normalized["task"] = str(normalized.get("task") or task_id or source)
+    normalized["target"] = str(normalized.get("target") or "")
+    normalized["result"] = str(normalized.get("result") or normalized.get("summary") or "")
+    normalized["source"] = source.split(":", 1)[0] if ":" in source else source
+    return normalized
