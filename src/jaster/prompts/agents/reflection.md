@@ -30,7 +30,6 @@
 - summary：string，反思总结（将作为指导信息传递给后续agent，必须结合已有信息认真思考做出判断）
 - next_focus_key：string，反思后确定的下一轮 strategy 聚焦节点 key；必须返回
 - flag_candidates：list[string]，候选 Flag 列表；没有则返回 []
-- credentials：list[string]，当前已确认的重要凭据、口令、token、secret、key、账号组合等；必须由你基于已有证据总结生成，没有则返回 []
 - tree_patch：dict，你需要维护的全局树结构，改内容将会贯穿整个渗透测试流程，因此要谨慎、精确维护
   add_nodes：list[dict] 新节点，新节点的父节点会自动绑定为selected_node_key
     title：string #记录“能力”，而非具体路径或参数

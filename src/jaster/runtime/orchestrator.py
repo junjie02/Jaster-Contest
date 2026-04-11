@@ -865,7 +865,7 @@ def _flush_pending_observation(
     by_task_id = {
         item.task_id: item
         for item in observed_task_results
-        if item.task_id and (item.target or item.result)
+        if item.task_id and (item.target or item.result or item.key_findings)
     }
     missing = [item["task_id"] for item in pending.tasks if item["task_id"] not in by_task_id]
     if missing:
@@ -880,6 +880,7 @@ def _flush_pending_observation(
                 task=task["task"],
                 target=observed.target,
                 result=observed.result,
+                key_findings=observed.key_findings,
             )
         )
 
@@ -893,7 +894,7 @@ def _facts_from_execution(result: ExecutionResult) -> GlobalFacts:
 def _compact_observations(
     observations: list[Observation],
     *,
-    limit: int = 50,
+    limit: int = 15,
 ) -> list[RecentObservationRound]:
     grouped = _serialize_recent_observations(observations)
     return [item.model_copy(deep=True) for item in grouped[-limit:]]
@@ -911,6 +912,7 @@ def _serialize_recent_observations(observations: list[Observation]) -> list[Rece
             task=item.task,
             target=item.target,
             result=item.result,
+            key_findings=item.key_findings,
         )
         rounds[round_num].append(action)
     serialized: list[RecentObservationRound] = []
@@ -930,7 +932,28 @@ def _compact_execution(execution: ExecutionResult | None) -> LatestExecutionResu
     return LatestExecutionResult(
         success=execution.success,
         batch_status=execution.batch_status,
-        task_results={key: value.model_copy(deep=True) for key, value in execution.task_results.items()},
+        summary=_excerpt(execution.summary, limit=1200),
+        findings=[_excerpt(item, limit=1600) for item in execution.findings[:20]],
+        stdout=_excerpt_head_tail(execution.stdout, limit=50000),
+        stderr=_excerpt_head_tail(execution.stderr, limit=50000),
+        command=_excerpt(execution.command, limit=1200),
+        source=execution.source,
+        failure_stage=execution.failure_stage,
+        task_results={key: _compact_task_result(value) for key, value in execution.task_results.items()},
+    )
+
+
+def _compact_task_result(task_result: TaskExecutionResult) -> TaskExecutionResult:
+    return task_result.model_copy(
+        update={
+            "summary": _excerpt(task_result.summary, limit=1200),
+            "findings": [_excerpt(item, limit=1600) for item in task_result.findings[:20]],
+            "stdout": _excerpt_head_tail(task_result.stdout, limit=50000),
+            "stderr": _excerpt_head_tail(task_result.stderr, limit=50000),
+            "command": _excerpt(task_result.command, limit=1200),
+            "script_path": _excerpt(task_result.script_path, limit=600),
+        },
+        deep=True,
     )
 
 
@@ -1039,6 +1062,21 @@ def _excerpt(value: str, limit: int = 600) -> str:
     if len(rendered) <= limit:
         return rendered
     return rendered[: limit - 3] + "..."
+
+
+def _excerpt_head_tail(value: str, limit: int = 6000) -> str:
+    rendered = value.strip()
+    if len(rendered) <= limit:
+        return rendered
+    if limit <= 32:
+        return _excerpt(rendered, limit=limit)
+    marker = "\n...\n[truncated]\n...\n"
+    available = limit - len(marker)
+    if available <= 32:
+        return _excerpt(rendered, limit=limit)
+    head = available // 2
+    tail = available - head
+    return rendered[:head] + marker + rendered[-tail:]
 
 
 def _describe_action(action: ActionPlan) -> str:

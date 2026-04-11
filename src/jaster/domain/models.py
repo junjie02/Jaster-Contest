@@ -38,12 +38,14 @@ class Observation(BaseModel):
     task: str = ""
     target: str = ""
     result: str = ""
+    key_findings: str = ""
 
 
 class RecentObservationAction(BaseModel):
     task: str = ""
     target: str = ""
     result: str = ""
+    key_findings: str = ""
 
 
 class RecentObservationRound(BaseModel):
@@ -75,6 +77,13 @@ class LatestExecutionResult(BaseModel):
 
     success: bool
     batch_status: str = ""
+    summary: str = ""
+    findings: list[str] = Field(default_factory=list)
+    stdout: str = ""
+    stderr: str = ""
+    command: str = ""
+    source: str = ""
+    failure_stage: str = ""
     task_results: dict[str, "TaskExecutionResult"] = Field(default_factory=dict)
 
 
@@ -102,6 +111,7 @@ class ObservedTaskResult(BaseModel):
     task_id: str
     target: str = ""
     result: str = ""
+    key_findings: str = ""
 
 
 class GlobalFacts(BaseModel):

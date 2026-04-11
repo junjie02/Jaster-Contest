@@ -97,5 +97,6 @@ def _normalize_observation_payload(payload: dict) -> dict:
     normalized["task"] = str(normalized.get("task") or task_id or source)
     normalized["target"] = str(normalized.get("target") or "")
     normalized["result"] = str(normalized.get("result") or normalized.get("summary") or "")
+    normalized["key_findings"] = str(normalized.get("key_findings") or "")
     normalized["source"] = source.split(":", 1)[0] if ":" in source else source
     return normalized
