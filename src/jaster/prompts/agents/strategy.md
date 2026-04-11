@@ -52,19 +52,19 @@
   key_parameters：list[dict]，重点认证参数列表，如 `[{"name": "cookie", "value": "..."}]`
   executor_brief：string，描述使用该工具希望达成的目的，kind 为 function 时供 executor 补参；builder 时供 Builder Agent 写脚本
 - flag_candidates：list[string]，候选 Flag 列表；没有则返回 []
-- tree_patch：dict，你需要维护的节点信息（全局树的部分节点）
-  add_nodes：list[dict] 添加新节点，新节点的父节点会自动绑定为selected_node_key，若基于此节点发现重要漏洞可通过add_nodes添加节点并记录信息
-    title：string 记录”能力”，而非具体路径或参数
-    kind：string，”target” | “asset” | “entry” | “weakness” | “technique” | “hypothesis”
+- tree_patch：dict，你需要维护的全局树结构，改内容将会贯穿整个渗透测试流程，因此要谨慎、精确维护
+  add_nodes：list[dict] 新节点，新节点的父节点会自动绑定为selected_node_key
+    title：string #记录“能力”，而非具体路径或参数
+    kind：string，"target" | "asset" | "entry" | "weakness" | "technique" | "hypothesis"
     priority：int 0-100
     reason：string 入树理由
     how：string 如何利用此信息
-    status：string，”unexplored” （新创节点设为unexplored）
-    shared_refs：list[string]，关联节点 key 列表；没有则返回 []
-  update_nodes：list[dict] 根据已有信息动态调整已知节点的状态及优先级，若认为当前节点完全行不通，将状态设置为failed。
+    status：string，"unexplored" （新创节点设为unexplored）
+    shared_refs：list[string]，关联节点 key 列表（指节点之间的信息可以联合利用达成目标）；没有则返回 []
+  update_nodes：list[dict] 根据当前发现，调整节点的状态优先级
     key：string
-    status：string|null， “failed”
+    status：string|null， "exploring" | "success" | "failed"
     priority：int|null 0-100
     reason：string|null 更新理由
     how：string|null
-    shared_refs：list[string]|null，与该节点有关的重要发现或重要参数记录
+    shared_refs：list[string]|null，关联节点 key 列表；没有则返回 []

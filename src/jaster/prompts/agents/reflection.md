@@ -31,17 +31,16 @@
 - next_focus_key：string，反思后确定的下一轮 strategy 聚焦节点 key；必须返回
 - flag_candidates：list[string]，候选 Flag 列表；没有则返回 []
 - credentials：list[string]，当前已确认的重要凭据、口令、token、secret、key、账号组合等；必须由你基于已有证据总结生成，没有则返回 []
-- tree_patch：dict 结合已拥有的信息，可以通过以下方法新增节点或调整节点优先级。节点信息是重要的利用资产，新增与更新节点都务必谨慎准确。
-  add_nodes：list[dict]
-    parent_key：string  新增节点会挂在parent_key节点后面，这表明通过利用parent_key的信息可以产生新节点的信息
-    title：string 记录“能力”，而非具体路径或参数
+- tree_patch：dict，你需要维护的全局树结构，改内容将会贯穿整个渗透测试流程，因此要谨慎、精确维护
+  add_nodes：list[dict] 新节点，新节点的父节点会自动绑定为selected_node_key
+    title：string #记录“能力”，而非具体路径或参数
     kind：string，"target" | "asset" | "entry" | "weakness" | "technique" | "hypothesis"
-    priority：int
+    priority：int 0-100
     reason：string 入树理由
     how：string 如何利用此信息
-    status：string，"unexplored" | "exploring" | "success" 
-    shared_refs：list[string]|null，关联节点 key 列表；没有则返回 []
-  update_nodes：list[dict] 根据当前发现，调整节点的状态优先级。若认为某个节点完全行不通，将状态设置为failed。
+    status：string，"unexplored" （新创节点设为unexplored）
+    shared_refs：list[string]，关联节点 key 列表（指节点之间的信息可以联合利用达成目标）；没有则返回 []
+  update_nodes：list[dict] 根据当前发现，调整节点的状态优先级
     key：string
     status：string|null， "exploring" | "success" | "failed"
     priority：int|null 0-100
