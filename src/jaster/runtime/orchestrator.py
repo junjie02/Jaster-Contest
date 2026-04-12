@@ -40,7 +40,7 @@ from jaster.domain import (
     TaskTreePatch,
     TaskTreeSnapshot,
 )
-from jaster.mcp import build_tools_documentation_sync, call_mcp_tool_sync, tool_inventory
+from jaster.mcp import call_mcp_tool_sync, tool_inventory
 from jaster.runtime.artifacts import filter_available_artifacts
 from jaster.runtime.env import env_int
 from jaster.runtime.llm import OpenAIChatClient
@@ -107,6 +107,7 @@ class JasterOrchestrator:
                 break
 
             self._log(f"[*] Cycle {cycle}: plan")
+            previous_keys = {node.key for node in state.task_tree.nodes}
             plan_out, plan_elapsed = self._timed_agent_run(
                 "plan",
                 challenge.zone,
@@ -123,8 +124,10 @@ class JasterOrchestrator:
             self._log(f"    LLM time: {plan_elapsed:.2f}s")
             task_tree.apply_patch(plan_out.tree_patch)
             state.task_tree = task_tree.snapshot()
+            added_keys = [node.key for node in state.task_tree.nodes if node.key not in previous_keys]
 
             dispatch_keys = self._resolve_dispatch_keys(task_tree, plan_out.dispatch_task_keys)
+            dispatch_keys = self._merge_auto_dispatch_keys(task_tree, dispatch_keys, added_keys)
             self._log_plan_cycle(cycle, task_tree, plan_out, dispatch_keys)
             planner_entry = PlannerHistoryEntry(
                 cycle=cycle,
@@ -621,13 +624,37 @@ class JasterOrchestrator:
         task_tree.apply_patch(patch)
 
     def _resolve_dispatch_keys(self, task_tree: TaskTree, task_keys: list[str]) -> list[str]:
+        child_keys = {node.parent_key for node in task_tree.snapshot().nodes if node.parent_key}
         seen: list[str] = []
         for key in task_keys:
             node = task_tree.get(key)
-            if node is None or node.status != TaskStatus.in_progress or key in seen:
+            if (
+                node is None
+                or node.status != TaskStatus.in_progress
+                or key in child_keys
+                or key in seen
+            ):
                 continue
             seen.append(key)
         return seen
+
+    def _merge_auto_dispatch_keys(self, task_tree: TaskTree, dispatch_keys: list[str], added_keys: list[str]) -> list[str]:
+        child_keys = {node.parent_key for node in task_tree.snapshot().nodes if node.parent_key}
+        auto_keys: list[str] = []
+        for key in added_keys:
+            node = task_tree.get(key)
+            if node is None or node.status != TaskStatus.in_progress or key in child_keys:
+                continue
+            auto_keys.append(key)
+
+        if not auto_keys:
+            return dispatch_keys
+
+        merged = list(auto_keys)
+        for key in dispatch_keys:
+            if key not in merged:
+                merged.append(key)
+        return merged
 
     def _initial_bootstrap_execution(self, challenge: ChallengeSpec) -> ExecutionResult | None:
         if challenge.target_type != "http":
@@ -893,8 +920,6 @@ def _challenge_context(challenge: ChallengeSpec) -> str:
         lines.append(f"Flag进度: {challenge.flag_got_count}/{challenge.flag_count}")
     if challenge.hint_content:
         lines.append(f"平台提示: {challenge.hint_content}")
-    if build_tools_documentation_sync():
-        lines.append(build_tools_documentation_sync())
     return "\n".join(line for line in lines if line).strip()
 
 

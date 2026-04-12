@@ -14,7 +14,8 @@
   - `reason`：为什么这个任务值得做
   - `completion_criteria`：达成什么目标才算任务完成，例如：成功读取/etc/passwd或flag文件等敏感内容，至少找到1个源码文件信息
 - 只新增真正独立的任务，避免重复创建与现有节点语义相同的任务。
-- 如果某个 `in_progress` 节点仍值得继续推进，可以继续下发它的 key 到 `dispatch_task_keys`。
+- 运行时会自动派发本轮 `add_nodes` 新增且状态为 `in_progress` 的叶子任务，因此你通常不需要为这些新任务填写 `dispatch_task_keys`。
+- `dispatch_task_keys` 只用于继续推进“已经存在于树中的” `in_progress` 叶子任务；不要填写本轮新建节点的 key，也不要填写已经被拆分出子任务的父节点/root 节点。
 - 如果某个节点已经被 reflection 判为 `completed` 或 `failed`，不要再继续派发它。
 - 不要输出具体 HTTP 路径、payload 细节之外的不必要编造；所有任务都必须基于证据、reflection 建议或通用高价值渗透路径。
 
@@ -37,4 +38,4 @@
     - `latest_summary`：string|null
     - `latest_findings`：list[string]|null
     - `attempt_count`：int|null
-- `dispatch_task_keys`：list[string]，本轮派发给 strategy 并行处理的任务 key 列表
+- `dispatch_task_keys`：list[string]，仅填写本轮需要继续推进的“已有叶子任务” key 列表；若本轮只是在新增任务，通常返回 `[]`
