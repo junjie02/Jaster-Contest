@@ -34,6 +34,7 @@ class FileRunStore:
                 {
                     "run_id": state.run_id,
                     "challenge": state.challenge.model_dump(),
+                    "planner_context": state.planner_context.model_dump() if state.planner_context else None,
                     "available_artifacts": [item.model_dump() for item in filter_available_artifacts(state.available_artifacts)],
                     "planner_history": [item.model_dump() for item in state.planner_history],
                     "reflection_history": [item.model_dump() for item in state.reflection_history],

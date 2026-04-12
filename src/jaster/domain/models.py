@@ -180,11 +180,51 @@ class TaskDiscovery(BaseModel):
     credentials: list[str] = Field(default_factory=list)
 
 
+class FailurePattern(BaseModel):
+    pattern: str
+    reason: str = ""
+    affected_task_keys: list[str] = Field(default_factory=list)
+
+
+class StrategicRejection(BaseModel):
+    label: str
+    reason: str = ""
+
+
+class PlanningThought(BaseModel):
+    analysis: str = ""
+    failure_diagnosis: str = ""
+    decomposition: str = ""
+    dispatch_rationale: str = ""
+
+
+class PlanningAttempt(BaseModel):
+    cycle: int
+    phase_summary: str = ""
+    planner_notes: str = ""
+    added_task_titles: list[str] = Field(default_factory=list)
+    continued_task_keys: list[str] = Field(default_factory=list)
+
+
+class PlannerContext(BaseModel):
+    initial_objective: str = ""
+    target: str = ""
+    planning_attempts: list[PlanningAttempt] = Field(default_factory=list)
+    rejected_strategies: dict[str, str] = Field(default_factory=dict)
+    long_term_objectives: list[str] = Field(default_factory=list)
+    latest_reflection_digest: str = ""
+    compressed_history_summary: str = ""
+    compression_count: int = 0
+
+
 class PlannerHistoryEntry(BaseModel):
     cycle: int
     summary: str = ""
     planner_notes: str = ""
     dispatched_task_keys: list[str] = Field(default_factory=list)
+    added_task_titles: list[str] = Field(default_factory=list)
+    continued_task_keys: list[str] = Field(default_factory=list)
+    planning_thought: PlanningThought | None = None
 
 
 class ActionPlan(BaseModel):
@@ -231,6 +271,9 @@ class ReflectionHistoryEntry(BaseModel):
     summary: str = ""
     planner_guidance: str = ""
     task_updates: list[ReflectionTaskUpdate] = Field(default_factory=list)
+    failure_patterns: list[FailurePattern] = Field(default_factory=list)
+    strategic_rejections: list[StrategicRejection] = Field(default_factory=list)
+    critical_findings: list[str] = Field(default_factory=list)
 
 
 class PlanInput(BaseModel):
@@ -238,6 +281,9 @@ class PlanInput(BaseModel):
     task_tree: TaskTreeSnapshot
     challenge_context: str = ""
     bootstrap_execution: LatestExecutionResult | None = None
+    planner_context: PlannerContext | None = None
+    task_status_summary: str = ""
+    failure_patterns_summary: str = ""
     reflection_history: list[ReflectionHistoryEntry] = Field(default_factory=list)
     latest_discoveries: list[TaskDiscovery] = Field(default_factory=list)
     available_artifacts: list[ArtifactRef] = Field(default_factory=list)
@@ -246,6 +292,7 @@ class PlanInput(BaseModel):
 class PlanOutput(BaseModel):
     phase_summary: str
     planner_notes: str = ""
+    planning_thought: PlanningThought | None = None
     tree_patch: TaskTreePatch = Field(default_factory=TaskTreePatch)
     dispatch_task_keys: list[str] = Field(default_factory=list)
 
@@ -287,6 +334,9 @@ class ReflectionOutput(BaseModel):
     summary: str
     planner_guidance: str = ""
     task_updates: list[ReflectionTaskUpdate] = Field(default_factory=list)
+    failure_patterns: list[FailurePattern] = Field(default_factory=list)
+    strategic_rejections: list[StrategicRejection] = Field(default_factory=list)
+    critical_findings: list[str] = Field(default_factory=list)
     flag_candidates: list[str] = Field(default_factory=list)
     credentials: list[str] = Field(default_factory=list)
 
@@ -329,6 +379,7 @@ class RunState(BaseModel):
     run_id: str
     challenge: ChallengeSpec
     task_tree: TaskTreeSnapshot
+    planner_context: PlannerContext | None = None
     planner_history: list[PlannerHistoryEntry] = Field(default_factory=list)
     reflection_history: list[ReflectionHistoryEntry] = Field(default_factory=list)
     latest_discoveries: list[TaskDiscovery] = Field(default_factory=list)

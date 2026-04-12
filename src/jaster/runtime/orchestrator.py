@@ -17,16 +17,21 @@ from jaster.domain import (
     AvailableTool,
     ChallengeSpec,
     ExecutionResult,
+    FailurePattern,
     LatestExecutionResult,
     Observation,
     ObservedTaskResult,
     PlanInput,
+    PlannerContext,
     PlannerHistoryEntry,
+    PlanningAttempt,
     RecentObservationRound,
     ReflectionHistoryEntry,
     ReflectionInput,
+    ReflectionOutput,
     ReflectionTaskUpdate,
     RunState,
+    StrategicRejection,
     StrategyInput,
     StrategyTaskResult,
     SubmissionInput,
@@ -79,6 +84,7 @@ class JasterOrchestrator:
         self.strategy_max_rounds = env_int("JASTER_STRATEGY_MAX_ROUNDS", 10)
         self.strategy_observation_limit = env_int("JASTER_STRATEGY_RECENT_OBSERVATION_LIMIT", 8)
         self.default_tool_timeout = env_int("JASTER_MCP_TOOL_TIMEOUT", 180)
+        self.planner_context_window = env_int("JASTER_PLANNER_CONTEXT_WINDOW", 8)
         self._on_tree_update = on_tree_update
 
     def run(
@@ -91,7 +97,13 @@ class JasterOrchestrator:
     ) -> RunState:
         run_id = self.store.new_run_id()
         task_tree = TaskTree.bootstrap(challenge.target)
-        state = RunState(run_id=run_id, challenge=challenge, task_tree=task_tree.snapshot())
+        initial_snapshot = task_tree.snapshot()
+        state = RunState(
+            run_id=run_id,
+            challenge=challenge,
+            task_tree=initial_snapshot,
+            planner_context=_initial_planner_context(challenge, initial_snapshot),
+        )
         self.store.create(state)
         self._log(f"[*] Run created: {run_id}")
         self._log(f"[*] Target: {challenge.target} | type={challenge.target_type} | zone={challenge.zone}")
@@ -116,7 +128,10 @@ class JasterOrchestrator:
                     task_tree=_prompt_task_tree(state.task_tree),
                     challenge_context=_challenge_context(challenge),
                     bootstrap_execution=_compact_execution(bootstrap_execution),
-                    reflection_history=list(state.reflection_history),
+                    planner_context=state.planner_context.model_copy(deep=True) if state.planner_context else None,
+                    task_status_summary=_task_status_summary(state.task_tree),
+                    failure_patterns_summary=_failure_patterns_summary(state.reflection_history),
+                    reflection_history=list(state.reflection_history[-8:]),
                     latest_discoveries=_prompt_discoveries(state.latest_discoveries),
                     available_artifacts=_prompt_artifacts(state.available_artifacts),
                 ),
@@ -134,8 +149,16 @@ class JasterOrchestrator:
                 summary=plan_out.phase_summary,
                 planner_notes=plan_out.planner_notes,
                 dispatched_task_keys=dispatch_keys,
+                added_task_titles=[node.title for node in getattr(plan_out.tree_patch, "add_nodes", []) or []],
+                continued_task_keys=list(dispatch_keys),
+                planning_thought=plan_out.planning_thought.model_copy(deep=True) if plan_out.planning_thought else None,
             )
             state.planner_history.append(planner_entry)
+            state.planner_context = _update_planner_context_after_plan(
+                state.planner_context,
+                planner_entry,
+                window=self.planner_context_window,
+            )
             self.store.append_round(
                 run_id,
                 f"plan_round_{cycle:03d}",
@@ -195,6 +218,7 @@ class JasterOrchestrator:
             )
             self._log(f"[*] Cycle {cycle}: reflection")
             self._log(f"    LLM time: {reflection_elapsed:.2f}s")
+            self._log_reflection_cycle(reflection_out)
             self._apply_reflection_updates(task_tree, reflection_out.task_updates)
             state.task_tree = task_tree.snapshot()
             reflection_entry = ReflectionHistoryEntry(
@@ -202,8 +226,17 @@ class JasterOrchestrator:
                 summary=reflection_out.summary,
                 planner_guidance=reflection_out.planner_guidance,
                 task_updates=list(reflection_out.task_updates),
+                failure_patterns=list(reflection_out.failure_patterns),
+                strategic_rejections=list(reflection_out.strategic_rejections),
+                critical_findings=list(reflection_out.critical_findings),
             )
             state.reflection_history.append(reflection_entry)
+            state.planner_context = _update_planner_context_after_reflection(
+                state.planner_context,
+                state.task_tree,
+                reflection_out,
+                window=self.planner_context_window,
+            )
             state.latest_discoveries = _merge_discoveries(
                 state.latest_discoveries,
                 [
@@ -219,7 +252,23 @@ class JasterOrchestrator:
                     )
                     for update in reflection_out.task_updates
                     if update.latest_summary or update.latest_findings
-                ],
+                ]
+                + (
+                    [
+                        TaskDiscovery(
+                            cycle=cycle,
+                            task_key="__reflection__",
+                            task_title="Reflection",
+                            source="reflection",
+                            summary=reflection_out.summary,
+                            findings=list(reflection_out.critical_findings),
+                            credentials=list(reflection_out.credentials),
+                            flag_candidates=list(reflection_out.flag_candidates),
+                        )
+                    ]
+                    if reflection_out.summary or reflection_out.critical_findings
+                    else []
+                ),
             )
             self.store.append_round(
                 run_id,
@@ -732,6 +781,7 @@ class JasterOrchestrator:
     ) -> None:
         summary = getattr(plan_out, "phase_summary", "")
         planner_notes = getattr(plan_out, "planner_notes", "")
+        planning_thought = getattr(plan_out, "planning_thought", None)
         tree_patch = getattr(plan_out, "tree_patch", None)
         add_nodes = list(getattr(tree_patch, "add_nodes", []) or [])
         update_nodes = list(getattr(tree_patch, "update_nodes", []) or [])
@@ -740,6 +790,19 @@ class JasterOrchestrator:
             self._log(f"    {_style('[plan:summary]', ANSI_CYAN, bold=True)} {_excerpt(summary, limit=240)}")
         if planner_notes:
             self._log(f"    {_style('[plan:notes]', ANSI_DIM)} {_excerpt(planner_notes, limit=240)}")
+        if planning_thought:
+            analysis = str(getattr(planning_thought, "analysis", "") or "")
+            failure_diagnosis = str(getattr(planning_thought, "failure_diagnosis", "") or "")
+            decomposition = str(getattr(planning_thought, "decomposition", "") or "")
+            dispatch_rationale = str(getattr(planning_thought, "dispatch_rationale", "") or "")
+            if analysis:
+                self._log(f"    {_style('[plan:analysis]', ANSI_DIM)} {_excerpt(analysis, limit=240)}")
+            if failure_diagnosis:
+                self._log(f"    {_style('[plan:failure]', ANSI_DIM)} {_excerpt(failure_diagnosis, limit=240)}")
+            if decomposition:
+                self._log(f"    {_style('[plan:decompose]', ANSI_DIM)} {_excerpt(decomposition, limit=240)}")
+            if dispatch_rationale:
+                self._log(f"    {_style('[plan:dispatch-note]', ANSI_DIM)} {_excerpt(dispatch_rationale, limit=240)}")
         for index, node in enumerate(add_nodes, start=1):
             self._log(
                 "    "
@@ -757,6 +820,30 @@ class JasterOrchestrator:
             node = task_tree.get(key)
             title = node.title if node else key
             self._log("    " + _style("[plan:dispatch]", ANSI_BLUE, bold=True) + f" {key} | {title}")
+
+    def _log_reflection_cycle(self, reflection_out: ReflectionOutput) -> None:
+        if reflection_out.summary:
+            self._log(
+                f"    {_style('[reflection:summary]', ANSI_MAGENTA, bold=True)} {_excerpt(reflection_out.summary, limit=240)}"
+            )
+        if reflection_out.planner_guidance:
+            self._log(
+                f"    {_style('[reflection:guidance]', ANSI_DIM)} {_excerpt(reflection_out.planner_guidance, limit=240)}"
+            )
+        for item in reflection_out.failure_patterns[:4]:
+            self._log(
+                "    "
+                + _style("[reflection:pattern]", ANSI_YELLOW, bold=True)
+                + f" {item.pattern} | reason={_excerpt(item.reason, limit=160)}"
+            )
+        for item in reflection_out.strategic_rejections[:4]:
+            self._log(
+                "    "
+                + _style("[reflection:reject]", ANSI_RED, bold=True)
+                + f" {item.label} | reason={_excerpt(item.reason, limit=160)}"
+            )
+        for finding in reflection_out.critical_findings[:4]:
+            self._log("    " + _style("[reflection:critical]", ANSI_MAGENTA) + f" {_excerpt(finding, limit=180)}")
 
     def _log_action_start(
         self,
@@ -837,6 +924,137 @@ def _prompt_artifacts(artifacts: list[ArtifactRef], *, limit: int = 20) -> list[
 
 def _prompt_discoveries(discoveries: list[TaskDiscovery], *, limit: int = 20) -> list[TaskDiscovery]:
     return [item.model_copy(deep=True) for item in discoveries[-limit:]]
+
+
+def _initial_planner_context(challenge: ChallengeSpec, task_tree: TaskTreeSnapshot) -> PlannerContext:
+    root = task_tree.nodes[0] if task_tree.nodes else None
+    long_term_objectives = []
+    if root and root.completion_criteria:
+        long_term_objectives.append(root.completion_criteria)
+    elif challenge.description:
+        long_term_objectives.append(challenge.description)
+    return PlannerContext(
+        initial_objective=challenge.description or (root.title if root else challenge.target),
+        target=challenge.target,
+        long_term_objectives=long_term_objectives,
+    )
+
+
+def _task_status_summary(snapshot: TaskTreeSnapshot) -> str:
+    in_progress = [node for node in snapshot.nodes if node.status == TaskStatus.in_progress]
+    completed = [node for node in snapshot.nodes if node.status == TaskStatus.completed]
+    failed = [node for node in snapshot.nodes if node.status == TaskStatus.failed]
+    leaf_keys = {node.key for node in snapshot.nodes}
+    parent_keys = {node.parent_key for node in snapshot.nodes if node.parent_key}
+    leaf_nodes = [node for node in snapshot.nodes if node.key in leaf_keys - parent_keys]
+
+    lines = [
+        f"任务统计: in_progress={len(in_progress)}, completed={len(completed)}, failed={len(failed)}, leaf={len(leaf_nodes)}",
+    ]
+    if in_progress:
+        lines.append("进行中叶子任务:")
+        for node in [item for item in leaf_nodes if item.status == TaskStatus.in_progress][:6]:
+            lines.append(
+                f"- {node.key} | {node.title} | attempts={node.attempt_count} | summary={_excerpt(node.latest_summary, limit=100)}"
+            )
+    if failed:
+        lines.append("近期失败任务:")
+        for node in failed[-6:]:
+            lines.append(f"- {node.key} | {node.title} | summary={_excerpt(node.latest_summary, limit=120)}")
+    if completed:
+        lines.append("近期完成任务:")
+        for node in completed[-4:]:
+            lines.append(f"- {node.key} | {node.title} | summary={_excerpt(node.latest_summary, limit=100)}")
+    return "\n".join(lines)
+
+
+def _failure_patterns_summary(reflection_history: list[ReflectionHistoryEntry]) -> str:
+    if not reflection_history:
+        return "暂无失败模式摘要"
+    patterns: list[str] = []
+    for entry in reflection_history[-5:]:
+        for item in entry.failure_patterns:
+            affected = f" | tasks={','.join(item.affected_task_keys[:3])}" if item.affected_task_keys else ""
+            patterns.append(f"- cycle={entry.cycle} | {item.pattern} | {item.reason}{affected}")
+    if not patterns:
+        return "暂无失败模式摘要"
+    return "\n".join(patterns[:12])
+
+
+def _update_planner_context_after_plan(
+    context: PlannerContext | None,
+    planner_entry: PlannerHistoryEntry,
+    *,
+    window: int,
+) -> PlannerContext | None:
+    if context is None:
+        return None
+    context = context.model_copy(deep=True)
+    context.planning_attempts.append(
+        PlanningAttempt(
+            cycle=planner_entry.cycle,
+            phase_summary=planner_entry.summary,
+            planner_notes=planner_entry.planner_notes,
+            added_task_titles=list(planner_entry.added_task_titles),
+            continued_task_keys=list(planner_entry.continued_task_keys),
+        )
+    )
+    return _compress_planner_context(context, window=window)
+
+
+def _update_planner_context_after_reflection(
+    context: PlannerContext | None,
+    task_tree: TaskTreeSnapshot,
+    reflection_out: ReflectionOutput,
+    *,
+    window: int,
+) -> PlannerContext | None:
+    if context is None:
+        return None
+    context = context.model_copy(deep=True)
+    digest_lines = []
+    if reflection_out.summary:
+        digest_lines.append(reflection_out.summary)
+    if reflection_out.planner_guidance:
+        digest_lines.append(f"guidance: {reflection_out.planner_guidance}")
+    if reflection_out.critical_findings:
+        digest_lines.append("critical: " + "; ".join(reflection_out.critical_findings[:4]))
+    context.latest_reflection_digest = " | ".join(digest_lines)
+
+    for item in reflection_out.strategic_rejections:
+        if item.label and item.label not in context.rejected_strategies:
+            context.rejected_strategies[item.label] = item.reason
+
+    if reflection_out.planner_guidance:
+        stage_goal = f"阶段主线: {_excerpt(reflection_out.planner_guidance, limit=180)}"
+        if stage_goal not in context.long_term_objectives:
+            context.long_term_objectives.append(stage_goal)
+
+    root = task_tree.nodes[0] if task_tree.nodes else None
+    if root and root.completion_criteria and root.completion_criteria not in context.long_term_objectives:
+        context.long_term_objectives.insert(0, root.completion_criteria)
+
+    return _compress_planner_context(context, window=window)
+
+
+def _compress_planner_context(context: PlannerContext, *, window: int) -> PlannerContext:
+    if len(context.planning_attempts) <= window:
+        return context
+
+    older_attempts = context.planning_attempts[:-window]
+    summary_lines = []
+    if context.compressed_history_summary:
+        summary_lines.append(context.compressed_history_summary)
+    for attempt in older_attempts:
+        added = ", ".join(attempt.added_task_titles[:3]) if attempt.added_task_titles else "-"
+        continued = ", ".join(attempt.continued_task_keys[:3]) if attempt.continued_task_keys else "-"
+        summary_lines.append(
+            f"cycle {attempt.cycle}: {attempt.phase_summary} | added={added} | continued={continued}"
+        )
+    context.compressed_history_summary = "\n".join(line for line in summary_lines if line).strip()
+    context.compression_count += 1
+    context.planning_attempts = context.planning_attempts[-window:]
+    return context
 
 
 def _compact_execution(execution: ExecutionResult | None) -> LatestExecutionResult | None:

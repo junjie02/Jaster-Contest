@@ -96,6 +96,9 @@ def _normalize_agent_response(role: str, payload: dict) -> dict:
     if role == "plan":
         normalized.setdefault("phase_summary", str(normalized.get("phase_summary") or normalized.get("summary") or ""))
         normalized.setdefault("planner_notes", str(normalized.get("planner_notes") or normalized.get("notes") or ""))
+        normalized["planning_thought"] = _normalize_planning_thought(
+            normalized.get("planning_thought") or normalized.get("thought") or {}
+        )
         normalized["dispatch_task_keys"] = _string_list(
             normalized.get("dispatch_task_keys") or normalized.get("dispatch_keys") or normalized.get("task_keys") or []
         )
@@ -124,6 +127,15 @@ def _normalize_agent_response(role: str, payload: dict) -> dict:
         )
         normalized["credentials"] = _string_list(normalized.get("credentials") or [])
         normalized["task_updates"] = _normalize_task_updates(normalized.get("task_updates") or [])
+        normalized["failure_patterns"] = _normalize_failure_patterns(
+            normalized.get("failure_patterns") or normalized.get("patterns") or []
+        )
+        normalized["strategic_rejections"] = _normalize_strategic_rejections(
+            normalized.get("strategic_rejections") or normalized.get("rejections") or []
+        )
+        normalized["critical_findings"] = _string_list(
+            normalized.get("critical_findings") or normalized.get("critical_insights") or []
+        )
     elif role == "submission":
         normalized["flag"] = normalized.get("flag", normalized.get("answer"))
         normalized.setdefault("reason", str(normalized.get("reason") or normalized.get("summary") or ""))
@@ -160,6 +172,17 @@ def _normalize_actions(payload: dict) -> list[dict]:
     if finish_count and len(normalized) > 1:
         raise ValueError("finish action must be the only action in actions")
     return normalized
+
+
+def _normalize_planning_thought(payload: object) -> dict | None:
+    if not isinstance(payload, dict):
+        return None
+    return {
+        "analysis": str(payload.get("analysis") or payload.get("step1_analysis") or ""),
+        "failure_diagnosis": str(payload.get("failure_diagnosis") or payload.get("step2_failure_diagnosis") or ""),
+        "decomposition": str(payload.get("decomposition") or payload.get("step2_decomposition") or ""),
+        "dispatch_rationale": str(payload.get("dispatch_rationale") or payload.get("step3_dispatch") or payload.get("step4_summary") or ""),
+    }
 
 
 def _normalize_action(action: dict) -> dict:
@@ -256,6 +279,51 @@ def _normalize_task_updates(raw_updates: object) -> list[dict]:
                 "latest_summary": str(item.get("latest_summary") or item.get("summary") or ""),
                 "latest_findings": _string_list(item.get("latest_findings") or item.get("findings") or []),
                 "reason": str(item.get("reason") or ""),
+            }
+        )
+    return normalized
+
+
+def _normalize_failure_patterns(raw_patterns: object) -> list[dict]:
+    if isinstance(raw_patterns, dict):
+        raw_patterns = [raw_patterns]
+    if not isinstance(raw_patterns, list):
+        raw_patterns = []
+    normalized: list[dict] = []
+    for item in raw_patterns:
+        if not isinstance(item, dict):
+            continue
+        pattern = str(item.get("pattern") or item.get("label") or "").strip()
+        if not pattern:
+            continue
+        normalized.append(
+            {
+                "pattern": pattern,
+                "reason": str(item.get("reason") or item.get("description") or ""),
+                "affected_task_keys": _string_list(
+                    item.get("affected_task_keys") or item.get("task_keys") or item.get("affected_tasks") or []
+                ),
+            }
+        )
+    return normalized
+
+
+def _normalize_strategic_rejections(raw_rejections: object) -> list[dict]:
+    if isinstance(raw_rejections, dict):
+        raw_rejections = [raw_rejections]
+    if not isinstance(raw_rejections, list):
+        raw_rejections = []
+    normalized: list[dict] = []
+    for item in raw_rejections:
+        if not isinstance(item, dict):
+            continue
+        label = str(item.get("label") or item.get("strategy") or "").strip()
+        if not label:
+            continue
+        normalized.append(
+            {
+                "label": label,
+                "reason": str(item.get("reason") or item.get("description") or ""),
             }
         )
     return normalized
