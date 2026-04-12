@@ -54,3 +54,4 @@ Traceback (most recent call last):
   File "/usr/lib/python3.13/asyncio/base_events.py", line 556, in _check_closed
     raise RuntimeError('Event loop is closed')
 RuntimeError: Event loop is closed
+2026-04-12 21:54:23,841 - jaster.mcp.mcp_service - INFO - Executing sqlmap command: sqlmap -u http://example.com?id=1 --batch --random-agent --level 1 --risk 1 --crawl=0

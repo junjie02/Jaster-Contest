@@ -1,2 +1,33 @@
+# Core runtime
+beautifulsoup4>=4.12.0
+duckduckgo-search>=6.2.0
+httpx>=0.27.0
+mcp>=1.0.0
+fastmcp>=2.0.0
+pydantic>=2.8.0
+requests>=2.32.0
+typer>=0.12.0
+
+# Tool/runtime compatibility
+setuptools>=75.0.0
+wheel>=0.44.0
+
+# Security-tool Python packages
+dirsearch>=0.4.3
 git-dumper
 impacket
+
+# Optional local knowledge / UI / utility stack borrowed from LuaN1ao
+jinja2>=3.1.0
+python-dotenv>=1.0.0
+rich>=13.7.0
+
+# Development
+pytest>=8.3.0
+
+# Notes:
+# 1. Some MCP tools depend on system binaries and are NOT installed by pip alone:
+#    - nuclei
+#    - sqlmap
+#    - searchsploit / exploitdb
+# 2. On Kali, install those separately with apt/go as appropriate.

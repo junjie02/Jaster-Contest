@@ -19,7 +19,7 @@
   - 或本轮暂时没有可执行动作（任务停滞），需要停止当前任务并把结果交回 reflection/planner
 
 ## 关键约束
-- 本轮输出字段是 `actions`，类型为 `list[dict]`。
+- 本轮输出字段是 `actions`，类型为 `list[dict]`。你一次可以并发1-3个actions
 - 允许一次规划多个并发动作，但这些动作必须彼此独立，不能依赖同轮其它动作的输出。
 - `finish` 只能达成任务目标assigned_task.completion_criteria时单独出现，不能和任何 `tool` 动作混用。
 - 所有工具调用都必须从 `available_tools` 中选择，使用对应的 `tool_name` 和 `tool_args`。

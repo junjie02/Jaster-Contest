@@ -1306,13 +1306,20 @@ def _extract_mcp_fields(tool_name: str, payload: dict[str, Any]) -> tuple[bool, 
 
     explicit_success = payload.get("success")
     if explicit_success is False:
-        error = str(payload.get("error") or payload.get("message") or payload.get("status") or "Tool execution failed")
+        error_bits = [
+            str(payload.get("error") or "").strip(),
+            str(payload.get("message") or "").strip(),
+            str(payload.get("fix_suggestion") or "").strip(),
+            str(payload.get("error_type") or "").strip(),
+        ]
+        error = " | ".join(item for item in error_bits if item) or "Tool execution failed"
         stdout = json.dumps(payload, ensure_ascii=False, indent=2)
         return False, error, stdout, error, _extract_findings(payload)
 
     summary = str(
         payload.get("summary")
         or payload.get("message")
+        or payload.get("fix_suggestion")
         or payload.get("report")
         or payload.get("status")
         or tool_name

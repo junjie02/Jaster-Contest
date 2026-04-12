@@ -22,6 +22,8 @@ import json
 import subprocess
 import time
 import logging
+import shutil
+import shlex
 from typing import Dict, Any, List, Optional, Set
 from http.server import BaseHTTPRequestHandler
 import sys
@@ -1282,7 +1284,7 @@ async def dirsearch_scan(url: str, extensions: str = "php,html,js,txt", extra_ar
     # 处理 extra_args，移除不兼容参数并记录警告
     filtered_args = []
     if extra_args:
-        args_list = extra_args.split()
+        args_list = shlex.split(extra_args)
         i = 0
         while i < len(args_list):
             arg = args_list[i]
@@ -1301,14 +1303,14 @@ async def dirsearch_scan(url: str, extensions: str = "php,html,js,txt", extra_ar
                 filtered_args.append(arg)
             i += 1
     
-    cmd = f"dirsearch -u {url} -e {extensions} -q"
+    cmd = ["dirsearch", "-u", url, "-e", extensions, "-q"]
     if filtered_args:
-        cmd += " " + " ".join(filtered_args)
+        cmd.extend(filtered_args)
 
     output_lines = []
     try:
-        process = await asyncio.create_subprocess_shell(
-            cmd,
+        process = await asyncio.create_subprocess_exec(
+            *cmd,
             stdout=asyncio.subprocess.PIPE, 
             stderr=asyncio.subprocess.STDOUT
         )
@@ -1325,15 +1327,32 @@ async def dirsearch_scan(url: str, extensions: str = "php,html,js,txt", extra_ar
 
         # 检测参数错误并提供更友好的错误信息
         if return_code != 0:
+            lower_output = full_output.lower()
+            fallback_reason = None
             error_type = "RUNTIME"
             fix_suggestion = "Check the command's arguments and permissions."
             
-            if "no such option" in full_output.lower() or "unrecognized arguments" in full_output.lower():
+            if "no such option" in lower_output or "unrecognized arguments" in lower_output:
                 error_type = "INVALID_ARGS"
                 fix_suggestion = "Some arguments are not supported by the installed dirsearch version. Try without extra_args."
-            elif "not found" in full_output.lower():
+            elif "not found" in lower_output:
                 error_type = "MISSING_TOOL"
                 fix_suggestion = "Install dirsearch or use alternative directory scanning methods."
+                fallback_reason = "dirsearch command not found"
+            elif "pkg_resources" in lower_output or "modulenotfounderror" in lower_output:
+                error_type = "BROKEN_ENV"
+                fix_suggestion = "The local dirsearch installation is broken. Install setuptools or reinstall dirsearch."
+                fallback_reason = "dirsearch Python environment is broken"
+
+            if fallback_reason:
+                fallback_result = await _fallback_dirsearch_scan(url, extensions, fallback_reason=fallback_reason)
+                fallback_result["cli_error"] = {
+                    "error_type": error_type,
+                    "message": f"Command returned non-zero exit status {return_code}.",
+                    "fix_suggestion": fix_suggestion,
+                    "output": full_output[:4000],
+                }
+                return json.dumps(fallback_result, ensure_ascii=False)
             
             return json.dumps(
                 {
@@ -1345,19 +1364,111 @@ async def dirsearch_scan(url: str, extensions: str = "php,html,js,txt", extra_ar
                 }
             )
 
-        return json.dumps({"success": True, "output": full_output, "error": ""})
+        return json.dumps({"success": True, "output": full_output, "error": "", "mode": "dirsearch_cli"})
 
+    except FileNotFoundError:
+        fallback_result = await _fallback_dirsearch_scan(url, extensions, fallback_reason="dirsearch command not found")
+        return json.dumps(fallback_result, ensure_ascii=False)
     except Exception as e:
         logger.exception("dirsearch_scan执行失败")
-        return json.dumps(
-            {
-                "success": False,
-                "output": "".join(output_lines) if output_lines else "",
-                "error_type": "RUNTIME",
-                "message": f"Dirsearch execution failed: {str(e)}",
-                "fix_suggestion": "Check tool availability, arguments, and target accessibility.",
-            }
+        fallback_result = await _fallback_dirsearch_scan(
+            url,
+            extensions,
+            fallback_reason=f"dirsearch execution failed: {str(e)}",
         )
+        fallback_result["cli_error"] = {
+            "error_type": "RUNTIME",
+            "message": f"Dirsearch execution failed: {str(e)}",
+            "fix_suggestion": "Check tool availability, arguments, and target accessibility.",
+            "output": "".join(output_lines) if output_lines else "",
+        }
+        return json.dumps(fallback_result, ensure_ascii=False)
+
+
+async def _fallback_dirsearch_scan(url: str, extensions: str, *, fallback_reason: str) -> Dict[str, Any]:
+    """Lightweight built-in directory scanner when the dirsearch CLI is unavailable."""
+    base_words = [
+        "",
+        "index",
+        "robots",
+        "admin",
+        "login",
+        "register",
+        "upload",
+        "uploads",
+        "images",
+        "img",
+        "css",
+        "js",
+        "static",
+        "assets",
+        "backup",
+        "bak",
+        "old",
+        "test",
+        "api",
+        "debug",
+        ".git",
+        ".svn",
+        ".env",
+        "config",
+        "phpinfo",
+        "flag",
+        "readme",
+        "README",
+        "server-status",
+        "phpmyadmin",
+    ]
+    ext_list = [item.strip().lstrip(".") for item in extensions.split(",") if item.strip()]
+    candidates: list[str] = []
+    seen: set[str] = set()
+    for word in base_words:
+        variants = [word] if word else [""]
+        if word and "." not in word and ext_list:
+            variants.extend(f"{word}.{ext}" for ext in ext_list)
+        for item in variants:
+            path = f"/{item}" if item else "/"
+            if path not in seen:
+                seen.add(path)
+                candidates.append(path)
+
+    sem = asyncio.Semaphore(12)
+    findings: list[Dict[str, Any]] = []
+
+    async def probe(path: str) -> None:
+        async with sem:
+            target = url.rstrip("/") + path
+            try:
+                response = await _httpx_client.get(target, timeout=8.0, follow_redirects=False)
+            except Exception:
+                return
+            if response.status_code in {200, 201, 204, 301, 302, 307, 308, 401, 403}:
+                findings.append(
+                    {
+                        "path": path,
+                        "status_code": response.status_code,
+                        "content_length": len(response.text or ""),
+                        "location": response.headers.get("location", ""),
+                    }
+                )
+
+    await asyncio.gather(*(probe(path) for path in candidates))
+    findings.sort(key=lambda item: (item["status_code"], item["path"]))
+    summary = f"Fallback dir scan completed via internal httpx scanner; matches={len(findings)}"
+    return {
+        "success": True,
+        "status": "success",
+        "summary": summary,
+        "mode": "fallback_httpx",
+        "findings": [
+            f"{item['path']} -> HTTP {item['status_code']}" + (f" -> {item['location']}" if item["location"] else "")
+            for item in findings[:30]
+        ],
+        "results": findings[:30],
+        "message": summary,
+        "fallback_reason": fallback_reason,
+        "dirsearch_binary_present": bool(shutil.which("dirsearch")),
+    }
 
 
 def _coerce_bool(value, default=False):
