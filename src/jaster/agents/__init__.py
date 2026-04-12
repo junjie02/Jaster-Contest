@@ -1,6 +1,5 @@
 from .roles import (
     BuilderAgent,
-    ExecutorAgent,
     ReflectionAgent,
     SkillRouterAgent,
     StrategyAgent,
@@ -10,7 +9,6 @@ from .roles import (
 
 __all__ = [
     "BuilderAgent",
-    "ExecutorAgent",
     "ReflectionAgent",
     "SkillRouterAgent",
     "StrategyAgent",

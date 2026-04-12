@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from jaster.agents import build_agents
-from jaster.agents.roles import BuilderAgent, ExecutorAgent
+from jaster.agents.roles import BuilderAgent
 from jaster.domain import (
     ActionPlan,
     ArtifactRef,
@@ -14,7 +14,6 @@ from jaster.domain import (
     AttackTreeSnapshot,
     BuilderInput,
     ChallengeSpec,
-    ExecutorInput,
     ExecutionResult,
     GlobalFacts,
     LatestExecutionResult,
@@ -34,7 +33,7 @@ from jaster.domain import (
 from jaster.domain.models import TreeNodeSnapshot, NodeInfo
 from pydantic import BaseModel, Field
 from jaster.runtime.env import env_int
-from jaster.runtime.llm import LLMError, OpenAIChatClient
+from jaster.runtime.llm import OpenAIChatClient
 from jaster.runtime.catalog import FunctionExecutor, RuntimeCatalog, filter_available_artifacts
 from jaster.runtime.builder import BuilderExecutor
 from jaster.storage.files import FileRunStore
@@ -593,59 +592,16 @@ class JasterOrchestrator:
             }
 
         self._log(f"    Preparing function: {action.function_name} ({action.task_id})")
-        agent = self._new_executor_agent()
-        try:
-            started = time.monotonic()
-            tool_call = agent.run(
-                zone,
-                ExecutorInput(
-                    target=challenge.target if challenge else "",
-                    function_name=action.function_name or "",
-                    function_summary=function_spec.summary,
-                    function_schema_text=self.catalog.tool_prompt_text(action.function_name or ""),
-                    function_definition_json=self.catalog.get_function_definition_text(action.function_name or ""),
-                    executor_brief=action.executor_brief,
-                    accessible_artifacts=list(available_artifacts),
-                ),
-                tool_name=action.function_name or "",
-                tools=[self.catalog.build_tool(action.function_name or "")],
-            )
-            self._log(
-                f"    Prepared function: {action.function_name} ({action.task_id}) | elapsed={time.monotonic() - started:.2f}s"
-            )
-        except Exception as exc:
-            raw_text = exc.raw_text if isinstance(exc, LLMError) else ""
-            return {
-                "trace": _agent_trace(agent) or {},
-                "task_result": TaskExecutionResult(
-                    task_id=action.task_id,
-                    kind=action.kind,
-                    function_name=action.function_name,
-                    success=False,
-                    summary=f"Executor failed for {action.function_name}",
-                    findings=[raw_text] if raw_text else [],
-                    stderr=str(exc),
-                    source=agent_name,
-                    failure_stage="executor_tool_call",
-                ),
-                "run_callable": None,
-            }
-
-        function_args = dict(tool_call.get("arguments") or {})
-        action.function_args = function_args
+        function_args = dict(action.function_args or {})
         return {
-            "trace": _agent_trace(agent) or {},
+            "trace": {},
             "task_result": None,
-            "run_callable": lambda action=action, function_args=function_args, task_dir=task_dir: self.function_executor.run_function(
+            "run_callable": lambda function_args=function_args, task_dir=task_dir: self.function_executor.run_function(
                 action.function_name or "",
                 function_args,
                 cwd=task_dir,
             ),
         }
-
-    def _new_executor_agent(self) -> ExecutorAgent:
-        current = self.agents["executor"]
-        return ExecutorAgent(current.llm, current.prompts)
 
     def _new_builder_agent(self) -> BuilderAgent:
         current = self.agents["builder"]

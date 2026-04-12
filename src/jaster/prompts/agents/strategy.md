@@ -29,7 +29,7 @@
 - 同一轮中的多个动作必须相互独立，不允许依赖同轮其它动作的输出；若 builder 需要 function 的结果，必须放到下一轮。
 - 若本轮需要执行现成工具，设置 `kind` 为 `function`，并从 `available_functions` 中选择一个最合适的 `function_name`。
 - 若现成 function 无法覆盖或需要批量测试、可以通过一个 Python 脚本直接完成高信息增益探测，设置 `kind` 为 `builder`，builder 是你的代码生成工具。
-- 对于 function：你只负责规划，不负责补参数执行；但应在 `key_parameters` 字段中列出当前已知的重点认证参数（cookie、token、password 等），格式为 `[{"name": "cookie", "value": "..."}]`。`function_args` 保持空对象或仅填入 target 相关参数。
+- 对于 function：你需要根据 `available_functions` 中的完整 schema（`function_schema_text` 和 `function_definition_json`）直接输出正确的 `function_args`。必须严格遵循参数格式要求，必须参数不能省略，可选参数按需填写。
 - 对于 builder：`function_name` 固定返回 null，`function_args` 固定返回 `{}`，`executor_brief` 改为给 Builder Agent 的任务说明，必须写清：目标、证据、输入上下文应如何使用、要验证/获取什么、输出约束、禁止事项。
 - 若当前不应执行任何动作，`actions` 仅返回一个 `finish`。
 
@@ -49,9 +49,9 @@
   goal：string
   expected_result：string
   function_name：string|null
-  function_args：dict，若已知认证凭证则填入对应参数，暂无则保持空对象
+  function_args：dict，根据 `available_functions` 中对应工具的 `function_schema_text` 和 `function_definition_json` 填写完整正确的参数
   key_parameters：list[dict]，重点认证参数列表，如 `[{"name": "cookie", "value": "..."}]`
-  executor_brief：string，描述使用该工具希望达成的目的，kind 为 function 时供 executor 补参；builder 时供 Builder Agent 写脚本
+  executor_brief：string，描述使用该工具希望达成的目的
 - flag_candidates：list[string]，候选 Flag 列表；没有则返回 []
 - tree_patch：dict，你需要维护的全局树结构，改内容将会贯穿整个渗透测试流程，因此要谨慎、精确维护
   add_nodes：list[dict] 新节点，新节点的父节点会自动绑定为selected_node_key

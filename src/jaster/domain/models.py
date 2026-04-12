@@ -201,6 +201,8 @@ class AvailableFunction(BaseModel):
     name: str
     summary: str
     use_when: str = ""
+    function_schema_text: str = ""
+    function_definition_json: str = ""
 
 
 class AvailableSkill(BaseModel):

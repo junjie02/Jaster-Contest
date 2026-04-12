@@ -54,6 +54,8 @@ class RuntimeCatalog:
                 name=spec.name,
                 summary=spec.summary,
                 use_when=spec.use_when,
+                function_schema_text=self.tool_prompt_text(spec.name),
+                function_definition_json=self.get_function_definition_text(spec.name),
             )
             for spec in self._function_specs.values()
         ]
