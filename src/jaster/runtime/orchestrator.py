@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
@@ -31,6 +33,9 @@ from jaster.domain import (
     ReflectionOutput,
     ReflectionTaskUpdate,
     RunState,
+    SharedBulletinDigest,
+    SharedBulletinEntry,
+    SharedFinding,
     StrategicRejection,
     StrategyInput,
     StrategyTaskResult,
@@ -62,6 +67,108 @@ ANSI_MAGENTA = "\033[35m"
 ANSI_CYAN = "\033[36m"
 
 
+class _StrategyBulletinBoard:
+    def __init__(self, seed_entries: list[SharedBulletinEntry] | None = None) -> None:
+        self._entries: list[SharedBulletinEntry] = [item.model_copy(deep=True) for item in seed_entries or []]
+        self._lock = threading.Lock()
+        self._read_cursors: dict[str, int] = {}
+
+    def register_task(self, task_key: str) -> None:
+        with self._lock:
+            self._read_cursors.setdefault(task_key, len(self._entries))
+
+    def read_for_task(
+        self,
+        task_key: str,
+        *,
+        verified_window: int = 12,
+        unverified_window: int = 8,
+    ) -> SharedBulletinDigest:
+        with self._lock:
+            cursor = self._read_cursors.setdefault(task_key, len(self._entries))
+            new_entries = [
+                item.model_copy(deep=True)
+                for item in self._entries[cursor:]
+                if item.source_task_key != task_key
+            ]
+            self._read_cursors[task_key] = len(self._entries)
+            verified_entries = [
+                item.model_copy(deep=True)
+                for item in self._entries
+                if item.is_verified and item.source_task_key != task_key
+            ][-verified_window:]
+            unverified_entries = [
+                item.model_copy(deep=True)
+                for item in self._entries
+                if not item.is_verified and item.source_task_key != task_key
+            ][-unverified_window:]
+        return SharedBulletinDigest(
+            new_entries=new_entries,
+            verified_entries=verified_entries,
+            unverified_entries=unverified_entries,
+        )
+
+    def post(
+        self,
+        *,
+        cycle: int,
+        source_task_key: str,
+        source_task_title: str,
+        source_strategy_round: int,
+        finding: SharedFinding,
+        is_verified: bool = False,
+    ) -> SharedBulletinEntry | None:
+        if not is_verified and finding.confidence < 0.5:
+            return None
+
+        with self._lock:
+            for index, existing in enumerate(self._entries):
+                if not _shared_bulletin_matches(
+                    existing,
+                    source_task_key=source_task_key,
+                    category=finding.category,
+                    title=finding.title,
+                    content=finding.content,
+                ):
+                    continue
+                updated = existing.model_copy(
+                    update={
+                        "cycle": max(existing.cycle, cycle),
+                        "source_task_title": source_task_title or existing.source_task_title,
+                        "source_strategy_round": max(existing.source_strategy_round, source_strategy_round),
+                        "confidence": max(existing.confidence, finding.confidence),
+                        "is_verified": existing.is_verified or is_verified,
+                    }
+                )
+                self._entries[index] = updated
+                return updated.model_copy(deep=True)
+
+            entry = SharedBulletinEntry(
+                entry_id=_shared_bulletin_entry_id(
+                    source_task_key=source_task_key,
+                    source_strategy_round=source_strategy_round,
+                    category=finding.category,
+                    title=finding.title,
+                    content=finding.content,
+                ),
+                cycle=cycle,
+                source_task_key=source_task_key,
+                source_task_title=source_task_title,
+                source_strategy_round=source_strategy_round,
+                category=finding.category,
+                title=finding.title,
+                content=finding.content,
+                confidence=finding.confidence,
+                is_verified=is_verified,
+            )
+            self._entries.append(entry)
+            return entry.model_copy(deep=True)
+
+    def snapshot(self) -> list[SharedBulletinEntry]:
+        with self._lock:
+            return [item.model_copy(deep=True) for item in self._entries]
+
+
 class JasterOrchestrator:
     def __init__(
         self,
@@ -81,7 +188,7 @@ class JasterOrchestrator:
         self.phase_max_retries = env_int("JASTER_PHASE_MAX_RETRIES", 3)
         self.parallel_task_workers = env_int("JASTER_PARALLEL_TASK_WORKERS", 4)
         self.parallel_action_workers = env_int("JASTER_PARALLEL_ACTION_WORKERS", 4)
-        self.strategy_max_rounds = env_int("JASTER_STRATEGY_MAX_ROUNDS", 10)
+        self.strategy_max_rounds = env_int("JASTER_STRATEGY_MAX_ROUNDS", 8)
         self.strategy_observation_limit = env_int("JASTER_STRATEGY_RECENT_OBSERVATION_LIMIT", 8)
         self.default_tool_timeout = env_int("JASTER_MCP_TOOL_TIMEOUT", 180)
         self.planner_context_window = env_int("JASTER_PLANNER_CONTEXT_WINDOW", 8)
@@ -183,7 +290,7 @@ class JasterOrchestrator:
                 dispatch_keys = in_progress
 
             self._log(f"[*] Cycle {cycle}: strategy batch | tasks={len(dispatch_keys)}")
-            strategy_results, observations, batch_discoveries, batch_execution = self._run_strategy_batch(
+            strategy_results, observations, batch_discoveries, batch_execution, bulletin_board = self._run_strategy_batch(
                 run_id=run_id,
                 cycle=cycle,
                 challenge=challenge,
@@ -192,6 +299,7 @@ class JasterOrchestrator:
                 reflection_history=state.reflection_history,
                 available_artifacts=state.available_artifacts,
                 observations=state.observations,
+                shared_bulletin=state.shared_bulletin,
             )
 
             state.observations.extend(observations)
@@ -200,6 +308,7 @@ class JasterOrchestrator:
                 state.available_artifacts,
                 [artifact for result in strategy_results for artifact in result.artifacts],
             )
+            state.shared_bulletin = bulletin_board.snapshot()
             self._increment_attempt_counts(task_tree, dispatch_keys)
             state.task_tree = task_tree.snapshot()
 
@@ -231,6 +340,13 @@ class JasterOrchestrator:
                 critical_findings=list(reflection_out.critical_findings),
             )
             state.reflection_history.append(reflection_entry)
+            self._publish_reflection_bulletins(
+                bulletin_board=bulletin_board,
+                cycle=cycle,
+                task_tree=state.task_tree,
+                reflection_out=reflection_out,
+            )
+            state.shared_bulletin = bulletin_board.snapshot()
             state.planner_context = _update_planner_context_after_reflection(
                 state.planner_context,
                 state.task_tree,
@@ -349,11 +465,13 @@ class JasterOrchestrator:
         reflection_history: list[ReflectionHistoryEntry],
         available_artifacts: list[ArtifactRef],
         observations: list[Observation],
-    ) -> tuple[list[StrategyTaskResult], list[Observation], list[TaskDiscovery], ExecutionResult | None]:
+        shared_bulletin: list[SharedBulletinEntry],
+    ) -> tuple[list[StrategyTaskResult], list[Observation], list[TaskDiscovery], ExecutionResult | None, _StrategyBulletinBoard]:
         nodes_by_key = {node.key: node for node in task_tree.nodes}
         valid_keys = [key for key in task_keys if key in nodes_by_key]
+        bulletin_board = _StrategyBulletinBoard(seed_entries=shared_bulletin)
         if not valid_keys:
-            return [], [], [], None
+            return [], [], [], None, bulletin_board
 
         results: list[StrategyTaskResult] = []
         collected_observations: list[Observation] = []
@@ -372,6 +490,7 @@ class JasterOrchestrator:
                     reflection_history=reflection_history,
                     available_artifacts=available_artifacts,
                     observations=observations,
+                    bulletin_board=bulletin_board,
                 ): key
                 for key in valid_keys
             }
@@ -417,7 +536,7 @@ class JasterOrchestrator:
                 )
 
         results.sort(key=lambda item: item.task_key)
-        return results, collected_observations, discoveries, _aggregate_strategy_execution(results)
+        return results, collected_observations, discoveries, _aggregate_strategy_execution(results), bulletin_board
 
     def _run_strategy_task(
         self,
@@ -430,12 +549,14 @@ class JasterOrchestrator:
         reflection_history: list[ReflectionHistoryEntry],
         available_artifacts: list[ArtifactRef],
         observations: list[Observation],
+        bulletin_board: _StrategyBulletinBoard,
     ) -> tuple[StrategyTaskResult, list[Observation]]:
         recent_rounds = _recent_observations_for_task(
             observations,
             task_key=task_node.key,
             limit=self.strategy_observation_limit,
         )
+        bulletin_board.register_task(task_node.key)
         self._log(f"    [task] {task_node.key} | {task_node.title}")
         latest_execution: ExecutionResult | None = None
         collected: list[Observation] = []
@@ -449,6 +570,12 @@ class JasterOrchestrator:
                 break
             rounds_used = strategy_round
             self._log(f"      [strategy-round] {task_node.key} #{strategy_round}")
+            bulletin_digest = bulletin_board.read_for_task(task_node.key)
+            self._log_bulletin_injection(
+                task_key=task_node.key,
+                strategy_round=strategy_round,
+                digest=bulletin_digest,
+            )
 
             try:
                 strategy_out, _ = self._timed_agent_run(
@@ -464,6 +591,7 @@ class JasterOrchestrator:
                         reflection_history=reflection_history[-8:],
                         available_artifacts=_prompt_artifacts(available_artifacts),
                         available_tools=_available_tools(),
+                        shared_bulletin=bulletin_digest,
                     ),
                 )
             except Exception as exc:
@@ -477,9 +605,17 @@ class JasterOrchestrator:
                     flag_candidates=[],
                     observed_task_results=[],
                     credentials=[],
+                    shared_findings=[],
                 )
                 break
             last_output = strategy_out
+            self._publish_strategy_shared_findings(
+                bulletin_board=bulletin_board,
+                cycle=cycle,
+                task_node=task_node,
+                strategy_round=strategy_round,
+                shared_findings=list(strategy_out.shared_findings),
+            )
 
             if strategy_out.is_complete:
                 termination_reason = "completed"
@@ -519,6 +655,7 @@ class JasterOrchestrator:
                 flag_candidates=[],
                 observed_task_results=[],
                 credentials=[],
+                shared_findings=[],
             )
 
         if not last_output.is_complete and termination_reason == "finish" and rounds_used >= self.strategy_max_rounds:
@@ -647,6 +784,71 @@ class JasterOrchestrator:
             task_key=task_key,
             elapsed=time.monotonic() - started,
         )
+
+    def _publish_strategy_shared_findings(
+        self,
+        *,
+        bulletin_board: _StrategyBulletinBoard,
+        cycle: int,
+        task_node: TaskNodeSnapshot,
+        strategy_round: int,
+        shared_findings: list[SharedFinding],
+    ) -> None:
+        for finding in shared_findings:
+            posted = bulletin_board.post(
+                cycle=cycle,
+                source_task_key=task_node.key,
+                source_task_title=task_node.title,
+                source_strategy_round=strategy_round,
+                finding=finding,
+                is_verified=False,
+            )
+            if posted:
+                self._log_bulletin_post(task_key=task_node.key, strategy_round=strategy_round, entry=posted)
+
+    def _publish_reflection_bulletins(
+        self,
+        *,
+        bulletin_board: _StrategyBulletinBoard,
+        cycle: int,
+        task_tree: TaskTreeSnapshot,
+        reflection_out: ReflectionOutput,
+    ) -> None:
+        titles = {node.key: node.title for node in task_tree.nodes}
+        for update in reflection_out.task_updates:
+            source_title = titles.get(update.key, update.key)
+            for finding_text in update.latest_findings:
+                posted = bulletin_board.post(
+                    cycle=cycle,
+                    source_task_key=update.key,
+                    source_task_title=source_title,
+                    source_strategy_round=0,
+                    finding=SharedFinding(
+                        category="verified_task_finding",
+                        title=_excerpt(finding_text, limit=80),
+                        content=finding_text,
+                        confidence=1.0,
+                    ),
+                    is_verified=True,
+                )
+                if posted:
+                    self._log_bulletin_verified(source=f"{update.key} | {source_title}", entry=posted)
+        for finding_text in reflection_out.critical_findings:
+            posted = bulletin_board.post(
+                cycle=cycle,
+                source_task_key="__reflection__",
+                source_task_title="Reflection",
+                source_strategy_round=0,
+                finding=SharedFinding(
+                    category="reflection_critical",
+                    title=_excerpt(finding_text, limit=80),
+                    content=finding_text,
+                    confidence=1.0,
+                ),
+                is_verified=True,
+            )
+            if posted:
+                self._log_bulletin_verified(source="reflection", entry=posted)
 
     def _increment_attempt_counts(self, task_tree: TaskTree, task_keys: list[str]) -> None:
         updates = []
@@ -897,6 +1099,46 @@ class JasterOrchestrator:
             + f" {result.task_key} | rounds={result.rounds_used} | reason={result.termination_reason or '-'} | {summary}"
         )
 
+    def _log_bulletin_injection(
+        self,
+        *,
+        task_key: str,
+        strategy_round: int,
+        digest: SharedBulletinDigest,
+    ) -> None:
+        self._log(
+            "        "
+            + _style("[bulletin:inject]", ANSI_CYAN, bold=True)
+            + f" {task_key}#{strategy_round}"
+            + f" | new={len(digest.new_entries)}"
+            + f" verified={len(digest.verified_entries)}"
+            + f" unverified={len(digest.unverified_entries)}"
+        )
+
+    def _log_bulletin_post(
+        self,
+        *,
+        task_key: str,
+        strategy_round: int,
+        entry: SharedBulletinEntry,
+    ) -> None:
+        self._log(
+            "        "
+            + _style("[bulletin:post]", ANSI_YELLOW, bold=True)
+            + f" {task_key}#{strategy_round}"
+            + f" | {entry.category}"
+            + f" | {entry.title}"
+        )
+
+    def _log_bulletin_verified(self, *, source: str, entry: SharedBulletinEntry) -> None:
+        self._log(
+            "    "
+            + _style("[bulletin:verify]", ANSI_MAGENTA, bold=True)
+            + f" {source}"
+            + f" | {entry.category}"
+            + f" | {_excerpt(entry.content, limit=180)}"
+        )
+
 
 def detect_target_type(target: str) -> str:
     return "http" if target.startswith(("http://", "https://")) else "tcp"
@@ -1116,6 +1358,42 @@ def _render_tool_schema_text(name: str, schema: dict[str, Any]) -> str:
             desc = str(param_info.get("description") or "")
             lines.append(f"- {param_name}: {param_type}, {req}, {desc}")
     return "\n".join(lines)
+
+
+def _shared_bulletin_entry_id(
+    *,
+    source_task_key: str,
+    source_strategy_round: int,
+    category: str,
+    title: str,
+    content: str,
+) -> str:
+    payload = "|".join(
+        [
+            source_task_key,
+            str(source_strategy_round),
+            category.strip(),
+            title.strip(),
+            content.strip(),
+        ]
+    )
+    return hashlib.sha1(payload.encode("utf-8", errors="ignore")).hexdigest()[:16]
+
+
+def _shared_bulletin_matches(
+    entry: SharedBulletinEntry,
+    *,
+    source_task_key: str,
+    category: str,
+    title: str,
+    content: str,
+) -> bool:
+    return (
+        entry.source_task_key == source_task_key
+        and entry.category == category
+        and entry.title == title
+        and entry.content == content
+    )
 
 
 def _challenge_context(challenge: ChallengeSpec) -> str:

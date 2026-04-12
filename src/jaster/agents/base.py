@@ -115,6 +115,12 @@ def _normalize_agent_response(role: str, payload: dict) -> dict:
         )
         normalized["observed_task_results"] = normalized.get("observed_task_results") or []
         normalized["credentials"] = _string_list(normalized.get("credentials") or [])
+        normalized["shared_findings"] = _normalize_shared_findings(
+            normalized.get("shared_findings")
+            or normalized.get("shared_insights")
+            or normalized.get("bulletin_findings")
+            or []
+        )
         normalized["actions"] = _normalize_actions(normalized)
     elif role == "reflection":
         normalized.setdefault("summary", str(normalized.get("summary") or normalized.get("phase_summary") or ""))
@@ -329,6 +335,50 @@ def _normalize_strategic_rejections(raw_rejections: object) -> list[dict]:
     return normalized
 
 
+def _normalize_shared_findings(raw_findings: object) -> list[dict]:
+    if isinstance(raw_findings, dict):
+        raw_findings = [raw_findings]
+    if isinstance(raw_findings, str):
+        raw_findings = [raw_findings]
+    if not isinstance(raw_findings, list):
+        raw_findings = []
+
+    normalized: list[dict] = []
+    for item in raw_findings:
+        if isinstance(item, str):
+            content = item.strip()
+            if not content:
+                continue
+            normalized.append(
+                {
+                    "category": "key_fact",
+                    "title": content[:80],
+                    "content": content,
+                    "confidence": 0.7,
+                }
+            )
+            continue
+        if not isinstance(item, dict):
+            continue
+        title = str(item.get("title") or item.get("headline") or "").strip()
+        content = str(item.get("content") or item.get("summary") or item.get("finding") or "").strip()
+        if not content and title:
+            content = title
+        if not title and content:
+            title = content[:80]
+        if not title or not content:
+            continue
+        normalized.append(
+            {
+                "category": str(item.get("category") or item.get("type") or "key_fact").strip() or "key_fact",
+                "title": title,
+                "content": content,
+                "confidence": _normalize_float(item.get("confidence"), default=0.7),
+            }
+        )
+    return normalized
+
+
 def _string_list(value: object) -> list[str]:
     if isinstance(value, str):
         value = [value]
@@ -347,6 +397,13 @@ def _normalize_int(value: object) -> int:
         return max(0, int(value))
     except (TypeError, ValueError):
         return 0
+
+
+def _normalize_float(value: object, *, default: float) -> float:
+    try:
+        return min(1.0, max(0.0, float(value)))
+    except (TypeError, ValueError):
+        return default
 
 
 def _style(text: str, color: str = "", *, bold: bool = False) -> str:

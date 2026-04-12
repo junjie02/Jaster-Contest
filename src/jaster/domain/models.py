@@ -116,6 +116,38 @@ class AvailableTool(BaseModel):
     tool_definition_json: str = ""
 
 
+class SharedFinding(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    category: str = "key_fact"
+    title: str
+    content: str
+    confidence: float = Field(default=0.7, ge=0.0, le=1.0)
+
+
+class SharedBulletinEntry(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    entry_id: str
+    cycle: int = 0
+    source_task_key: str = ""
+    source_task_title: str = ""
+    source_strategy_round: int = 0
+    category: str = "key_fact"
+    title: str
+    content: str
+    confidence: float = Field(default=0.7, ge=0.0, le=1.0)
+    is_verified: bool = False
+
+
+class SharedBulletinDigest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    new_entries: list[SharedBulletinEntry] = Field(default_factory=list)
+    verified_entries: list[SharedBulletinEntry] = Field(default_factory=list)
+    unverified_entries: list[SharedBulletinEntry] = Field(default_factory=list)
+
+
 class TaskNodeSnapshot(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -307,6 +339,7 @@ class StrategyInput(BaseModel):
     reflection_history: list[ReflectionHistoryEntry] = Field(default_factory=list)
     available_artifacts: list[ArtifactRef] = Field(default_factory=list)
     available_tools: list[AvailableTool] = Field(default_factory=list)
+    shared_bulletin: SharedBulletinDigest = Field(default_factory=SharedBulletinDigest)
 
 
 class StrategyOutput(BaseModel):
@@ -318,6 +351,7 @@ class StrategyOutput(BaseModel):
     flag_candidates: list[str] = Field(default_factory=list)
     observed_task_results: list[ObservedTaskResult] = Field(default_factory=list)
     credentials: list[str] = Field(default_factory=list)
+    shared_findings: list[SharedFinding] = Field(default_factory=list)
 
 
 class ReflectionInput(BaseModel):
@@ -383,6 +417,7 @@ class RunState(BaseModel):
     planner_history: list[PlannerHistoryEntry] = Field(default_factory=list)
     reflection_history: list[ReflectionHistoryEntry] = Field(default_factory=list)
     latest_discoveries: list[TaskDiscovery] = Field(default_factory=list)
+    shared_bulletin: list[SharedBulletinEntry] = Field(default_factory=list)
     available_artifacts: list[ArtifactRef] = Field(default_factory=list)
     observations: list[Observation] = Field(default_factory=list)
     submitted_flags: list[str] = Field(default_factory=list)

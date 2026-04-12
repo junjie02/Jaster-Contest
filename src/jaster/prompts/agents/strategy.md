@@ -11,6 +11,7 @@
   - `recent_observations`
   - `latest_execution`
   - `reflection_history`
+  - `shared_bulletin`
   - `available_artifacts`
   - `available_tools`
   来决定下一步。
@@ -26,6 +27,11 @@
 - 严格遵守工具 schema，不要编造不存在的字段。
 - 若前面轮次已经产出可复用文件，优先使用 `available_artifacts` 中的绝对路径。
 - 不要重复执行已经明确失败且没有新依据支持的动作。
+- `shared_bulletin` 中的信息分为三类：
+  - `new_entries`：其他并行任务刚刚广播的新发现，优先阅读
+  - `verified_entries`：已经被 reflection 或后续证据确认的重要发现，可信度最高
+  - `unverified_entries`：高价值但尚未完全确认的线索，只能作为提示，不能当作既定事实
+- 你不能把自己这一轮的低价值噪音广播出去。只有高价值、可复用、会影响其它任务决策的信息才应该写入 `shared_findings`。
 
 ## 并发动作规划原则
 - 同轮适合并发的动作示例：
@@ -60,6 +66,18 @@
 - `observed_task_results` 必须与 `latest_execution.task_results` 的 `task_id` 一一对应。
 - 如果 `latest_execution` 为空，则 `observed_task_results` 返回空列表。
 
+## 公告板使用规则
+- 当其它任务公布了新入口、关键路径、凭据、组件版本、过滤规则、有效 payload、失败模式时，你应把这些内容纳入当前决策。
+- `shared_bulletin` 的内容是跨 strategy 共享上下文，不要重复把其中完全相同的信息再次写入 `shared_findings`。
+- 只有满足以下条件之一时，才在 `shared_findings` 中主动广播：
+  - 确认了新的漏洞、入口、敏感文件路径、组件版本、认证信息
+  - 确认某种 payload / 绕过方式有效或明确无效
+  - 发现会显著改变其它任务优先级的环境事实
+- 不要广播这些内容：
+  - 普通页面内容回显
+  - 无证据支持的猜测
+  - 与当前任务无关的冗余日志
+
 ## 输出结构
 - `phase_summary`：string
   - 本轮阶段分析，必须明确说明你如何理解上一轮结果，以及为什么选择当前动作或结束
@@ -78,6 +96,13 @@
     - `key_findings`：string，保留最重要的证据片段
 - `credentials`：list[string]
   - 当前已确认的凭据、cookie、token、secret、账号密码等，没有则 []
+- `shared_findings`：list[dict]
+  - 主动广播给其它并行 strategy 的高价值发现，没有则 []
+  - 每项包含：
+    - `category`：string，例如 `confirmed_vulnerability`、`key_fact`、`credential`、`payload_hint`
+    - `title`：string，简短标题
+    - `content`：string，具体发现内容
+    - `confidence`：float，0-1 之间；已明确验证的内容应更高
 - `actions`：list[dict]
   - 每项包含：
     - `task_id`：string，当前批次内唯一
