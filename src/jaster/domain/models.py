@@ -209,27 +209,6 @@ class AvailableSkill(BaseModel):
     use_when: str = ""
 
 
-class ReconInput(BaseModel):
-    objective: str
-    tree: AttackTreeSnapshot
-    challenge_context: str = ""
-    recent_observations: list[RecentObservationRound] = Field(default_factory=list)
-    latest_execution: LatestExecutionResult | None = None
-    available_artifacts: list[ArtifactRef] = Field(default_factory=list)
-    available_functions: list[AvailableFunction] = Field(default_factory=list)
-    latest_summary: str = ""
-
-
-class ReconOutput(BaseModel):
-    phase_summary: str
-    discover_vulnerability: bool = False
-    selected_node_key: str = ""
-    actions: list[ActionPlan] = Field(default_factory=list)
-    tree_patch: TreePatch = Field(default_factory=TreePatch)
-    observed_task_results: list[ObservedTaskResult] = Field(default_factory=list)
-    credentials: list[str] = Field(default_factory=list)
-
-
 class StrategyInput(BaseModel):
     objective: str
     tree: AttackTreeSnapshot

@@ -20,8 +20,6 @@ from jaster.domain import (
     LatestExecutionResult,
     Observation,
     ObservedTaskResult,
-    ReconInput,
-    ReconOutput,
     RecentObservationAction,
     RecentObservationRound,
     ReflectionInput,
@@ -151,12 +149,10 @@ class JasterOrchestrator:
 
         latest_execution: ExecutionResult | None = None
         reflection_summary: str = ""
-        recon_summary: str = ""
         strategy_summary: str = ""
         node_context: ExploitableNodeContext | None = None
-        next_phase = "recon"
+        next_phase = "strategy"
         phase_round = 0
-        _reflection_entry: str = ""
         pending_observation: PendingObservation | None = None
 
         # HTTP 目标首次执行：curl 页面源码
@@ -179,93 +175,14 @@ class JasterOrchestrator:
                 command=f"curl -s -L {state.challenge.target}",
             )
 
+        # Initialize node_context from bootstrapped tree before entering strategy
+        root = tree.snapshot().nodes[0] if tree.snapshot().nodes else None
+        if root:
+            node_context = _extract_node_context(tree, root.key)
+
         # === MAIN ORCHESTRATION LOOP ===
         while phase_round < max_rounds:
             phase_round += 1
-
-            if next_phase == "recon":
-                prev_execution = latest_execution
-                recon_out, latest_execution, recon_elapsed = self._run_action_phase(
-                    agent_name="recon",
-                    zone=state.challenge.zone,
-                    run_id=run_id,
-                    challenge=state.challenge,
-                    latest_execution=prev_execution,
-                    recent_observations=_compact_observations(state.observations),
-                    payload_factory=lambda execution: ReconInput(
-                        objective=f"Recon the target {state.challenge.target} and expand the global attack tree.",
-                        tree=_prompt_tree_snapshot(tree.snapshot()),
-                        challenge_context=_challenge_context(state.challenge),
-                        recent_observations=_compact_observations(state.observations),
-                        latest_execution=_compact_execution(execution),
-                        available_artifacts=_prompt_artifacts(state.available_artifacts),
-                        available_functions=self.catalog.list_functions(),
-                        latest_summary=strategy_summary,
-                    ),
-                    label=f"Round {phase_round}: recon",
-                )
-                self._log(f"    Phase time: {recon_elapsed:.2f}s")
-                self._log(
-                    "    Actions: "
-                    + ", ".join(_describe_action(action) for action in recon_out.actions)
-                )
-                tree.apply_patch(recon_out.tree_patch)
-
-                self._log(
-                    f"    Result: {'OK' if latest_execution.success else 'FAIL'}"
-                    f" | {_execution_message(latest_execution)}"
-                )
-                _flush_pending_observation(state, pending_observation, recon_out.observed_task_results)
-                pending_observation = PendingObservation(
-                    round=phase_round,
-                    source="recon",
-                    execution=latest_execution.model_copy(deep=True),
-                    tasks=_pending_observation_tasks(recon_out.actions),
-                )
-                state.available_artifacts = _merge_artifact_refs(
-                    state.available_artifacts,
-                    _available_artifacts(latest_execution.artifacts),
-                )
-                tree.merge_facts(_facts_from_execution(latest_execution))
-                tree.merge_facts(GlobalFacts(credentials=recon_out.credentials))
-                state.tree = tree.snapshot()
-                self._append_phase_round(
-                    run_id,
-                    phase_round,
-                    "recon",
-                    {
-                        "recon_input": _agent_trace(self.agents.get("recon")),
-                        "recon": recon_out.model_dump(),
-                        "executor_input": self._last_executor_trace,
-                        "execution": latest_execution.model_dump(),
-                    },
-                )
-                state.rounds_completed = phase_round
-                self.store.save_state(state)
-                self._notify_tree_update(state.tree)
-                if round_hook and round_hook(state, "recon", latest_execution):
-                    self.store.save_state(state)
-                    self._notify_tree_update(state.tree)
-                    self._log("[*] Run stopping: requested by round hook")
-                    break
-
-                if recon_out.discover_vulnerability or _is_finish_only(recon_out.actions):
-                    self._log("[*] Recon complete: exploitable point found")
-                    node_context = _resolve_node_context(tree, recon_out.selected_node_key)
-                    recon_summary = recon_out.phase_summary
-                    _reflection_entry = "recon"
-                    next_phase = "reflection"
-                    continue
-
-                # 每 5 轮强制 Reflection，对当前侦察方向做阶段性思考
-                if phase_round > 0 and phase_round % 5 == 0:
-                    self._log(f"[*] Periodic reflection: round {phase_round}")
-                    recon_summary = recon_out.phase_summary
-                    _reflection_entry = "recon"
-                    next_phase = "reflection"
-                    continue
-
-                continue
 
             if next_phase == "reflection":
                 self._log("[*] Reflection: organizing findings for exploitable point")
@@ -288,7 +205,7 @@ class JasterOrchestrator:
                                 latest_execution=_compact_execution(latest_execution),
                                 available_artifacts=_prompt_artifacts(state.available_artifacts),
                                 last_strategy=node_context.target_node.title if node_context else "",
-                                latest_summary=recon_summary if _reflection_entry == "recon" else strategy_summary,
+                                latest_summary=strategy_summary,
                                 available_skills=available_skills,
                             ),
                         )
@@ -306,14 +223,14 @@ class JasterOrchestrator:
                     "reflection",
                     state.challenge.zone,
                     ReflectionInput(
-                        objective="Reflect on the exploitable point found by recon, organize key findings, and provide strategic guidance.",
+                        objective="Reflect on the current strategy progress, organize key findings, and provide strategic guidance.",
                         tree=_prompt_tree_snapshot(tree.snapshot()),
                         challenge_context=_challenge_context(state.challenge),
                         recent_observations=_compact_observations(state.observations),
                         latest_execution=_compact_execution(latest_execution),
                         available_artifacts=_prompt_artifacts(state.available_artifacts),
                         last_strategy=node_context.target_node.title if node_context else "",
-                        latest_summary=recon_summary if _reflection_entry == "recon" else strategy_summary,
+                        latest_summary=strategy_summary,
                         selected_skills=selected_skills,
                         inspiration=inspiration,
                     ),
@@ -352,10 +269,7 @@ class JasterOrchestrator:
                     self._notify_tree_update(state.tree)
                     self._log("[*] Run stopping: requested by round hook")
                     break
-                if _reflection_entry == "recon":
-                    next_phase = "strategy" if recon_out.discover_vulnerability else "recon"
-                else:
-                    next_phase = "recon" if strategy_out.need_recon else "strategy"
+                next_phase = "strategy"
                 continue
 
             if next_phase != "strategy":
@@ -478,17 +392,10 @@ class JasterOrchestrator:
                 self._log("[*] Run stopping: goal reached")
                 break
 
-            if strategy_out.need_recon:
-                self._log("[*] Strategy requests more recon")
-                strategy_summary = strategy_out.phase_summary
-                next_phase = "recon"
-                continue
-
             # 每 5 轮强制 Reflection，对当前渗透方向做阶段性思考
             if phase_round > 0 and phase_round % 5 == 0:
                 self._log(f"[*] Periodic reflection: round {phase_round}")
                 strategy_summary = strategy_out.phase_summary
-                _reflection_entry = "strategy"
                 next_phase = "reflection"
                 continue
 
@@ -785,7 +692,7 @@ class JasterOrchestrator:
         recent_observations: list[RecentObservationRound] | None = None,
         payload_factory: Callable[[ExecutionResult | None], object],
         label: str,
-    ) -> tuple[ReconOutput | StrategyOutput, ExecutionResult, float]:
+    ) -> tuple[StrategyOutput, ExecutionResult, float]:
         max_attempts = max(1, int(getattr(self, "phase_max_retries", 3) or 1))
         retry_context: dict[str, Any] | None = None
         current_execution = latest_execution

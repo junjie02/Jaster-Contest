@@ -105,21 +105,11 @@ _NODE_STATUS_ALIASES = {
 
 def _normalize_agent_response(role: str, payload: dict) -> dict:
     normalized = dict(payload or {})
-    if role in {"recon", "strategy", "reflection"}:
+    if role in {"strategy", "reflection"}:
         parent_key = normalized.get("selected_node_key", "")
         normalized["tree_patch"] = _normalize_tree_patch(
             normalized.get("tree_patch") or {}, role=role, parent_key=parent_key
         )
-    if role in {"recon", "strategy"}:
-        normalized["actions"] = _normalize_actions(normalized, parent=normalized)
-    if role == "recon":
-        normalized.setdefault(
-            "phase_summary",
-            str(normalized.get("phase_summary") or normalized.get("recon_summary") or normalized.get("reason") or ""),
-        )
-        normalized["done"] = bool(normalized.get("done", normalized.get("recon_complete", False)))
-        normalized["observed_task_results"] = normalized.get("observed_task_results") or []
-        normalized["credentials"] = _string_list(normalized.get("credentials") or [])
     if role == "strategy":
         normalized.setdefault(
             "phase_summary",

@@ -7,8 +7,6 @@ from jaster.domain import (
     ExecutorInput,
     BuilderInput,
     BuilderOutput,
-    ReconInput,
-    ReconOutput,
     ReflectionInput,
     ReflectionOutput,
     SkillRouterInput,
@@ -23,12 +21,6 @@ from jaster.runtime.llm import LLMError
 from jaster.runtime.prompts import PromptLibrary
 
 from .base import JsonAgent
-
-
-class ReconAgent(JsonAgent[ReconInput, ReconOutput]):
-    role = "recon"
-    input_model = ReconInput
-    output_model = ReconOutput
 
 
 class StrategyAgent(JsonAgent[StrategyInput, StrategyOutput]):
@@ -184,7 +176,6 @@ class SubmissionAgent(JsonAgent[SubmissionInput, SubmissionOutput]):
 def build_agents(prompt_root: Path, llm: OpenAIChatClient) -> dict[str, Any]:
     prompts = PromptLibrary(prompt_root)
     return {
-        "recon": ReconAgent(llm, prompts),
         "strategy": StrategyAgent(llm, prompts),
         "reflection": ReflectionAgent(llm, prompts),
         "skill_router": SkillRouterAgent(llm, prompts),
