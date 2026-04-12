@@ -6,19 +6,9 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 
-class NodeKind(str, Enum):
-    target = "target"
-    asset = "asset"
-    entry = "entry"
-    weakness = "weakness"
-    technique = "technique"
-    hypothesis = "hypothesis"
-
-
-class NodeStatus(str, Enum):
-    unexplored = "unexplored"
-    exploring = "exploring"
-    success = "success"
+class TaskStatus(str, Enum):
+    in_progress = "in_progress"
+    completed = "completed"
     failed = "failed"
 
 
@@ -26,23 +16,27 @@ class ArtifactRef(BaseModel):
     kind: str
     path: str
     producer_phase: str = ""
-    producer_task_id: str = ""
-    producer_function_name: str = ""
+    producer_task_key: str = ""
+    producer_action_id: str = ""
+    producer_tool_name: str = ""
     producer_success: bool | None = None
 
 
 class Observation(BaseModel):
-    round: int = 0
-    source: str = ""
-    task_id: str = ""
-    task: str = ""
+    cycle: int = 0
+    strategy_round: int = 0
+    task_key: str = ""
+    task_title: str = ""
+    action_task_id: str = ""
+    tool_name: str = ""
     target: str = ""
     result: str = ""
     key_findings: str = ""
 
 
 class RecentObservationAction(BaseModel):
-    task: str = ""
+    action_task_id: str = ""
+    tool_name: str = ""
     target: str = ""
     result: str = ""
     key_findings: str = ""
@@ -91,8 +85,8 @@ class TaskExecutionResult(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     task_id: str
-    kind: Literal["function", "builder", "finish"]
-    function_name: str | None = None
+    kind: Literal["tool", "finish"]
+    tool_name: str | None = None
     success: bool
     summary: str = ""
     findings: list[str] = Field(default_factory=list)
@@ -114,189 +108,192 @@ class ObservedTaskResult(BaseModel):
     key_findings: str = ""
 
 
-class GlobalFacts(BaseModel):
-    flags: list[str] = Field(default_factory=list)
-    credentials: list[str] = Field(default_factory=list)
+class AvailableTool(BaseModel):
+    name: str
+    summary: str = ""
+    server_name: str = ""
+    tool_schema_text: str = ""
+    tool_definition_json: str = ""
 
 
-class TreeNodeSnapshot(BaseModel):
+class TaskNodeSnapshot(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     key: str
     parent_key: str = ""
     title: str
-    kind: NodeKind
-    status: NodeStatus = NodeStatus.unexplored
-    priority: int = 0
     reason: str = ""
-    how: str = ""
-    shared_refs: list[str] = Field(default_factory=list)
+    completion_criteria: str = ""
+    status: TaskStatus = TaskStatus.in_progress
+    latest_summary: str = ""
+    latest_findings: list[str] = Field(default_factory=list)
+    attempt_count: int = 0
 
 
-class NodeInfo(BaseModel):
-    """Strategy输入中使用的节点信息，包含TreeNodeSnapshot和NodePatch的所有字段"""
-    key: str
-    parent_key: str = ""
-    title: str
-    kind: NodeKind
-    status: NodeStatus = NodeStatus.unexplored
-    priority: int = 0
-    reason: str = ""
-    how: str = ""
-    shared_refs: list[str] = Field(default_factory=list)
-
-
-class AttackTreeSnapshot(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    nodes: list[TreeNodeSnapshot] = Field(default_factory=list)
-    facts: GlobalFacts = Field(default_factory=GlobalFacts)
-
-
-class NodePatch(BaseModel):
+class TaskNodePatch(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     parent_key: str
     title: str
-    kind: NodeKind
-    priority: int = 0
     reason: str = ""
-    how: str = ""
-    status: NodeStatus = NodeStatus.unexplored
-    shared_refs: list[str] = Field(default_factory=list)
+    completion_criteria: str = ""
+    status: TaskStatus = TaskStatus.in_progress
+    latest_summary: str = ""
+    latest_findings: list[str] = Field(default_factory=list)
+    attempt_count: int = 0
 
 
-class NodeUpdatePatch(BaseModel):
+class TaskNodeUpdatePatch(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     key: str
-    status: NodeStatus | None = None
-    priority: int | None = None
+    title: str | None = None
     reason: str | None = None
-    how: str | None = None
-    shared_refs: list[str] | None = None
+    completion_criteria: str | None = None
+    status: TaskStatus | None = None
+    latest_summary: str | None = None
+    latest_findings: list[str] | None = None
+    attempt_count: int | None = None
 
 
-class TreePatch(BaseModel):
+class TaskTreePatch(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    add_nodes: list[NodePatch] = Field(default_factory=list)
-    update_nodes: list[NodeUpdatePatch] = Field(default_factory=list)
+    add_nodes: list[TaskNodePatch] = Field(default_factory=list)
+    update_nodes: list[TaskNodeUpdatePatch] = Field(default_factory=list)
+
+
+class TaskTreeSnapshot(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    nodes: list[TaskNodeSnapshot] = Field(default_factory=list)
+
+
+class TaskDiscovery(BaseModel):
+    cycle: int = 0
+    task_key: str = ""
+    task_title: str = ""
+    source: str = ""
+    summary: str = ""
+    findings: list[str] = Field(default_factory=list)
+    flag_candidates: list[str] = Field(default_factory=list)
+    credentials: list[str] = Field(default_factory=list)
+
+
+class PlannerHistoryEntry(BaseModel):
+    cycle: int
+    summary: str = ""
+    planner_notes: str = ""
+    dispatched_task_keys: list[str] = Field(default_factory=list)
 
 
 class ActionPlan(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     task_id: str = ""
-    kind: Literal["function", "builder", "finish"]
+    kind: Literal["tool", "finish"]
     goal: str
     expected_result: str = ""
-    function_name: str | None = None
-    function_args: dict[str, Any] = Field(default_factory=dict)
-    key_parameters: list[dict[str, str]] = Field(default_factory=list)
-    executor_brief: str = ""
+    tool_name: str | None = None
+    tool_args: dict[str, Any] = Field(default_factory=dict)
 
 
-class AvailableFunction(BaseModel):
-    name: str
-    summary: str
-    use_when: str = ""
-    function_schema_text: str = ""
-    function_definition_json: str = ""
+class StrategyTaskResult(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    task_key: str
+    task_title: str
+    completed: bool = False
+    rounds_used: int = 0
+    termination_reason: str = ""
+    phase_summary: str = ""
+    task_summary: str = ""
+    task_findings: list[str] = Field(default_factory=list)
+    flag_candidates: list[str] = Field(default_factory=list)
+    credentials: list[str] = Field(default_factory=list)
+    latest_execution: LatestExecutionResult | None = None
+    observed_task_results: list[ObservedTaskResult] = Field(default_factory=list)
+    artifacts: list[ArtifactRef] = Field(default_factory=list)
 
 
-class AvailableSkill(BaseModel):
-    name: str
-    summary: str
-    use_when: str = ""
+class ReflectionTaskUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    key: str
+    status: TaskStatus
+    latest_summary: str = ""
+    latest_findings: list[str] = Field(default_factory=list)
+    reason: str = ""
+
+
+class ReflectionHistoryEntry(BaseModel):
+    cycle: int
+    summary: str = ""
+    planner_guidance: str = ""
+    task_updates: list[ReflectionTaskUpdate] = Field(default_factory=list)
+
+
+class PlanInput(BaseModel):
+    objective: str
+    task_tree: TaskTreeSnapshot
+    challenge_context: str = ""
+    bootstrap_execution: LatestExecutionResult | None = None
+    reflection_history: list[ReflectionHistoryEntry] = Field(default_factory=list)
+    latest_discoveries: list[TaskDiscovery] = Field(default_factory=list)
+    available_artifacts: list[ArtifactRef] = Field(default_factory=list)
+
+
+class PlanOutput(BaseModel):
+    phase_summary: str
+    planner_notes: str = ""
+    tree_patch: TaskTreePatch = Field(default_factory=TaskTreePatch)
+    dispatch_task_keys: list[str] = Field(default_factory=list)
 
 
 class StrategyInput(BaseModel):
     objective: str
-    tree: AttackTreeSnapshot
-    target_node: NodeInfo
-    path_to_root: list[NodeInfo] = Field(default_factory=list)
-    related_nodes: list[NodeInfo] = Field(default_factory=list)
+    assigned_task: TaskNodeSnapshot
+    task_tree: TaskTreeSnapshot
     challenge_context: str = ""
-    latest_summary: str = ""
     recent_observations: list[RecentObservationRound] = Field(default_factory=list)
     latest_execution: LatestExecutionResult | None = None
+    reflection_history: list[ReflectionHistoryEntry] = Field(default_factory=list)
     available_artifacts: list[ArtifactRef] = Field(default_factory=list)
-    available_functions: list[AvailableFunction] = Field(default_factory=list)
+    available_tools: list[AvailableTool] = Field(default_factory=list)
 
 
 class StrategyOutput(BaseModel):
     phase_summary: str
-    selected_node_key: str = ""
+    is_complete: bool = False
+    task_summary: str = ""
+    task_findings: list[str] = Field(default_factory=list)
     actions: list[ActionPlan] = Field(default_factory=list)
     flag_candidates: list[str] = Field(default_factory=list)
-    goal_reached: bool = False
-    need_recon: bool = False
-    tree_patch: TreePatch = Field(default_factory=TreePatch)
     observed_task_results: list[ObservedTaskResult] = Field(default_factory=list)
     credentials: list[str] = Field(default_factory=list)
 
 
 class ReflectionInput(BaseModel):
     objective: str
-    tree: AttackTreeSnapshot
+    task_tree: TaskTreeSnapshot
     challenge_context: str = ""
-    recent_observations: list[RecentObservationRound] = Field(default_factory=list)
-    latest_execution: LatestExecutionResult | None = None
+    strategy_results: list[StrategyTaskResult] = Field(default_factory=list)
+    reflection_history: list[ReflectionHistoryEntry] = Field(default_factory=list)
+    latest_discoveries: list[TaskDiscovery] = Field(default_factory=list)
     available_artifacts: list[ArtifactRef] = Field(default_factory=list)
-    last_strategy: str = ""
-    latest_summary: str = ""
-    selected_skills: list[str] = Field(default_factory=list)
-    inspiration: str = ""
 
 
 class ReflectionOutput(BaseModel):
     summary: str
-    next_focus_key: str = ""
+    planner_guidance: str = ""
+    task_updates: list[ReflectionTaskUpdate] = Field(default_factory=list)
     flag_candidates: list[str] = Field(default_factory=list)
-    tree_patch: TreePatch = Field(default_factory=TreePatch)
     credentials: list[str] = Field(default_factory=list)
-
-
-class SkillRouterInput(BaseModel):
-    objective: str
-    tree: AttackTreeSnapshot
-    challenge_context: str = ""
-    recent_observations: list[RecentObservationRound] = Field(default_factory=list)
-    latest_execution: LatestExecutionResult | None = None
-    last_strategy: str = ""
-    latest_summary: str = ""
-    available_skills: list[AvailableSkill] = Field(default_factory=list)
-
-
-class SkillRouterOutput(BaseModel):
-    selected_skills: list[str] = Field(default_factory=list, max_length=2)
-
-
-class ExecutorInput(BaseModel):
-    target: str = ""
-    function_name: str
-    function_summary: str = ""
-    function_schema_text: str
-    function_definition_json: str = ""
-    executor_brief: str
-    accessible_artifacts: list[ArtifactRef] = Field(default_factory=list)
-
-
-class BuilderInput(BaseModel):
-    task: str
-    key_parameters: list[dict[str, str]] = Field(default_factory=list)
-    accessible_artifacts: list[ArtifactRef] = Field(default_factory=list)
-
-
-class BuilderOutput(BaseModel):
-    summary: str
-    script: str
 
 
 class SubmissionInput(BaseModel):
     candidates: list[str] = Field(default_factory=list)
-    recent_observations: list[RecentObservationRound] = Field(default_factory=list)
+    latest_discoveries: list[TaskDiscovery] = Field(default_factory=list)
     submitted_flags: list[str] = Field(default_factory=list)
 
 
@@ -331,7 +328,10 @@ class ChallengeSpec(BaseModel):
 class RunState(BaseModel):
     run_id: str
     challenge: ChallengeSpec
-    tree: AttackTreeSnapshot
+    task_tree: TaskTreeSnapshot
+    planner_history: list[PlannerHistoryEntry] = Field(default_factory=list)
+    reflection_history: list[ReflectionHistoryEntry] = Field(default_factory=list)
+    latest_discoveries: list[TaskDiscovery] = Field(default_factory=list)
     available_artifacts: list[ArtifactRef] = Field(default_factory=list)
     observations: list[Observation] = Field(default_factory=list)
     submitted_flags: list[str] = Field(default_factory=list)

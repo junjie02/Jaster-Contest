@@ -1,19 +1,9 @@
 const SVG_NS = "http://www.w3.org/2000/svg";
 
 const STATUS_COLORS = {
-  unexplored: "#9ca3af",
-  exploring: "#f59e0b",
-  success: "#22c55e",
+  in_progress: "#f59e0b",
+  completed: "#22c55e",
   failed: "#ef4444",
-};
-
-const KIND_SHAPES = {
-  target: "star",
-  asset: "rect",
-  entry: "circle",
-  weakness: "diamond",
-  technique: "rect",
-  hypothesis: "hexagon",
 };
 
 const state = {
@@ -70,7 +60,13 @@ function escapeHtml(value) {
 }
 
 function updateStats(nodes) {
-  nodeCount.textContent = `Nodes: ${nodes.length}`;
+  const counts = { in_progress: 0, completed: 0, failed: 0 };
+  nodes.forEach((node) => {
+    if (counts[node.status] !== undefined) {
+      counts[node.status] += 1;
+    }
+  });
+  nodeCount.textContent = `Tasks: ${nodes.length} | In Progress: ${counts.in_progress} | Completed: ${counts.completed} | Failed: ${counts.failed}`;
 }
 
 function createSvgElement(name, attrs = {}) {
@@ -81,9 +77,14 @@ function createSvgElement(name, attrs = {}) {
   return el;
 }
 
-function getNodeRadius(node) {
-  const priority = Number(node.priority || 0);
-  return Math.max(8, Math.min(22, priority / 7 || 10));
+function getNodeWidth(node) {
+  const base = 110;
+  const extra = Math.min(90, String(node.title || "").length * 3);
+  return base + extra;
+}
+
+function getNodeHeight(node) {
+  return node.parent_key ? 56 : 64;
 }
 
 function buildTreeLayout(data) {
@@ -104,16 +105,12 @@ function buildTreeLayout(data) {
   });
 
   children.forEach((items) => {
-    items.sort((left, right) => {
-      const priorityDelta = Number(right.priority || 0) - Number(left.priority || 0);
-      if (priorityDelta !== 0) return priorityDelta;
-      return String(left.title).localeCompare(String(right.title));
-    });
+    items.sort((left, right) => String(left.title || "").localeCompare(String(right.title || "")));
   });
 
   const root = roots[0] || nodes[0] || null;
   if (!root) {
-    return { nodes: [] };
+    return { nodes: [], edges: [] };
   }
 
   const positioned = [];
@@ -123,7 +120,9 @@ function buildTreeLayout(data) {
 
   while (queue.length) {
     const current = queue.shift();
-    if (!current || visited.has(current.node.key)) continue;
+    if (!current || visited.has(current.node.key)) {
+      continue;
+    }
     visited.add(current.node.key);
     const layer = layerMap.get(current.depth) || [];
     layer.push(current.node);
@@ -134,15 +133,14 @@ function buildTreeLayout(data) {
 
   nodes.forEach((node) => {
     if (!visited.has(node.key)) {
-      const depth = 1;
-      const layer = layerMap.get(depth) || [];
-      layer.push(node);
-      layerMap.set(depth, layer);
+      const fallbackLayer = layerMap.get(1) || [];
+      fallbackLayer.push(node);
+      layerMap.set(1, fallbackLayer);
     }
   });
 
-  const layerGap = 260;
-  const rowGap = 120;
+  const layerGap = 280;
+  const rowGap = 110;
   const orderedDepths = [...layerMap.keys()].sort((left, right) => left - right);
   orderedDepths.forEach((depth) => {
     const layer = layerMap.get(depth) || [];
@@ -157,15 +155,13 @@ function buildTreeLayout(data) {
     });
   });
 
-  // Calculate edges from parent_key
+  const nodeMap = new Map(positioned.map((node) => [node.key, node]));
   const edges = [];
-  const nodeMap = new Map(positioned.map((n) => [n.key, n]));
   positioned.forEach((node) => {
     if (node.parent_key && nodeMap.has(node.parent_key)) {
       edges.push({ from: node.parent_key, to: node.key });
     }
   });
-
   return { nodes: positioned, edges };
 }
 
@@ -174,89 +170,82 @@ function fitTransform(positionedNodes) {
     return { x: 80, y: 80, k: 1 };
   }
   const padding = 120;
-  const minX = Math.min(...positionedNodes.map((node) => node.x - getNodeRadius(node)));
-  const maxX = Math.max(...positionedNodes.map((node) => node.x + getNodeRadius(node) + 120));
-  const minY = Math.min(...positionedNodes.map((node) => node.y - getNodeRadius(node) - 40));
-  const maxY = Math.max(...positionedNodes.map((node) => node.y + getNodeRadius(node) + 60));
+  const minX = Math.min(...positionedNodes.map((node) => node.x - getNodeWidth(node) / 2));
+  const maxX = Math.max(...positionedNodes.map((node) => node.x + getNodeWidth(node) / 2));
+  const minY = Math.min(...positionedNodes.map((node) => node.y - getNodeHeight(node) / 2));
+  const maxY = Math.max(...positionedNodes.map((node) => node.y + getNodeHeight(node) / 2 + 32));
   const graphWidth = Math.max(1, maxX - minX);
   const graphHeight = Math.max(1, maxY - minY);
   const width = Math.max(320, container.clientWidth || 0);
   const height = Math.max(320, container.clientHeight || 0);
-  const scale = Math.max(0.35, Math.min(1.4, Math.min((width - padding) / graphWidth, (height - padding) / graphHeight)));
+  const scale = Math.max(0.35, Math.min(1.2, Math.min((width - padding) / graphWidth, (height - padding) / graphHeight)));
   const x = (width - graphWidth * scale) / 2 - minX * scale;
   const y = (height - graphHeight * scale) / 2 - minY * scale;
   return { x, y, k: scale };
 }
 
 function applyViewportTransform() {
-  if (!state.viewportEl) return;
+  if (!state.viewportEl) {
+    return;
+  }
   const { x, y, k } = state.currentTransform;
   state.viewportEl.setAttribute("transform", `translate(${x} ${y}) scale(${k})`);
 }
 
 function renderNodeShape(parent, node) {
-  const radius = getNodeRadius(node);
-  const fill = STATUS_COLORS[node.status] || STATUS_COLORS.unexplored;
-  const shape = KIND_SHAPES[node.kind] || "circle";
-  let shapeEl;
-
-  if (shape === "circle") {
-    shapeEl = createSvgElement("circle", { r: radius });
-  } else if (shape === "rect") {
-    shapeEl = createSvgElement("rect", {
-      x: -radius,
-      y: -radius * 0.7,
-      width: radius * 2,
-      height: radius * 1.4,
-      rx: 4,
-    });
-  } else if (shape === "diamond") {
-    shapeEl = createSvgElement("polygon", {
-      points: `0,${-radius} ${radius},0 0,${radius} ${-radius},0`,
-    });
-  } else if (shape === "star") {
-    const points = [];
-    for (let index = 0; index < 10; index += 1) {
-      const angle = -Math.PI / 2 + (index * Math.PI) / 5;
-      const size = index % 2 === 0 ? radius : radius / 2;
-      points.push(`${Math.cos(angle) * size},${Math.sin(angle) * size}`);
-    }
-    shapeEl = createSvgElement("polygon", { points: points.join(" ") });
-  } else {
-    const hx = radius * Math.cos(Math.PI / 6);
-    shapeEl = createSvgElement("polygon", {
-      points: `${hx},${-radius / 2} ${hx},${radius / 2} 0,${radius} ${-hx},${radius / 2} ${-hx},${-radius / 2} 0,${-radius}`,
-    });
-  }
-
-  shapeEl.setAttribute("fill", fill);
-  shapeEl.setAttribute("stroke", "#ffffff");
-  shapeEl.setAttribute("stroke-width", "2");
-  parent.appendChild(shapeEl);
-
-  const label = createSvgElement("text", {
-    x: 0,
-    y: radius + 16,
-    "text-anchor": "middle",
-    "font-size": "11",
-    fill: "#e5e7eb",
+  const width = getNodeWidth(node);
+  const height = getNodeHeight(node);
+  const fill = STATUS_COLORS[node.status] || "#9ca3af";
+  const stroke = node.parent_key ? "#f8fafc" : "#fde68a";
+  const body = createSvgElement("rect", {
+    x: -width / 2,
+    y: -height / 2,
+    width,
+    height,
+    rx: node.parent_key ? 12 : 18,
+    fill,
+    stroke,
+    "stroke-width": node.parent_key ? 2 : 3,
   });
-  const title = String(node.title || "");
-  label.textContent = title.length > 22 ? `${title.slice(0, 20)}…` : title;
-  parent.appendChild(label);
+  parent.appendChild(body);
+
+  const title = createSvgElement("text", {
+    x: 0,
+    y: -4,
+    "text-anchor": "middle",
+    "font-size": node.parent_key ? "12" : "13",
+    "font-weight": node.parent_key ? "600" : "700",
+    fill: "#111827",
+  });
+  const text = String(node.title || "");
+  title.textContent = text.length > 26 ? `${text.slice(0, 24)}...` : text;
+  parent.appendChild(title);
+
+  const status = createSvgElement("text", {
+    x: 0,
+    y: 15,
+    "text-anchor": "middle",
+    "font-size": "10",
+    fill: "#1f2937",
+  });
+  const attempts = Number(node.attempt_count || 0);
+  status.textContent = `${String(node.status || "").replace("_", " ")} | tries ${attempts}`;
+  parent.appendChild(status);
 }
 
 function showTooltip(event, node) {
+  const findings = Array.isArray(node.latest_findings) ? node.latest_findings.join("\n") : "";
   const fields = [
     ["key", node.key],
     ["parent_key", node.parent_key],
     ["title", node.title],
-    ["kind", node.kind],
     ["status", node.status],
-    ["priority", node.priority],
     ["reason", node.reason],
-    ["how", node.how],
-  ].filter(([, value]) => value);
+    ["completion_criteria", node.completion_criteria],
+    ["attempt_count", node.attempt_count],
+    ["latest_summary", node.latest_summary],
+    ["latest_findings", findings],
+  ].filter(([, value]) => value !== undefined && value !== null && String(value).trim() !== "");
 
   tooltip.innerHTML = fields
     .map(([key, value]) => `<div class="tip-row"><span class="tip-key">${escapeHtml(key)}:</span> <span class="tip-val">${escapeHtml(value)}</span></div>`)
@@ -266,12 +255,18 @@ function showTooltip(event, node) {
 }
 
 function moveTooltip(event) {
-  if (tooltip.classList.contains("hidden")) return;
+  if (tooltip.classList.contains("hidden")) {
+    return;
+  }
   const rect = container.getBoundingClientRect();
   let x = event.clientX - rect.left + 15;
   let y = event.clientY - rect.top + 15;
-  if (x + 320 > rect.width) x -= 335;
-  if (y + 220 > rect.height) y -= 235;
+  if (x + 360 > rect.width) {
+    x -= 375;
+  }
+  if (y + 260 > rect.height) {
+    y -= 275;
+  }
   tooltip.style.left = `${x}px`;
   tooltip.style.top = `${y}px`;
 }
@@ -287,7 +282,7 @@ function renderTree(data) {
 
   if (!layout.nodes.length) {
     updateStats([]);
-    setGraphState("No nodes available yet.", "empty");
+    setGraphState("No tasks available yet.", "empty");
     return;
   }
 
@@ -299,49 +294,25 @@ function renderTree(data) {
   svg.appendChild(viewport);
   state.viewportEl = viewport;
 
-  // Render edges first (below nodes)
-  const nodeMap = new Map(layout.nodes.map((n) => [n.key, n]));
-
-  // Render parent-child edges (solid white)
+  const nodeMap = new Map(layout.nodes.map((node) => [node.key, node]));
   layout.edges.forEach((edge) => {
     const fromNode = nodeMap.get(edge.from);
     const toNode = nodeMap.get(edge.to);
-    if (fromNode && toNode) {
-      const dx = toNode.x - fromNode.x;
-      const dy = toNode.y - fromNode.y;
-      const cx = fromNode.x + dx * 0.5;
-      const cy = fromNode.y + dy * 0.5 + Math.sign(dy) * Math.abs(dx) * 0.3;
-      const path = createSvgElement("path", {
-        d: `M ${fromNode.x} ${fromNode.y} Q ${cx} ${cy} ${toNode.x} ${toNode.y}`,
-        stroke: "#ffffff",
-        "stroke-width": "3",
-        "stroke-opacity": "0.9",
-        fill: "none",
-      });
-      edgesGroup.appendChild(path);
+    if (!fromNode || !toNode) {
+      return;
     }
-  });
-
-  // Render shared_refs edges (dashed gray)
-  layout.nodes.forEach((node) => {
-    (node.shared_refs || []).forEach((refKey) => {
-      const refNode = nodeMap.get(refKey);
-      if (refNode) {
-        const dx = refNode.x - node.x;
-        const dy = refNode.y - node.y;
-        const cx = node.x + dx * 0.5;
-        const cy = node.y + dy * 0.5 + Math.sign(dy) * Math.abs(dx) * 0.3;
-        const path = createSvgElement("path", {
-          d: `M ${node.x} ${node.y} Q ${cx} ${cy} ${refNode.x} ${refNode.y}`,
-          stroke: "#9ca3af",
-          "stroke-width": "1.5",
-          "stroke-opacity": "0.6",
-          "stroke-dasharray": "6 4",
-          fill: "none",
-        });
-        edgesGroup.appendChild(path);
-      }
+    const dx = toNode.x - fromNode.x;
+    const dy = toNode.y - fromNode.y;
+    const cx = fromNode.x + dx * 0.5;
+    const cy = fromNode.y + dy * 0.5 + Math.sign(dy || 1) * Math.abs(dx) * 0.18;
+    const path = createSvgElement("path", {
+      d: `M ${fromNode.x} ${fromNode.y} Q ${cx} ${cy} ${toNode.x} ${toNode.y}`,
+      stroke: "#cbd5e1",
+      "stroke-width": "2.5",
+      "stroke-opacity": "0.85",
+      fill: "none",
     });
+    edgesGroup.appendChild(path);
   });
 
   layout.nodes.forEach((node) => {
@@ -366,7 +337,9 @@ function renderTree(data) {
 }
 
 async function loadRun(runId) {
-  if (!runId) return false;
+  if (!runId) {
+    return false;
+  }
   setGraphState(`Loading run ${runId}...`);
   const data = await fetchJson(`/run/${encodeURIComponent(runId)}/tree`);
   renderTree(data);
@@ -378,7 +351,9 @@ async function loadLatestRun() {
   setGraphState("Loading latest run...");
   const payload = await fetchJson("/latest_run");
   const runId = payload && payload.run_id ? String(payload.run_id).trim() : "";
-  if (!runId) return false;
+  if (!runId) {
+    return false;
+  }
   runIdInput.value = runId;
   await loadRun(runId);
   return true;
@@ -387,7 +362,7 @@ async function loadLatestRun() {
 function connectSSE() {
   closeLive();
   runIdDisplay.textContent = "LIVE";
-  setGraphState("Connecting live updates...");
+  setGraphState("Connecting live task updates...");
 
   fetchJson("/current")
     .then((data) => {
@@ -395,12 +370,12 @@ function connectSSE() {
         renderTree(data);
         runIdDisplay.textContent = "LIVE";
       } else if (!state.treeData) {
-        setGraphState("Waiting for live data...", "empty");
+        setGraphState("Waiting for live task data...", "empty");
       }
     })
     .catch(() => {
       if (!state.treeData) {
-        setGraphState("Waiting for live data...", "empty");
+        setGraphState("Waiting for live task data...", "empty");
       }
     });
 
@@ -426,7 +401,9 @@ function clampScale(nextScale) {
 }
 
 svg.addEventListener("pointerdown", (event) => {
-  if (event.target.closest(".node")) return;
+  if (event.target.closest(".node")) {
+    return;
+  }
   state.isPanning = true;
   state.panStart = {
     pointerX: event.clientX,
@@ -440,7 +417,9 @@ svg.addEventListener("pointerdown", (event) => {
 });
 
 svg.addEventListener("pointermove", (event) => {
-  if (!state.isPanning || !state.panStart) return;
+  if (!state.isPanning || !state.panStart) {
+    return;
+  }
   state.userAdjustedViewport = true;
   state.currentTransform.x = state.panStart.originX + (event.clientX - state.panStart.pointerX);
   state.currentTransform.y = state.panStart.originY + (event.clientY - state.panStart.pointerY);
@@ -469,7 +448,9 @@ svg.addEventListener("pointerleave", () => {
 svg.addEventListener(
   "wheel",
   (event) => {
-    if (!state.viewportEl) return;
+    if (!state.viewportEl) {
+      return;
+    }
     event.preventDefault();
     state.userAdjustedViewport = true;
     const rect = svg.getBoundingClientRect();

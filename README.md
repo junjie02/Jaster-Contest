@@ -1,14 +1,21 @@
 # Jaster
 
-Jaster is a clean pentest-agent runtime centered on a shared global attack tree.
+Jaster is a pentest multi-agent runtime built around a shared task tree and MCP tools.
+
+## Runtime Flow
+
+- `plan` reads the full task tree, bootstrap curl result, latest discoveries, and reflection history, then patches the task tree and dispatches task keys.
+- Multiple `strategy` workers run in parallel, each bound to one task node. Every strategy can plan multiple concurrent MCP tool calls per round and loops for up to 10 rounds.
+- `reflection` reviews all strategy outputs, updates node status (`in_progress`, `completed`, `failed`), and gives the planner guidance for the next cycle.
+- `submission` reviews merged flag candidates and decides whether to submit.
 
 ## Highlights
 
-- Five agent roles with strict JSON contracts: `recon`, `strategy`, `reflection`, `builder`, `submission`
-- Shared attack tree snapshot passed to agents instead of ad-hoc payload blobs
-- OpenAI-compatible chat completions client
-- File-based run storage
-- Direct skill execution and Builder-generated runtime scripts
+- Task-tree orchestration instead of the old attack-tree / builder pipeline
+- MCP-only execution path for strategy actions
+- File-backed run storage with task tree snapshots, discoveries, and observations
+- Lightweight web UI for live task-tree viewing
+- OpenAI-compatible chat completion client
 
 ## Quick Start
 
@@ -19,23 +26,31 @@ pip install -e .[dev]
 jaster run --target http://example.com
 ```
 
+## MCP Setup
+
+The repository includes a root `mcp.json` pointing at `python -u -m jaster.mcp.mcp_service`.
+
+- `OPENAI_API_KEY` is required for the planner/strategy/reflection LLM and for MCP tools such as `expert_analysis`
+- `OPENAI_BASE_URL` defaults to `https://api.openai.com/v1`
+- `OPENAI_MODEL` defaults to `gpt-4o-mini`
+- `JASTER_MCP_CONFIG` can override the default `./mcp.json`
+
 ## Environment
 
 - `.env` in the project root is loaded automatically by the CLI
-- `OPENAI_API_KEY`
-- `OPENAI_BASE_URL` optional, defaults to `https://api.openai.com/v1`
-- `OPENAI_MODEL` optional, defaults to `gpt-4o-mini`
-- `OPENAI_REASONING_SPLIT` optional, must be explicitly set to `true` to enable (no auto-detection); useful for providers such as MiniMax that support `reasoning_split`
-- `JASTER_DATA_DIR` optional, defaults to `./data`
-- `JASTER_MAX_ROUNDS` optional, defaults to `12`; this is the shared budget for all agent phases (`recon`, `reflection`, `strategy`)
-- `JASTER_HTTP_TIMEOUT` optional, defaults to `120`
-- `JASTER_LLM_MAX_RETRIES` optional, defaults to `3`; **agent-level** retry — applies only when JSON extraction fails or schema validation fails within a single agent call. Does NOT retry HTTP 5xx errors; use `JASTER_LLM_HTTP_MAX_RETRIES` for that.
-- `JASTER_PHASE_MAX_RETRIES` optional, defaults to `3`; applies to same-phase self-correction after an action executes but fails and the agent needs to revise the plan
-- `JASTER_LLM_HTTP_MAX_RETRIES` optional, defaults to `3`; HTTP-level retry count for 429/5xx/network errors
-- `JASTER_LLM_HTTP_RETRY_BASE_DELAY` optional, defaults to `1.0`; base delay in seconds for exponential backoff
-- `JASTER_LLM_HTTP_RETRY_MAX_DELAY` optional, defaults to `8.0`; max delay cap for exponential backoff
-- `JASTER_LLM_HTTP_RETRY_JITTER` optional, defaults to `0.2`; jitter added to backoff to avoid thundering herd
-- `JASTER_LLM_RATE_LIMIT_MAX_REQUESTS` optional, defaults to `2`; max requests per rate-limit window
-- `JASTER_LLM_RATE_LIMIT_WINDOW_SECONDS` optional, defaults to `1.0`; rate-limit window in seconds
-
-使用前修改username和password的存放理解。
+- `JASTER_DATA_DIR` defaults to `./data`
+- `JASTER_MAX_ROUNDS` defaults to `12`
+- `JASTER_STRATEGY_MAX_ROUNDS` defaults to `10`
+- `JASTER_STRATEGY_RECENT_OBSERVATION_LIMIT` defaults to `8`
+- `JASTER_PARALLEL_TASK_WORKERS` defaults to `4`
+- `JASTER_PARALLEL_ACTION_WORKERS` defaults to `4`
+- `JASTER_MCP_TOOL_TIMEOUT` defaults to `180`
+- `JASTER_HTTP_TIMEOUT` defaults to `120`
+- `JASTER_LLM_MAX_RETRIES` defaults to `3`
+- `JASTER_PHASE_MAX_RETRIES` defaults to `3`
+- `JASTER_LLM_HTTP_MAX_RETRIES` defaults to `3`
+- `JASTER_LLM_HTTP_RETRY_BASE_DELAY` defaults to `1.0`
+- `JASTER_LLM_HTTP_RETRY_MAX_DELAY` defaults to `8.0`
+- `JASTER_LLM_HTTP_RETRY_JITTER` defaults to `0.2`
+- `JASTER_LLM_RATE_LIMIT_MAX_REQUESTS` defaults to `2`
+- `JASTER_LLM_RATE_LIMIT_WINDOW_SECONDS` defaults to `1.0`

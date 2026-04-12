@@ -96,14 +96,15 @@ def run(
             return
         try:
             import httpx
-            httpx.post(f"{url}/tree_update", json=snapshot, timeout=5)
+
+            payload = snapshot.model_dump() if hasattr(snapshot, "model_dump") else snapshot
+            httpx.post(f"{url}/tree_update", json=payload, timeout=5)
         except Exception:
             pass  # server not running, silently ignore
 
     orchestrator = JasterOrchestrator(
         store=FileRunStore(_data_dir(root) / "runs"),
         prompt_root=root / "src" / "jaster" / "prompts",
-        functions_dir=root / "functions",
         skills_dir=root / "skills",
         llm=OpenAIChatClient(),
         on_tree_update=_post_tree_update,
@@ -155,7 +156,6 @@ def contest_run(
         orchestrator = JasterOrchestrator(
             store=FileRunStore(data_dir / "runs"),
             prompt_root=root / "src" / "jaster" / "prompts",
-            functions_dir=root / "functions",
             skills_dir=root / "skills",
             llm=OpenAIChatClient(),
         )
@@ -184,7 +184,6 @@ def contest_run(
         return JasterOrchestrator(
             store=FileRunStore(data_dir / "runs"),
             prompt_root=root / "src" / "jaster" / "prompts",
-            functions_dir=root / "functions",
             skills_dir=root / "skills",
             llm=OpenAIChatClient(),
         )

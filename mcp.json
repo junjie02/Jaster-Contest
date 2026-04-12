@@ -1,0 +1,16 @@
+{
+  "mcpServers": {
+    "jaster": {
+      "type": "stdio",
+      "command": "python",
+      "args": [
+        "-u",
+        "-m",
+        "jaster.mcp.mcp_service"
+      ],
+      "env": {
+        "PYTHONPATH": "/home/kali/桌面/Jaster-Plus/src"
+      }
+    }
+  }
+}

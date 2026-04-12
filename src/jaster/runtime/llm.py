@@ -130,6 +130,31 @@ class OpenAIChatClient:
         self._log_success("json", started)
         return _extract_json(text)
 
+    def complete_text(self, *, system: str, prompt: str) -> str:
+        body = self._build_body(system=system, prompt=prompt)
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json",
+        }
+        started = time.monotonic()
+        self._log_request("text", body=body)
+        self._acquire_rate_limit()
+        try:
+            response = self._post_with_retry(
+                f"{self.base_url}/chat/completions", headers, body, "text"
+            )
+        except httpx.HTTPError as exc:
+            self._log_failure("text", started, exc)
+            raise
+        try:
+            payload = response.json()
+            text = payload["choices"][0]["message"]["content"]
+        except (json.JSONDecodeError, KeyError, IndexError, TypeError) as exc:
+            self._log_failure("text", started, exc)
+            raise LLMError("LLM returned an invalid text response", stage="response_shape") from exc
+        self._log_success("text", started)
+        return str(text or "")
+
     def complete_tool_call(
         self,
         *,

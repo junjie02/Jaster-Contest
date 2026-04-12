@@ -4,12 +4,10 @@ from pathlib import Path
 from typing import Any
 
 from jaster.domain import (
-    BuilderInput,
-    BuilderOutput,
+    PlanInput,
+    PlanOutput,
     ReflectionInput,
     ReflectionOutput,
-    SkillRouterInput,
-    SkillRouterOutput,
     StrategyInput,
     StrategyOutput,
     SubmissionInput,
@@ -19,6 +17,12 @@ from jaster.runtime.llm import OpenAIChatClient
 from jaster.runtime.prompts import PromptLibrary
 
 from .base import JsonAgent
+
+
+class PlanAgent(JsonAgent[PlanInput, PlanOutput]):
+    role = "plan"
+    input_model = PlanInput
+    output_model = PlanOutput
 
 
 class StrategyAgent(JsonAgent[StrategyInput, StrategyOutput]):
@@ -33,18 +37,6 @@ class ReflectionAgent(JsonAgent[ReflectionInput, ReflectionOutput]):
     output_model = ReflectionOutput
 
 
-class SkillRouterAgent(JsonAgent[SkillRouterInput, SkillRouterOutput]):
-    role = "skill_router"
-    input_model = SkillRouterInput
-    output_model = SkillRouterOutput
-
-
-class BuilderAgent(JsonAgent[BuilderInput, BuilderOutput]):
-    role = "builder"
-    input_model = BuilderInput
-    output_model = BuilderOutput
-
-
 class SubmissionAgent(JsonAgent[SubmissionInput, SubmissionOutput]):
     role = "submission"
     input_model = SubmissionInput
@@ -54,9 +46,8 @@ class SubmissionAgent(JsonAgent[SubmissionInput, SubmissionOutput]):
 def build_agents(prompt_root: Path, llm: OpenAIChatClient) -> dict[str, Any]:
     prompts = PromptLibrary(prompt_root)
     return {
+        "plan": PlanAgent(llm, prompts),
         "strategy": StrategyAgent(llm, prompts),
         "reflection": ReflectionAgent(llm, prompts),
-        "skill_router": SkillRouterAgent(llm, prompts),
-        "builder": BuilderAgent(llm, prompts),
         "submission": SubmissionAgent(llm, prompts),
     }

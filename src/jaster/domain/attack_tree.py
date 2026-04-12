@@ -4,51 +4,47 @@ import hashlib
 from collections import defaultdict
 
 from .models import (
-    AttackTreeSnapshot,
-    GlobalFacts,
-    NodeStatus,
-    TreeNodeSnapshot,
-    TreePatch,
+    TaskNodePatch,
+    TaskNodeSnapshot,
+    TaskNodeUpdatePatch,
+    TaskStatus,
+    TaskTreePatch,
+    TaskTreeSnapshot,
 )
 
 
-def _stable_key(parent_key: str, kind: str, title: str) -> str:
-    material = "||".join([parent_key, kind, title.strip().lower()])
+def _stable_key(parent_key: str, title: str, completion_criteria: str) -> str:
+    material = "||".join([parent_key.strip(), title.strip().lower(), completion_criteria.strip().lower()])
     return hashlib.sha1(material.encode("utf-8")).hexdigest()[:16]
 
 
-class AttackTree:
-    def __init__(self, snapshot: AttackTreeSnapshot | None = None) -> None:
+class TaskTree:
+    def __init__(self, snapshot: TaskTreeSnapshot | None = None) -> None:
         if snapshot is None:
-            snapshot = AttackTreeSnapshot()
+            snapshot = TaskTreeSnapshot()
         self._nodes = {node.key: node for node in snapshot.nodes}
-        self._facts = snapshot.facts
 
     @classmethod
-    def bootstrap(cls, target: str, *, title: str | None = None) -> "AttackTree":
-        root = TreeNodeSnapshot(
-            key=_stable_key("", "target", title or target),
-            title=title or target,
-            kind="target",
-            status=NodeStatus.exploring,
-            priority=100,
-            reason="Run bootstrap",
-            how="Start with low-cost fingerprinting and entry-point discovery",
+    def bootstrap(cls, target: str, *, title: str | None = None) -> "TaskTree":
+        root_title = title or f"Exploit {target}"
+        root = TaskNodeSnapshot(
+            key=_stable_key("", root_title, "Obtain flag or decisive exploitation path"),
+            title=root_title,
+            reason="Bootstrap root task created from run target.",
+            completion_criteria="Obtain flag or decisive exploitation path",
+            status=TaskStatus.in_progress,
         )
-        return cls(AttackTreeSnapshot(nodes=[root]))
+        return cls(TaskTreeSnapshot(nodes=[root]))
 
-    def snapshot(self) -> AttackTreeSnapshot:
+    def snapshot(self) -> TaskTreeSnapshot:
         children = defaultdict(list)
         for node in self._nodes.values():
             children[node.parent_key].append(node.key)
         nodes = sorted(
             self._nodes.values(),
-            key=lambda node: (self.depth(node.key), -node.priority, node.title, node.key),
+            key=lambda node: (self.depth(node.key), node.title.lower(), node.key),
         )
-        return AttackTreeSnapshot(
-            nodes=nodes,
-            facts=self._facts,
-        )
+        return TaskTreeSnapshot(nodes=nodes)
 
     def depth(self, key: str) -> int:
         depth = 0
@@ -58,98 +54,69 @@ class AttackTree:
             node = self._nodes.get(node.parent_key)
         return depth
 
-    def _collect_descendants(self, key: str) -> list[str]:
-        """递归收集所有后代节点的 key"""
-        descendants = []
-        for node in self._nodes.values():
-            if node.parent_key == key:
-                descendants.append(node.key)
-                descendants.extend(self._collect_descendants(node.key))
-        return descendants
+    def get(self, key: str) -> TaskNodeSnapshot | None:
+        return self._nodes.get(key)
 
-    def apply_patch(self, patch: TreePatch) -> AttackTreeSnapshot:
-        # 记录新增节点的 key 及其关联的 refs，用于后续双向关联
-        new_node_refs: dict[str, list[str]] = {}
+    def nodes_by_key(self) -> dict[str, TaskNodeSnapshot]:
+        return dict(self._nodes)
 
-        for node_patch in patch.add_nodes:
-            key = _stable_key(
-                node_patch.parent_key,
-                node_patch.kind.value,
-                node_patch.title,
-            )
+    def apply_patch(self, patch: TaskTreePatch) -> TaskTreeSnapshot:
+        for add in patch.add_nodes:
+            key = _stable_key(add.parent_key, add.title, add.completion_criteria)
             if key in self._nodes:
-                node = self._nodes[key]
-                node.priority = max(node.priority, node_patch.priority)
-                if node_patch.reason:
-                    node.reason = node_patch.reason
-                if node_patch.how:
-                    node.how = node_patch.how
-                if node_patch.status:
-                    node.status = node_patch.status
-                # 合并 shared_refs（已有节点也要更新关联），排除 parent_key
-                if node_patch.shared_refs:
-                    for ref_key in node_patch.shared_refs:
-                        if ref_key and ref_key not in node.shared_refs and ref_key != node_patch.parent_key:
-                            node.shared_refs.append(ref_key)
+                existing = self._nodes[key]
+                self._merge_existing(existing, add)
                 continue
-            # 过滤掉 parent_key，避免父子关系出现在 shared_refs
-            filtered_refs = [r for r in node_patch.shared_refs if r and r != node_patch.parent_key]
-            self._nodes[key] = TreeNodeSnapshot(
+            self._nodes[key] = TaskNodeSnapshot(
                 key=key,
-                parent_key=node_patch.parent_key,
-                title=node_patch.title,
-                kind=node_patch.kind,
-                priority=node_patch.priority,
-                reason=node_patch.reason,
-                how=node_patch.how,
-                status=node_patch.status,
-                shared_refs=list(filtered_refs),
+                parent_key=add.parent_key,
+                title=add.title,
+                reason=add.reason,
+                completion_criteria=add.completion_criteria,
+                status=add.status,
+                latest_summary=add.latest_summary,
+                latest_findings=list(add.latest_findings),
+                attempt_count=add.attempt_count,
             )
-            if filtered_refs:
-                new_node_refs[key] = filtered_refs
-
-        # 处理双向关联：在被引用的节点中添加当前节点的 key（排除 parent_key）
-        parent_keys_in_tree = {node.parent_key for node in self._nodes.values()}
-        for new_key, refs in new_node_refs.items():
-            for ref_key in refs:
-                if ref_key in self._nodes and new_key not in self._nodes[ref_key].shared_refs and ref_key not in parent_keys_in_tree:
-                    self._nodes[ref_key].shared_refs.append(new_key)
 
         for update in patch.update_nodes:
             node = self._nodes.get(update.key)
             if node is None:
                 continue
-            if update.status is not None:
-                node.status = update.status
-                # 当节点被标记为 failed，删除其所有后代
-                if update.status == NodeStatus.failed:
-                    to_delete = self._collect_descendants(update.key)
-                    for descendant_key in to_delete:
-                        del self._nodes[descendant_key]
-            if update.priority is not None:
-                node.priority = update.priority
-            if update.reason is not None:
-                node.reason = update.reason
-            if update.how is not None:
-                node.how = update.how
-            # 处理 shared_refs 更新（合并而非替换）
-            if update.shared_refs is not None:
-                for ref_key in update.shared_refs:
-                    if ref_key and ref_key in self._nodes and ref_key not in node.shared_refs:
-                        node.shared_refs.append(ref_key)
-                        # 双向关联
-                        if node.key not in self._nodes[ref_key].shared_refs:
-                            self._nodes[ref_key].shared_refs.append(node.key)
+            self._apply_update(node, update)
         return self.snapshot()
 
-    def merge_facts(self, facts: GlobalFacts) -> None:
-        self._facts.flags = _merge_unique(self._facts.flags, facts.flags)
-        self._facts.credentials = _merge_unique(self._facts.credentials, facts.credentials)
+    @staticmethod
+    def _merge_existing(node: TaskNodeSnapshot, add: TaskNodePatch) -> None:
+        if add.reason:
+            node.reason = add.reason
+        if add.completion_criteria:
+            node.completion_criteria = add.completion_criteria
+        if add.status:
+            node.status = add.status
+        if add.latest_summary:
+            node.latest_summary = add.latest_summary
+        if add.latest_findings:
+            merged = list(node.latest_findings)
+            for item in add.latest_findings:
+                if item and item not in merged:
+                    merged.append(item)
+            node.latest_findings = merged
+        node.attempt_count = max(node.attempt_count, add.attempt_count)
 
-
-def _merge_unique(left: list[str], right: list[str]) -> list[str]:
-    seen: list[str] = []
-    for item in [*left, *right]:
-        if item and item not in seen:
-            seen.append(item)
-    return seen
+    @staticmethod
+    def _apply_update(node: TaskNodeSnapshot, update: TaskNodeUpdatePatch) -> None:
+        if update.title is not None:
+            node.title = update.title
+        if update.reason is not None:
+            node.reason = update.reason
+        if update.completion_criteria is not None:
+            node.completion_criteria = update.completion_criteria
+        if update.status is not None:
+            node.status = update.status
+        if update.latest_summary is not None:
+            node.latest_summary = update.latest_summary
+        if update.latest_findings is not None:
+            node.latest_findings = list(update.latest_findings)
+        if update.attempt_count is not None:
+            node.attempt_count = update.attempt_count

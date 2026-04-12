@@ -1,85 +1,64 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
-
 ## Project Overview
 
-Jaster is a multi-agent penetration testing runtime centered on a shared global attack tree. Five specialized agents (recon, strategy, reflection, builder, submission) communicate via strict JSON contracts, orchestrated around an OpenAI-compatible LLM client.
+Jaster is a multi-agent pentest runtime centered on a shared task tree. The active loop is:
+
+```text
+plan -> parallel strategy tasks -> reflection -> submission -> repeat
+```
+
+There is no builder path and no `functions/*.json` execution path anymore. Strategy actions are MCP-only.
 
 ## Commands
 
 ```bash
-pip install -e .          # Base install
-pip install -e .[dev]      # With dev dependencies (includes pytest)
+pip install -e .
+pip install -e .[dev]
 
-jaster run --target <url>  # Run a pentest
-jaster inspect <run_id>     # Inspect a past run
-jaster serve --port 8765   # Start SSE server for web UI
+jaster run --target <url>
+jaster inspect <run_id>
+jaster serve --port 8765
 
-pytest                      # Run all tests
-pytest tests/test_foo.py    # Run a single test file
+python -m compileall src
+pytest
 ```
 
 ## Architecture
 
-### Orchestration Loop
-`JasterOrchestrator.run()` executes up to `JASTER_MAX_ROUNDS` (default 12) iterations through three phases:
-```
-recon → reflection → strategy → (repeat or finish)
-```
+### Task Tree
 
-- **Recon agent**: Explores target, expands attack tree with nodes (assets, weaknesses, techniques), picks action
-- **Reflection agent**: Organizes findings, provides strategic guidance, updates `next_focus_key`
-- **Strategy agent**: Targets specific exploitable node, formulates exploitation plan
-- **Builder agent**: On-demand LLM generates Python/shell scripts for complex tasks
-- **Submission agent**: Evaluates flag candidates and decides whether to submit
+- `TaskTree` lives in `src/jaster/domain/attack_tree.py`
+- Every node is a task with `reason`, `completion_criteria`, `attempt_count`, `latest_summary`, and `latest_findings`
+- Node statuses are only `in_progress`, `completed`, and `failed`
 
-### Attack Tree
-Central data structure shared across all agents. Agents return `TreePatch` objects (add/update nodes) applied to the tree. Node kinds: `target`, `asset`, `entry`, `weakness`, `technique`, `hypothesis`. Statuses: `unexplored`, `exploring`, `success`, `failed`.
+### Agents
 
-### Skills System
-Skill definitions are JSON specs in `skills/*.json` (port_scan, sqli_exploit, ffuf_bruteforce, etc.). `SkillExecutor` runs them as subprocesses with proper argument handling. Agents choose between `skill`, `builder`, or `finish` actions.
+- `PlanAgent`: updates the task tree and dispatches task keys
+- `StrategyAgent`: owns one assigned task and can run multiple MCP tools concurrently each round
+- `ReflectionAgent`: updates task status and gives planner guidance
+- `SubmissionAgent`: filters flag candidates before submission
 
-### Zone System
-4 zones with different focus areas, determined by `detect_zone()`:
-- **zone1**: Default (general pentest)
-- **zone2**: CVE/cloud focus
-- **zone3**: Pivot/multi-step focus
-- **zone4**: Kerberos/AD focus
+### MCP
 
-Prompt templates: `prompts/shared.md` + `prompts/agents/{role}.md` + `prompts/zones/{zone}.md`
+- Root config: `mcp.json`
+- MCP service entrypoint: `python -u -m jaster.mcp.mcp_service`
+- Sync client wrappers live in `src/jaster/mcp/mcp_client.py`
 
-### Agent JSON Contracts
-Each agent has strict input/output Pydantic models (defined in `src/jaster/domain/models.py`): `ReconInput→ReconOutput`, `StrategyInput→StrategyOutput`, etc. `JsonAgent` base class handles LLM communication, JSON parsing with retry logic, and response normalization.
-
-## Key Files
+### Key Files
 
 | File | Purpose |
 |------|---------|
-| `src/jaster/cli.py` | CLI entry point (Typer) |
-| `src/jaster/runtime/orchestrator.py` | Main orchestration brain |
-| `src/jaster/runtime/skills.py` | Skill catalog and execution |
-| `src/jaster/runtime/llm.py` | OpenAI-compatible LLM client |
-| `src/jaster/domain/attack_tree.py` | Attack tree data structure |
-| `src/jaster/domain/models.py` | All Pydantic contract models |
-| `src/jaster/runtime/prompts.py` | Prompt template rendering |
+| `src/jaster/runtime/orchestrator.py` | Main task-tree orchestration loop |
+| `src/jaster/domain/models.py` | Agent contracts and runtime models |
+| `src/jaster/domain/attack_tree.py` | Task tree patch / snapshot logic |
+| `src/jaster/agents/base.py` | Strict JSON normalization and validation |
+| `src/jaster/mcp/mcp_service.py` | Migrated MCP tools |
+| `src/jaster/web/app.js` | Task tree viewer |
 
-## Environment Variables
+## Testing Focus
 
-| Variable | Default | Purpose |
-|----------|---------|---------|
-| `OPENAI_API_KEY` | Required | API authentication |
-| `OPENAI_BASE_URL` | `https://api.openai.com/v1` | API endpoint |
-| `OPENAI_MODEL` | `gpt-4o-mini` | Model name |
-| `OPENAI_REASONING_SPLIT` | `false` | Must be explicit `true` to enable (no auto-detection) |
-| `JASTER_DATA_DIR` | `./data` | Run storage path |
-| `JASTER_MAX_ROUNDS` | `12` | Phase iteration budget |
-| `JASTER_LLM_MAX_RETRIES` | `3` | Agent-level retries (JSON/schema errors only, NOT HTTP 5xx) |
-| `JASTER_PHASE_MAX_RETRIES` | `3` | Phase-level self-correction retries |
-| `JASTER_HTTP_TIMEOUT` | `120` | HTTP request timeout |
-| `JASTER_LLM_HTTP_MAX_RETRIES` | `3` | HTTP-level retry count (429/5xx/network errors) |
-| `JASTER_LLM_HTTP_RETRY_BASE_DELAY` | `1.0` | Exponential backoff base delay (seconds) |
-| `JASTER_LLM_HTTP_RETRY_MAX_DELAY` | `8.0` | Exponential backoff max delay cap (seconds) |
-| `JASTER_LLM_HTTP_RETRY_JITTER` | `0.2` | Backoff jitter amplitude (seconds) |
-| `JASTER_LLM_RATE_LIMIT_MAX_REQUESTS` | `2` | Max requests per rate-limit window |
-| `JASTER_LLM_RATE_LIMIT_WINDOW_SECONDS` | `1.0` | Rate-limit window (seconds) |
+- Task tree patching
+- Agent response normalization
+- Orchestrator cycle semantics
+- MCP wrapper behavior with mocked tool inventory / tool calls
