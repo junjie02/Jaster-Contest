@@ -20,6 +20,8 @@ from jaster.domain import (
     ChallengeSpec,
     CodeEvidence,
     CompressionNote,
+    ContestControlAction,
+    ContestControlResult,
     ExecutionResult,
     FailurePattern,
     LatestExecutionResult,
@@ -42,8 +44,7 @@ from jaster.domain import (
     StrategicRejection,
     StrategyInput,
     StrategyTaskResult,
-    SubmissionInput,
-    SubmissionResult,
+    SubmissionAttempt,
     TaskDiscovery,
     TaskDependencyContext,
     TaskExecutionResult,
@@ -201,7 +202,7 @@ class JasterOrchestrator:
         challenge: ChallengeSpec,
         *,
         max_rounds: int = 12,
-        submission_handler: callable | None = None,
+        reflection_control_handler: callable | None = None,
         round_hook: callable | None = None,
     ) -> RunState:
         run_id = self.store.new_run_id()
@@ -237,6 +238,9 @@ class JasterOrchestrator:
                 reflection_history=state.reflection_history,
                 latest_discoveries=state.latest_discoveries,
                 available_artifacts=state.available_artifacts,
+                submitted_flags=state.submitted_flags,
+                incorrect_flags=state.incorrect_flags,
+                submission_history=state.submission_history,
             )
             plan_out, plan_elapsed = self._timed_agent_run(
                 "plan",
@@ -251,6 +255,16 @@ class JasterOrchestrator:
             dispatch_keys = self._resolve_dispatch_keys(task_tree, plan_out.dispatch_task_keys)
             dispatch_keys = self._merge_auto_dispatch_keys(task_tree, dispatch_keys, added_keys)
             self._log_plan_cycle(cycle, task_tree, plan_out, dispatch_keys)
+            control_results: list[ContestControlResult] = []
+            if getattr(plan_out, "control_actions", None) and reflection_control_handler:
+                control_results = reflection_control_handler(
+                    challenge,
+                    list(plan_out.control_actions),
+                    state,
+                    cycle,
+                ) or []
+                self._apply_control_results(state, challenge, cycle, control_results)
+                self._log_reflection_control(cycle, control_results)
             planner_entry = PlannerHistoryEntry(
                 cycle=cycle,
                 summary=plan_out.phase_summary,
@@ -275,10 +289,18 @@ class JasterOrchestrator:
                     "input": _agent_trace(self.agents.get("plan")),
                     "input_payload": plan_input.model_dump(),
                     "output": plan_out.model_dump(),
+                    "control_results": [item.model_dump() for item in control_results],
                 },
             )
             self.store.save_state(state)
             self._notify_tree_update(state.task_tree)
+
+            if challenge.flag_count > 0 and challenge.flag_got_count >= challenge.flag_count:
+                self._log("[*] Run stopping: all flags submitted during planning")
+                state.rounds_completed = cycle
+                self.store.save_state(state)
+                self._notify_tree_update(state.task_tree)
+                break
 
             if not dispatch_keys:
                 in_progress = [node.key for node in state.task_tree.nodes if node.status == TaskStatus.in_progress]
@@ -302,6 +324,9 @@ class JasterOrchestrator:
                 persistent_code_evidence=state.persistent_code_evidence,
                 observations=state.observations,
                 shared_bulletin=state.shared_bulletin,
+                submitted_flags=state.submitted_flags,
+                incorrect_flags=state.incorrect_flags,
+                submission_history=state.submission_history,
             )
 
             state.observations.extend(observations)
@@ -324,11 +349,23 @@ class JasterOrchestrator:
                 ReflectionInput(
                     objective="Review the latest strategy batch, update task states, and advise the next planning cycle.",
                     task_tree=_prompt_task_tree(state.task_tree),
-                    challenge_context=_challenge_context(challenge),
+                    challenge_context=_challenge_context(
+                        challenge,
+                        submitted_flags=state.submitted_flags,
+                    incorrect_flags=state.incorrect_flags,
+                    submission_history=state.submission_history,
+                ),
                     strategy_results=strategy_results,
+                    candidate_flags=_merge_flag_candidates(
+                        *[result.flag_candidates for result in strategy_results],
+                    ),
+                    submitted_flags=list(state.submitted_flags),
+                    incorrect_flags=list(state.incorrect_flags),
+                    submission_history=list(state.submission_history[-6:]),
                     reflection_history=list(state.reflection_history),
                     latest_discoveries=_prompt_discoveries(batch_discoveries),
                     available_artifacts=_prompt_artifacts(state.available_artifacts),
+                    available_control_tools=[],
                 ),
             )
             self._log(f"[*] Cycle {cycle}: reflection")
@@ -344,6 +381,7 @@ class JasterOrchestrator:
                 failure_patterns=list(reflection_out.failure_patterns),
                 strategic_rejections=list(reflection_out.strategic_rejections),
                 critical_findings=list(reflection_out.critical_findings),
+                control_results=[],
             )
             state.reflection_history.append(reflection_entry)
             self._publish_reflection_bulletins(
@@ -401,43 +439,9 @@ class JasterOrchestrator:
                     "input": _agent_trace(self.agents.get("reflection")),
                     "output": reflection_out.model_dump(),
                     "strategy_results": [item.model_dump() for item in strategy_results],
+                    "control_results": [],
                 },
             )
-
-            candidates = _merge_flag_candidates(
-                *[result.flag_candidates for result in strategy_results],
-                reflection_out.flag_candidates,
-            )
-            if candidates:
-                submission_out, submission_elapsed = self._timed_agent_run(
-                    "submission",
-                    challenge.zone,
-                    SubmissionInput(
-                        candidates=candidates,
-                        latest_discoveries=_prompt_discoveries(state.latest_discoveries),
-                        submitted_flags=state.submitted_flags,
-                    ),
-                )
-                self._log(f"[*] Cycle {cycle}: submission | LLM time: {submission_elapsed:.2f}s")
-                if submission_out.should_submit and submission_out.flag and submission_out.flag not in state.submitted_flags:
-                    if submission_handler:
-                        submission_result = submission_handler(challenge, submission_out.flag, state)
-                        if submission_result.correct:
-                            state.submitted_flags.append(submission_out.flag)
-                            challenge.flag_count = submission_result.flag_count or challenge.flag_count
-                            challenge.flag_got_count = submission_result.flag_got_count or challenge.flag_got_count
-                    else:
-                        state.submitted_flags.append(submission_out.flag)
-                self.store.append_round(
-                    run_id,
-                    f"submission_round_{cycle:03d}",
-                    {
-                        "cycle": cycle,
-                        "agent": "submission",
-                        "input": _agent_trace(self.agents.get("submission")),
-                        "output": submission_out.model_dump(),
-                    },
-                )
 
             state.rounds_completed = cycle
             self.store.save_state(state)
@@ -473,6 +477,9 @@ class JasterOrchestrator:
         persistent_code_evidence: list[PersistentCodeEvidence],
         observations: list[Observation],
         shared_bulletin: list[SharedBulletinEntry],
+        submitted_flags: list[str],
+        incorrect_flags: list[str],
+        submission_history: list[SubmissionAttempt],
     ) -> tuple[list[StrategyTaskResult], list[Observation], list[TaskDiscovery], ExecutionResult | None, _StrategyBulletinBoard]:
         nodes_by_key = {node.key: node for node in task_tree.nodes}
         valid_keys = [key for key in task_keys if key in nodes_by_key]
@@ -499,6 +506,9 @@ class JasterOrchestrator:
                     persistent_code_evidence=persistent_code_evidence,
                     observations=observations,
                     bulletin_board=bulletin_board,
+                    submitted_flags=submitted_flags,
+                    incorrect_flags=incorrect_flags,
+                    submission_history=submission_history,
                 ): key
                 for key in valid_keys
             }
@@ -559,6 +569,9 @@ class JasterOrchestrator:
         persistent_code_evidence: list[PersistentCodeEvidence],
         observations: list[Observation],
         bulletin_board: _StrategyBulletinBoard,
+        submitted_flags: list[str],
+        incorrect_flags: list[str],
+        submission_history: list[SubmissionAttempt],
     ) -> tuple[StrategyTaskResult, list[Observation]]:
         recent_rounds = _recent_observations_for_task(
             observations,
@@ -601,6 +614,9 @@ class JasterOrchestrator:
                     limit=6,
                 ),
                 bulletin_digest=bulletin_digest,
+                submitted_flags=submitted_flags,
+                incorrect_flags=incorrect_flags,
+                submission_history=submission_history,
             )
 
             try:
@@ -713,20 +729,33 @@ class JasterOrchestrator:
         reflection_history: list[ReflectionHistoryEntry],
         latest_discoveries: list[TaskDiscovery],
         available_artifacts: list[ArtifactRef],
+        submitted_flags: list[str],
+        incorrect_flags: list[str],
+        submission_history: list[SubmissionAttempt],
     ) -> PlanInput:
         payload = PlanInput(
             objective=f"Plan the next batch of penetration tasks for {challenge.target}.",
             task_tree=_prompt_task_tree(task_tree),
-            challenge_context=_challenge_context(challenge),
+            challenge_context=_challenge_context(
+                challenge,
+                submitted_flags=submitted_flags,
+                incorrect_flags=incorrect_flags,
+                submission_history=submission_history,
+            ),
             bootstrap_execution=_compact_execution(bootstrap_execution),
             planner_context=planner_context.model_copy(deep=True) if planner_context else None,
-            task_status_summary="",
-            failure_patterns_summary="",
+            task_status_summary=_task_status_summary(task_tree),
+            failure_patterns_summary=_failure_patterns_summary(reflection_history),
             task_status_digest=_task_status_digest(task_tree),
             failure_patterns_digest=_failure_patterns_digest(reflection_history),
+            candidate_flags=_merge_flag_candidates(*[item.flag_candidates for item in latest_discoveries[-12:]]),
+            submitted_flags=list(submitted_flags),
+            incorrect_flags=list(incorrect_flags),
+            submission_history=list(submission_history[-6:]),
             reflection_history=[item.model_copy(deep=True) for item in reflection_history],
             latest_discoveries=_prompt_discoveries(latest_discoveries, limit=20),
             available_artifacts=_prompt_artifacts(available_artifacts, limit=15),
+            available_control_tools=_contest_control_tools(),
         )
         return self._compress_plan_input(payload)
 
@@ -742,6 +771,9 @@ class JasterOrchestrator:
         available_artifacts: list[ArtifactRef],
         persistent_code_evidence: list[PersistentCodeEvidence],
         bulletin_digest: SharedBulletinDigest,
+        submitted_flags: list[str],
+        incorrect_flags: list[str],
+        submission_history: list[SubmissionAttempt],
     ) -> StrategyInput:
         focus_tree = _task_tree_focus(task_tree, task_node.key, limit=12)
         dependency_context = _dependency_context(task_tree, task_node.key, available_artifacts, limit=6)
@@ -750,7 +782,12 @@ class JasterOrchestrator:
             assigned_task=task_node,
             task_tree=TaskTreeSnapshot(nodes=[]),
             task_tree_focus=focus_tree,
-            challenge_context=_challenge_context(challenge),
+            challenge_context=_challenge_context(
+                challenge,
+                submitted_flags=submitted_flags,
+                incorrect_flags=incorrect_flags,
+                submission_history=submission_history,
+            ),
             recent_observations=list(recent_rounds),
             latest_execution=_compact_execution(latest_execution),
             reflection_history=[item.model_copy(deep=True) for item in reflection_history],
@@ -1380,6 +1417,118 @@ class JasterOrchestrator:
         )
         task_tree.apply_patch(patch)
 
+    def _apply_control_results(
+        self,
+        state: RunState,
+        challenge: ChallengeSpec,
+        cycle: int,
+        control_results: list[ContestControlResult],
+    ) -> None:
+        if not control_results:
+            return
+
+        state.latest_submission_results = [item.model_copy(deep=True) for item in control_results]
+        for result in control_results:
+            if result.kind == "submit_flag":
+                if result.attempted and result.flag:
+                    state.submission_history.append(
+                        SubmissionAttempt(
+                            cycle=cycle,
+                            flag=result.flag,
+                            reason=result.reason,
+                            correct=bool(result.correct),
+                            message=result.message,
+                            progress_before=result.progress_before,
+                            progress_after=result.progress_after,
+                        )
+                    )
+                if result.correct and result.flag and result.flag not in state.submitted_flags:
+                    state.submitted_flags.append(result.flag)
+                if result.correct is False and result.flag and result.flag not in state.incorrect_flags:
+                    state.incorrect_flags.append(result.flag)
+                if result.flag_count:
+                    challenge.flag_count = result.flag_count
+                    state.challenge.flag_count = result.flag_count
+                if result.flag_got_count:
+                    challenge.flag_got_count = result.flag_got_count
+                    state.challenge.flag_got_count = result.flag_got_count
+            elif result.kind == "view_hint" and result.hint_content:
+                challenge.hint_content = result.hint_content
+                state.challenge.hint_content = result.hint_content
+
+        discovery_items: list[TaskDiscovery] = []
+        for result in control_results:
+            if result.kind == "submit_flag" and result.attempted:
+                summary = (
+                    f"平台提交 Flag {result.flag} {'成功' if result.correct else '失败'}: {result.message}"
+                    if result.flag
+                    else f"平台提交结果: {result.message}"
+                )
+                discovery_items.append(
+                    TaskDiscovery(
+                        cycle=cycle,
+                        task_key="__platform__",
+                        task_title="Contest Control",
+                        source="reflection_control",
+                        summary=summary,
+                        findings=[
+                            item
+                            for item in [
+                                f"progress: {result.progress_before} -> {result.progress_after}" if result.progress_before or result.progress_after else "",
+                                result.message,
+                            ]
+                            if item
+                        ],
+                        flag_candidates=[result.flag] if result.correct and result.flag else [],
+                    )
+                )
+            if result.kind == "view_hint" and result.attempted and result.hint_content:
+                discovery_items.append(
+                    TaskDiscovery(
+                        cycle=cycle,
+                        task_key="__platform__",
+                        task_title="Contest Control",
+                        source="reflection_control",
+                        summary="平台提示已获取",
+                        findings=[result.hint_content],
+                    )
+                )
+        if discovery_items:
+            state.latest_discoveries = _merge_discoveries(state.latest_discoveries, discovery_items)
+
+    def _log_reflection_control(self, cycle: int, control_results: list[ContestControlResult]) -> None:
+        for result in control_results:
+            if result.kind == "submit_flag":
+                if result.attempted and result.correct:
+                    label = "[control:submit:ok]"
+                    tone = ANSI_GREEN
+                elif result.attempted:
+                    label = "[control:submit:fail]"
+                    tone = ANSI_RED
+                else:
+                    label = "[control:submit:skip]"
+                    tone = ANSI_YELLOW
+                progress = ""
+                if result.progress_before or result.progress_after:
+                    progress = f" | progress={result.progress_before or '-'} -> {result.progress_after or '-'}"
+                detail = _excerpt(result.message or result.reason, limit=180)
+                self._log(
+                    "    "
+                    + _style(label, tone, bold=True)
+                    + f" cycle={cycle} | flag={_excerpt(result.flag, limit=80)}{progress} | {detail}"
+                )
+                continue
+
+            if result.kind == "view_hint":
+                label = "[control:hint:ok]" if result.attempted else "[control:hint:skip]"
+                tone = ANSI_MAGENTA if result.attempted else ANSI_YELLOW
+                detail = _excerpt(result.hint_content or result.message or result.reason, limit=200)
+                self._log(
+                    "    "
+                    + _style(label, tone, bold=True)
+                    + f" cycle={cycle} | {detail}"
+                )
+
     def _resolve_dispatch_keys(self, task_tree: TaskTree, task_keys: list[str]) -> list[str]:
         child_keys = {node.parent_key for node in task_tree.snapshot().nodes if node.parent_key}
         seen: list[str] = []
@@ -1523,6 +1672,13 @@ class JasterOrchestrator:
                 "    "
                 + _style("[plan:update]", ANSI_CYAN)
                 + f" {item.key} | status={status or '-'} | summary={_excerpt(str(getattr(item, 'latest_summary', '') or ''), limit=120)}"
+            )
+        for action in list(getattr(plan_out, "control_actions", []) or [])[:4]:
+            detail = action.flag if action.kind == "submit_flag" else action.reason
+            self._log(
+                "    "
+                + _style("[plan:control]", ANSI_BLUE, bold=True)
+                + f" {action.kind} | {_excerpt(detail, limit=180)}"
             )
         for key in dispatch_keys:
             node = task_tree.get(key)
@@ -1930,6 +2086,25 @@ def _available_tools_compact() -> list[AvailableTool]:
     return tools
 
 
+def _contest_control_tools() -> list[AvailableTool]:
+    return [
+        AvailableTool(
+            name="submit_flag",
+            summary="向比赛平台提交一个候选 flag。只有在有明确证据支持且未被平台证伪时才应建议调用。",
+            server_name="contest",
+            required_args=["flag", "reason"],
+            optional_args=[],
+        ),
+        AvailableTool(
+            name="view_hint",
+            summary="查看平台提示。仅当主线明显停滞且提示预计能改变下一轮计划时才应建议调用。",
+            server_name="contest",
+            required_args=["reason"],
+            optional_args=[],
+        ),
+    ]
+
+
 def _task_tree_focus(snapshot: TaskTreeSnapshot, task_key: str, *, limit: int) -> TaskTreeSnapshot:
     nodes_by_key = {node.key: node for node in snapshot.nodes}
     if task_key not in nodes_by_key:
@@ -2072,7 +2247,13 @@ def _shared_bulletin_matches(
     )
 
 
-def _challenge_context(challenge: ChallengeSpec) -> str:
+def _challenge_context(
+    challenge: ChallengeSpec,
+    *,
+    submitted_flags: list[str] | None = None,
+    incorrect_flags: list[str] | None = None,
+    submission_history: list[SubmissionAttempt] | None = None,
+) -> str:
     lines: list[str] = []
     if challenge.title:
         lines.append(f"题目标题: {challenge.title}")
@@ -2090,6 +2271,23 @@ def _challenge_context(challenge: ChallengeSpec) -> str:
         lines.append(f"赛区: level={challenge.level}, zone={challenge.zone}")
     if challenge.flag_count:
         lines.append(f"Flag进度: {challenge.flag_got_count}/{challenge.flag_count}")
+    submitted_flags = [item for item in (submitted_flags or []) if item]
+    incorrect_flags = [item for item in (incorrect_flags or []) if item]
+    history = [item for item in (submission_history or []) if item.flag or item.message]
+    if submitted_flags:
+        lines.append("已确认正确Flag: " + ", ".join(submitted_flags[-6:]))
+    if incorrect_flags:
+        lines.append("已证伪Flag: " + ", ".join(incorrect_flags[-6:]))
+    if history:
+        lines.append("最近提交记录:")
+        for item in history[-6:]:
+            verdict = "correct" if item.correct else "wrong"
+            progress = ""
+            if item.progress_before or item.progress_after:
+                progress = f" | progress={item.progress_before or '-'}->{item.progress_after or '-'}"
+            lines.append(
+                f"- cycle={item.cycle} | {verdict} | flag={item.flag} | reason={_excerpt(item.reason, limit=80)} | message={_excerpt(item.message, limit=120)}{progress}"
+            )
     if challenge.hint_content:
         lines.append(f"平台提示: {challenge.hint_content}")
     return "\n".join(line for line in lines if line).strip()

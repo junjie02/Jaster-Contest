@@ -142,12 +142,20 @@ def serve(
 
 @contest_app.command("run")
 def contest_run(
-    host: str = typer.Option(os.environ.get("JASTER_PLATFORM_HOST", ""), help="Platform host, without /api suffix"),
+    mcp_url: str = typer.Option(os.environ.get("JASTER_PLATFORM_MCP_URL", ""), help="Official contest MCP URL"),
+    host: str = typer.Option(os.environ.get("JASTER_PLATFORM_HOST", ""), help="Platform host used to compose MCP URL"),
     agent_token: str = typer.Option(os.environ.get("JASTER_AGENT_TOKEN", ""), help="Platform Agent-Token"),
     parallel_workers: int = typer.Option(3, min=1, help="Number of challenge workers to run in parallel"),
+    warmup_seconds: int = typer.Option(env_int("JASTER_CONTEST_WARMUP_SECONDS", 60), min=0, help="Warmup delay before first challenge listing"),
 ) -> None:
-    if not host.strip():
-        raise typer.BadParameter("JASTER_PLATFORM_HOST is required")
+    resolved_mcp_url = (mcp_url or "").strip()
+    if not resolved_mcp_url:
+        resolved_host = host.strip().rstrip("/")
+        if not resolved_host:
+            raise typer.BadParameter("JASTER_PLATFORM_MCP_URL or JASTER_PLATFORM_HOST is required")
+        if "://" not in resolved_host:
+            resolved_host = f"http://{resolved_host}"
+        resolved_mcp_url = f"{resolved_host}/mcp"
     if not agent_token.strip():
         raise typer.BadParameter("JASTER_AGENT_TOKEN is required")
     root = _project_root()
@@ -160,10 +168,11 @@ def contest_run(
             llm=OpenAIChatClient(),
         )
         scheduler = create_contest_scheduler(
-            base_url=host,
+            mcp_url=resolved_mcp_url,
             agent_token=agent_token,
             orchestrator=orchestrator,
             data_dir=data_dir,
+            warmup_seconds=warmup_seconds,
         )
         session = scheduler.run()
         typer.echo(
@@ -189,11 +198,12 @@ def contest_run(
         )
 
     coordinator = create_parallel_contest_coordinator(
-        base_url=host,
+        mcp_url=resolved_mcp_url,
         agent_token=agent_token,
         orchestrator_factory=_orchestrator_factory,
         data_dir=data_dir,
         parallel_workers=parallel_workers,
+        warmup_seconds=warmup_seconds,
     )
     state = coordinator.run()
     typer.echo(

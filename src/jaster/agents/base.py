@@ -103,6 +103,12 @@ def _normalize_agent_response(role: str, payload: dict) -> dict:
             normalized.get("dispatch_task_keys") or normalized.get("dispatch_keys") or normalized.get("task_keys") or []
         )
         normalized["tree_patch"] = _normalize_task_tree_patch(normalized.get("tree_patch") or {})
+        normalized["control_actions"] = _normalize_contest_control_actions(
+            normalized.get("control_actions")
+            or normalized.get("contest_actions")
+            or normalized.get("submission_actions")
+            or []
+        )
     elif role == "strategy":
         normalized.setdefault("phase_summary", str(normalized.get("phase_summary") or normalized.get("summary") or ""))
         normalized["is_complete"] = bool(normalized.get("is_complete", normalized.get("completed", False)))
@@ -147,6 +153,12 @@ def _normalize_agent_response(role: str, payload: dict) -> dict:
         )
         normalized["critical_findings"] = _string_list(
             normalized.get("critical_findings") or normalized.get("critical_insights") or []
+        )
+        normalized["control_actions"] = _normalize_contest_control_actions(
+            normalized.get("control_actions")
+            or normalized.get("contest_actions")
+            or normalized.get("submission_actions")
+            or []
         )
     elif role == "submission":
         normalized["flag"] = normalized.get("flag", normalized.get("answer"))
@@ -388,6 +400,43 @@ def _normalize_strategic_rejections(raw_rejections: object) -> list[dict]:
             {
                 "label": label,
                 "reason": str(item.get("reason") or item.get("description") or ""),
+            }
+        )
+    return normalized
+
+
+def _normalize_contest_control_actions(raw_actions: object) -> list[dict]:
+    if isinstance(raw_actions, dict):
+        raw_actions = [raw_actions]
+    if not isinstance(raw_actions, list):
+        raw_actions = []
+
+    normalized: list[dict] = []
+    submit_count = 0
+    hint_count = 0
+    for item in raw_actions:
+        if not isinstance(item, dict):
+            continue
+        kind = str(item.get("kind") or item.get("type") or "").strip().lower()
+        if kind not in {"submit_flag", "view_hint"}:
+            continue
+        flag = str(item.get("flag") or item.get("candidate") or "").strip()
+        reason = str(item.get("reason") or item.get("goal") or item.get("summary") or "").strip()
+        if kind == "submit_flag":
+            if not flag:
+                continue
+            submit_count += 1
+            if submit_count > 3:
+                continue
+        if kind == "view_hint":
+            hint_count += 1
+            if hint_count > 1:
+                continue
+        normalized.append(
+            {
+                "kind": kind,
+                "flag": flag,
+                "reason": reason,
             }
         )
     return normalized

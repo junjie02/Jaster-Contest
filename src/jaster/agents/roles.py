@@ -10,8 +10,6 @@ from jaster.domain import (
     ReflectionOutput,
     StrategyInput,
     StrategyOutput,
-    SubmissionInput,
-    SubmissionOutput,
 )
 from jaster.runtime.llm import OpenAIChatClient
 from jaster.runtime.prompts import PromptLibrary
@@ -37,17 +35,10 @@ class ReflectionAgent(JsonAgent[ReflectionInput, ReflectionOutput]):
     output_model = ReflectionOutput
 
 
-class SubmissionAgent(JsonAgent[SubmissionInput, SubmissionOutput]):
-    role = "submission"
-    input_model = SubmissionInput
-    output_model = SubmissionOutput
-
-
 def build_agents(prompt_root: Path, llm: OpenAIChatClient) -> dict[str, Any]:
     prompts = PromptLibrary(prompt_root)
     return {
         "plan": PlanAgent(llm, prompts),
         "strategy": StrategyAgent(llm, prompts),
         "reflection": ReflectionAgent(llm, prompts),
-        "submission": SubmissionAgent(llm, prompts),
     }

@@ -60,6 +60,11 @@
 - 在 `task_findings` 中列出关键发现
 - `actions` 只返回一个 `finish`
 
+额外约束：
+- 发现 `flag_candidates` 只表示“疑似 flag”，不表示任务或整题已经完成。
+- 只有当 `assigned_task.completion_criteria` 被满足时，你才能设置 `is_complete=true`。
+- 即便已经得到一个高置信度 flag，如果当前任务目标是“枚举全部 flag”“拿到完整利用链”“确认平台全部 flag 已拿到”，也不能仅凭候选 flag 提前结束。
+
 当任务尚未完成但本轮需要继续推进：
 - 设置 `is_complete=false`
 - 输出一个或多个 `tool` 动作

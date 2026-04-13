@@ -365,6 +365,43 @@ class ReflectionTaskUpdate(BaseModel):
     reason: str = ""
 
 
+class ContestControlAction(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    kind: Literal["submit_flag", "view_hint"]
+    flag: str = ""
+    reason: str = ""
+
+
+class ContestControlResult(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    kind: Literal["submit_flag", "view_hint"]
+    attempted: bool = True
+    success: bool = False
+    flag: str = ""
+    reason: str = ""
+    message: str = ""
+    correct: bool | None = None
+    flag_count: int = 0
+    flag_got_count: int = 0
+    progress_before: str = ""
+    progress_after: str = ""
+    hint_content: str = ""
+
+
+class SubmissionAttempt(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    cycle: int = 0
+    flag: str = ""
+    reason: str = ""
+    correct: bool = False
+    message: str = ""
+    progress_before: str = ""
+    progress_after: str = ""
+
+
 class ReflectionHistoryEntry(BaseModel):
     cycle: int
     summary: str = ""
@@ -373,6 +410,7 @@ class ReflectionHistoryEntry(BaseModel):
     failure_patterns: list[FailurePattern] = Field(default_factory=list)
     strategic_rejections: list[StrategicRejection] = Field(default_factory=list)
     critical_findings: list[str] = Field(default_factory=list)
+    control_results: list[ContestControlResult] = Field(default_factory=list)
 
 
 class PlanInput(BaseModel):
@@ -387,9 +425,14 @@ class PlanInput(BaseModel):
     failure_patterns_digest: list[FailurePattern] = Field(default_factory=list)
     reflection_digest: str = ""
     discoveries_digest: str = ""
+    candidate_flags: list[str] = Field(default_factory=list)
+    submitted_flags: list[str] = Field(default_factory=list)
+    incorrect_flags: list[str] = Field(default_factory=list)
+    submission_history: list[SubmissionAttempt] = Field(default_factory=list)
     reflection_history: list[ReflectionHistoryEntry] = Field(default_factory=list)
     latest_discoveries: list[TaskDiscovery] = Field(default_factory=list)
     available_artifacts: list[ArtifactRef] = Field(default_factory=list)
+    available_control_tools: list[AvailableTool] = Field(default_factory=list)
     compression_notes: list[CompressionNote] = Field(default_factory=list)
 
 
@@ -399,6 +442,7 @@ class PlanOutput(BaseModel):
     planning_thought: PlanningThought | None = None
     tree_patch: TaskTreePatch = Field(default_factory=TaskTreePatch)
     dispatch_task_keys: list[str] = Field(default_factory=list)
+    control_actions: list[ContestControlAction] = Field(default_factory=list)
 
 
 class StrategyInput(BaseModel):
@@ -439,9 +483,14 @@ class ReflectionInput(BaseModel):
     task_tree: TaskTreeSnapshot
     challenge_context: str = ""
     strategy_results: list[StrategyTaskResult] = Field(default_factory=list)
+    candidate_flags: list[str] = Field(default_factory=list)
+    submitted_flags: list[str] = Field(default_factory=list)
+    incorrect_flags: list[str] = Field(default_factory=list)
+    submission_history: list[SubmissionAttempt] = Field(default_factory=list)
     reflection_history: list[ReflectionHistoryEntry] = Field(default_factory=list)
     latest_discoveries: list[TaskDiscovery] = Field(default_factory=list)
     available_artifacts: list[ArtifactRef] = Field(default_factory=list)
+    available_control_tools: list[AvailableTool] = Field(default_factory=list)
 
 
 class ReflectionOutput(BaseModel):
@@ -453,6 +502,7 @@ class ReflectionOutput(BaseModel):
     critical_findings: list[str] = Field(default_factory=list)
     flag_candidates: list[str] = Field(default_factory=list)
     credentials: list[str] = Field(default_factory=list)
+    control_actions: list[ContestControlAction] = Field(default_factory=list)
 
 
 class SubmissionInput(BaseModel):
@@ -502,4 +552,7 @@ class RunState(BaseModel):
     available_artifacts: list[ArtifactRef] = Field(default_factory=list)
     observations: list[Observation] = Field(default_factory=list)
     submitted_flags: list[str] = Field(default_factory=list)
+    incorrect_flags: list[str] = Field(default_factory=list)
+    submission_history: list[SubmissionAttempt] = Field(default_factory=list)
+    latest_submission_results: list[ContestControlResult] = Field(default_factory=list)
     rounds_completed: int = 0

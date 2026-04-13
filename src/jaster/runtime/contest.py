@@ -11,13 +11,17 @@ from typing import Callable
 import httpx
 from pydantic import BaseModel, Field
 
-from jaster.domain import ChallengeSpec, Observation, RunState, SubmissionResult
+from jaster.domain import ChallengeSpec, ContestControlAction, ContestControlResult, Observation, RunState
 from jaster.runtime.orchestrator import JasterOrchestrator, detect_target_type
+from jaster.runtime.contest_mcp import ContestMcpClient
 from jaster.runtime.platform import (
     ChallengeListData,
+    HintResult,
     PlatformAPIError,
     PlatformChallenge,
-    PlatformClient,
+    PlatformRateLimiter,
+    StartChallengeResult,
+    SubmitResult,
 )
 
 
@@ -168,13 +172,14 @@ class ContestScheduler:
     def __init__(
         self,
         *,
-        client: PlatformClient,
+        client: ContestMcpClient,
         orchestrator: JasterOrchestrator,
         session_store: ContestSessionStore,
         data_dir: Path,
         max_rounds_per_attempt: int = 200,
         ready_timeout_seconds: int = 90,
         ready_poll_interval: float = 2.0,
+        warmup_seconds: int = 60,
     ) -> None:
         self.client = client
         self.orchestrator = orchestrator
@@ -182,6 +187,7 @@ class ContestScheduler:
         self.max_rounds_per_attempt = max_rounds_per_attempt
         self.ready_timeout_seconds = ready_timeout_seconds
         self.ready_poll_interval = ready_poll_interval
+        self.warmup_seconds = max(0, int(warmup_seconds))
         self.data_dir = data_dir
         self.session = ContestSessionState(
             session_id=session_store.new_session_id(),
@@ -190,8 +196,10 @@ class ContestScheduler:
         )
         self.challenge_states: dict[str, ContestChallengeState] = {}
         self.session_store.create(self.session, self.challenge_states)
+        self._warmed_up = False
 
     def run(self, *, max_attempts: int | None = None) -> ContestSessionState:
+        self._warmup_if_needed()
         attempts = 0
         while True:
             listing = self.sync()
@@ -214,6 +222,17 @@ class ContestScheduler:
                 self.session.status = "stopped"
                 self.session_store.save(self.session, self.challenge_states)
                 return self.session
+
+    def _warmup_if_needed(self) -> None:
+        if self._warmed_up or self.warmup_seconds <= 0:
+            self._warmed_up = True
+            return
+        self.session_store.append_event(
+            self.session.session_id,
+            {"type": "warmup", "seconds": self.warmup_seconds},
+        )
+        time.sleep(self.warmup_seconds)
+        self._warmed_up = True
 
     def sync(self) -> ChallengeListData:
         listing = self.client.list_challenges()
@@ -253,48 +272,10 @@ class ContestScheduler:
             active = self._ensure_instance_ready(challenge)
             if state.solved:
                 return
-            if challenge.difficulty.lower() == "hard" and not active.hint_viewed and not state.hint_used:
-                hint = self.client.view_hint(challenge.code)
-                state.hint_used = True
-                state.hint_content = hint.hint_content or ""
-                active.hint_viewed = True
-                self.session_store.append_event(
-                    self.session.session_id,
-                    {"type": "hint", "code": challenge.code, "message": state.hint_content},
-                )
             spec = self._challenge_spec_from_platform(active)
             spec.hint_content = state.hint_content
-            baseline_progress = active.flag_got_count
-            hint_injected = state.hint_used
-
-            def submission_handler(current: ChallengeSpec, flag: str, run_state: RunState) -> SubmissionResult:
-                if flag in state.incorrect_flags:
-                    return SubmissionResult(
-                        correct=False,
-                        message="该错误 Flag 已提交过，跳过重复提交",
-                        flag_count=current.flag_count,
-                        flag_got_count=current.flag_got_count,
-                    )
-                result = self.client.submit_flag(challenge.code, flag)
-                self.session_store.append_event(
-                    self.session.session_id,
-                    {"type": "submit", "code": challenge.code, "flag": flag, "correct": result.correct},
-                )
-                if result.correct:
-                    state.last_flag_progress = result.flag_got_count
-                    current.flag_count = result.flag_count
-                    current.flag_got_count = result.flag_got_count
-                else:
-                    state.incorrect_flags.append(flag)
-                return SubmissionResult(
-                    correct=result.correct,
-                    message=result.message,
-                    flag_count=result.flag_count,
-                    flag_got_count=result.flag_got_count,
-                )
 
             def round_hook(run_state: RunState, phase: str, latest_execution: object) -> bool:
-                nonlocal hint_injected
                 refreshed = self.sync()
                 refreshed_item = self._get_challenge(refreshed, challenge.code)
                 if refreshed_item is None:
@@ -302,33 +283,24 @@ class ContestScheduler:
                 run_state.challenge.flag_count = refreshed_item.flag_count
                 run_state.challenge.flag_got_count = refreshed_item.flag_got_count
                 run_state.challenge.entrypoints = list(refreshed_item.entrypoint or [])
+                run_state.challenge.hint_content = state.hint_content
                 if refreshed_item.flag_count > 0 and refreshed_item.flag_got_count >= refreshed_item.flag_count:
                     state.solved = True
                     state.last_flag_progress = refreshed_item.flag_got_count
                     return True
-                should_hint = (
-                    challenge.difficulty.lower() in {"easy", "medium"}
-                    and not hint_injected
-                    and not refreshed_item.hint_viewed
-                    and run_state.rounds_completed >= 100
-                    and refreshed_item.flag_got_count <= baseline_progress
-                )
-                if should_hint:
-                    hint = self.client.view_hint(challenge.code)
-                    hint_injected = True
-                    state.hint_used = True
-                    state.hint_content = hint.hint_content or ""
-                    run_state.challenge.hint_content = state.hint_content
-                    self.session_store.append_event(
-                        self.session.session_id,
-                        {"type": "hint", "code": challenge.code, "message": state.hint_content},
-                    )
                 return False
 
             run_state = self.orchestrator.run(
                 spec,
                 max_rounds=self.max_rounds_per_attempt,
-                submission_handler=submission_handler,
+                reflection_control_handler=lambda current, actions, state_snapshot, cycle: self._execute_reflection_actions(
+                    challenge_code=challenge.code,
+                    current=current,
+                    run_state=state_snapshot,
+                    challenge_state=state,
+                    cycle=cycle,
+                    actions=actions,
+                ),
                 round_hook=round_hook,
             )
             state.used_rounds += run_state.rounds_completed
@@ -360,6 +332,124 @@ class ContestScheduler:
                 {"type": "stop", "code": challenge.code},
             )
             self.session_store.save(self.session, self.challenge_states)
+
+    def _execute_reflection_actions(
+        self,
+        *,
+        challenge_code: str,
+        current: ChallengeSpec,
+        run_state: RunState,
+        challenge_state: ContestChallengeState,
+        cycle: int,
+        actions: list[ContestControlAction],
+    ) -> list[ContestControlResult]:
+        results: list[ContestControlResult] = []
+        for action in actions:
+            if action.kind == "submit_flag":
+                progress_before = f"{current.flag_got_count}/{current.flag_count}"
+                if action.flag in run_state.submitted_flags:
+                    results.append(
+                        ContestControlResult(
+                            kind="submit_flag",
+                            attempted=False,
+                            success=False,
+                            flag=action.flag,
+                            reason=action.reason,
+                            message="该正确 Flag 已提交过，跳过重复提交",
+                            correct=True,
+                            flag_count=current.flag_count,
+                            flag_got_count=current.flag_got_count,
+                            progress_before=progress_before,
+                            progress_after=progress_before,
+                        )
+                    )
+                    continue
+                if action.flag in challenge_state.incorrect_flags or action.flag in run_state.incorrect_flags:
+                    results.append(
+                        ContestControlResult(
+                            kind="submit_flag",
+                            attempted=False,
+                            success=False,
+                            flag=action.flag,
+                            reason=action.reason,
+                            message="该错误 Flag 已提交过，跳过重复提交",
+                            correct=False,
+                            flag_count=current.flag_count,
+                            flag_got_count=current.flag_got_count,
+                            progress_before=progress_before,
+                            progress_after=progress_before,
+                        )
+                    )
+                    continue
+                submit = self.client.submit_flag(challenge_code, action.flag)
+                current.flag_count = submit.flag_count or current.flag_count
+                current.flag_got_count = submit.flag_got_count or current.flag_got_count
+                progress_after = f"{current.flag_got_count}/{current.flag_count}"
+                if submit.correct:
+                    challenge_state.last_flag_progress = current.flag_got_count
+                else:
+                    challenge_state.incorrect_flags.append(action.flag)
+                self.session_store.append_event(
+                    self.session.session_id,
+                    {
+                        "type": "submit",
+                        "code": challenge_code,
+                        "flag": action.flag,
+                        "correct": submit.correct,
+                        "message": submit.message,
+                    },
+                )
+                results.append(
+                    ContestControlResult(
+                        kind="submit_flag",
+                        attempted=True,
+                        success=submit.correct,
+                        flag=action.flag,
+                        reason=action.reason,
+                        message=submit.message,
+                        correct=submit.correct,
+                        flag_count=current.flag_count,
+                        flag_got_count=current.flag_got_count,
+                        progress_before=progress_before,
+                        progress_after=progress_after,
+                    )
+                )
+                if submit.correct:
+                    break
+                continue
+
+            if action.kind == "view_hint":
+                if challenge_state.hint_used:
+                    results.append(
+                        ContestControlResult(
+                            kind="view_hint",
+                            attempted=False,
+                            success=False,
+                            reason=action.reason,
+                            message="提示已查看过，跳过重复调用",
+                            hint_content=challenge_state.hint_content,
+                        )
+                    )
+                    continue
+                hint = self.client.view_hint(challenge_code)
+                challenge_state.hint_used = True
+                challenge_state.hint_content = hint.hint_content or ""
+                current.hint_content = challenge_state.hint_content
+                self.session_store.append_event(
+                    self.session.session_id,
+                    {"type": "hint", "code": challenge_code, "message": challenge_state.hint_content},
+                )
+                results.append(
+                    ContestControlResult(
+                        kind="view_hint",
+                        attempted=True,
+                        success=bool(challenge_state.hint_content),
+                        reason=action.reason,
+                        message="提示已获取",
+                        hint_content=challenge_state.hint_content,
+                    )
+                )
+        return results
 
     def _pick_next_challenge(self, challenges: list[PlatformChallenge]) -> PlatformChallenge | None:
         ordered = sorted(
@@ -459,7 +549,7 @@ class ParallelContestCoordinator:
     def __init__(
         self,
         *,
-        client: PlatformClient,
+        client: ContestMcpClient,
         session_store: ContestSessionStore,
         parallel_store: ParallelContestStore,
         orchestrator_factory: Callable[[int], JasterOrchestrator],
@@ -468,6 +558,7 @@ class ParallelContestCoordinator:
         max_rounds_per_attempt: int = 200,
         ready_timeout_seconds: int = 90,
         ready_poll_interval: float = 2.0,
+        warmup_seconds: int = 60,
     ) -> None:
         self.client = client
         self.session_store = session_store
@@ -478,6 +569,7 @@ class ParallelContestCoordinator:
         self.max_rounds_per_attempt = max_rounds_per_attempt
         self.ready_timeout_seconds = ready_timeout_seconds
         self.ready_poll_interval = ready_poll_interval
+        self.warmup_seconds = max(0, int(warmup_seconds))
         self.state = ParallelContestState(
             parallel_id=parallel_store.new_parallel_id(),
             platform_host=client.base_url,
@@ -499,11 +591,13 @@ class ParallelContestCoordinator:
         self._lock = threading.RLock()
         self._platform_lock = threading.Lock()
         self._stop_event = threading.Event()
+        self._warmed_up = False
         self.parallel_store.create(self.state, self.workers, self.challenge_states)
         for worker in self.workers.values():
             self.session_store.create(worker, {})
 
     def run(self, *, max_attempts: int | None = None) -> ParallelContestState:
+        self._warmup_if_needed()
         threads = [
             threading.Thread(
                 target=self._worker_loop,
@@ -521,6 +615,18 @@ class ParallelContestCoordinator:
             self.state.status = "completed" if self._all_visible_unsolved_count() == 0 else "stopped"
             self.parallel_store.save(self.state, self.workers, self.challenge_states)
             return self.state
+
+    def _warmup_if_needed(self) -> None:
+        with self._lock:
+            if self._warmed_up or self.warmup_seconds <= 0:
+                self._warmed_up = True
+                return
+            self.parallel_store.append_event(
+                self.state.parallel_id,
+                {"type": "warmup", "seconds": self.warmup_seconds},
+            )
+            self._warmed_up = True
+        time.sleep(self.warmup_seconds)
 
     def _worker_loop(self, worker_id: int, max_attempts: int | None) -> None:
         orchestrator = self.orchestrator_factory(worker_id)
@@ -554,22 +660,11 @@ class ParallelContestCoordinator:
             active = self._ensure_instance_ready(worker_id, challenge)
             if state.solved:
                 return
-            if challenge.difficulty.lower() == "hard" and not active.hint_viewed and not state.hint_used:
-                hint = self._view_hint(worker_id, challenge.code)
-                with self._lock:
-                    state.hint_used = True
-                    state.hint_content = hint.hint_content or ""
             spec = self._challenge_spec_from_platform(active)
             with self._lock:
                 spec.hint_content = state.hint_content
-                baseline_progress = active.flag_got_count
-                hint_injected = state.hint_used
-
-            def submission_handler(current: ChallengeSpec, flag: str, run_state: RunState) -> SubmissionResult:
-                return self._submit_flag(worker_id, challenge.code, flag, current, state)
 
             def round_hook(run_state: RunState, phase: str, latest_execution: object) -> bool:
-                nonlocal hint_injected
                 refreshed = self._sync()
                 refreshed_item = self._get_challenge(refreshed, challenge.code)
                 if refreshed_item is None:
@@ -578,30 +673,26 @@ class ParallelContestCoordinator:
                 run_state.challenge.flag_got_count = refreshed_item.flag_got_count
                 run_state.challenge.entrypoints = list(refreshed_item.entrypoint or [])
                 with self._lock:
+                    run_state.challenge.hint_content = state.hint_content
+                with self._lock:
                     if refreshed_item.flag_count > 0 and refreshed_item.flag_got_count >= refreshed_item.flag_count:
                         state.solved = True
                         state.last_flag_progress = refreshed_item.flag_got_count
                         return True
-                    should_hint = (
-                        challenge.difficulty.lower() in {"easy", "medium"}
-                        and not hint_injected
-                        and not refreshed_item.hint_viewed
-                        and run_state.rounds_completed >= 100
-                        and refreshed_item.flag_got_count <= baseline_progress
-                    )
-                if should_hint:
-                    hint = self._view_hint(worker_id, challenge.code)
-                    hint_injected = True
-                    with self._lock:
-                        state.hint_used = True
-                        state.hint_content = hint.hint_content or ""
-                        run_state.challenge.hint_content = state.hint_content
                 return False
 
             run_state = orchestrator.run(
                 spec,
                 max_rounds=self.max_rounds_per_attempt,
-                submission_handler=submission_handler,
+                reflection_control_handler=lambda current, actions, state_snapshot, cycle: self._execute_reflection_actions(
+                    worker_id=worker_id,
+                    challenge_code=challenge.code,
+                    current=current,
+                    run_state=state_snapshot,
+                    challenge_state=state,
+                    cycle=cycle,
+                    actions=actions,
+                ),
                 round_hook=round_hook,
             )
             with self._lock:
@@ -821,45 +912,139 @@ class ParallelContestCoordinator:
         )
         return hint
 
-    def _submit_flag(
+    def _execute_reflection_actions(
         self,
+        *,
         worker_id: int,
-        code: str,
-        flag: str,
+        challenge_code: str,
         current: ChallengeSpec,
-        state: ContestChallengeState,
-    ) -> SubmissionResult:
-        with self._lock:
-            if flag in state.incorrect_flags:
-                return SubmissionResult(
-                    correct=False,
-                    message="该错误 Flag 已提交过，跳过重复提交",
-                    flag_count=current.flag_count,
-                    flag_got_count=current.flag_got_count,
+        run_state: RunState,
+        challenge_state: ContestChallengeState,
+        cycle: int,
+        actions: list[ContestControlAction],
+    ) -> list[ContestControlResult]:
+        results: list[ContestControlResult] = []
+        for action in actions:
+            if action.kind == "submit_flag":
+                progress_before = f"{current.flag_got_count}/{current.flag_count}"
+                with self._lock:
+                    already_bad = action.flag in challenge_state.incorrect_flags or action.flag in run_state.incorrect_flags
+                if action.flag in run_state.submitted_flags:
+                    results.append(
+                        ContestControlResult(
+                            kind="submit_flag",
+                            attempted=False,
+                            success=False,
+                            flag=action.flag,
+                            reason=action.reason,
+                            message="该正确 Flag 已提交过，跳过重复提交",
+                            correct=True,
+                            flag_count=current.flag_count,
+                            flag_got_count=current.flag_got_count,
+                            progress_before=progress_before,
+                            progress_after=progress_before,
+                        )
+                    )
+                    continue
+                if already_bad:
+                    results.append(
+                        ContestControlResult(
+                            kind="submit_flag",
+                            attempted=False,
+                            success=False,
+                            flag=action.flag,
+                            reason=action.reason,
+                            message="该错误 Flag 已提交过，跳过重复提交",
+                            correct=False,
+                            flag_count=current.flag_count,
+                            flag_got_count=current.flag_got_count,
+                            progress_before=progress_before,
+                            progress_after=progress_before,
+                        )
+                    )
+                    continue
+                with self._platform_lock:
+                    submit = self.client.submit_flag(challenge_code, action.flag)
+                current.flag_count = submit.flag_count or current.flag_count
+                current.flag_got_count = submit.flag_got_count or current.flag_got_count
+                progress_after = f"{current.flag_got_count}/{current.flag_count}"
+                with self._lock:
+                    if submit.correct:
+                        challenge_state.last_flag_progress = current.flag_got_count
+                    else:
+                        challenge_state.incorrect_flags.append(action.flag)
+                self.session_store.append_event(
+                    self.workers[worker_id].session_id,
+                    {
+                        "type": "submit",
+                        "code": challenge_code,
+                        "flag": action.flag,
+                        "correct": submit.correct,
+                        "message": submit.message,
+                    },
                 )
-        with self._platform_lock:
-            result = self.client.submit_flag(code, flag)
-        self.session_store.append_event(
-            self.workers[worker_id].session_id,
-            {"type": "submit", "code": code, "flag": flag, "correct": result.correct},
-        )
-        self.parallel_store.append_event(
-            self.state.parallel_id,
-            {"type": "submit", "worker_id": worker_id, "code": code, "flag": flag, "correct": result.correct},
-        )
-        with self._lock:
-            if result.correct:
-                state.last_flag_progress = result.flag_got_count
-                current.flag_count = result.flag_count
-                current.flag_got_count = result.flag_got_count
-            else:
-                state.incorrect_flags.append(flag)
-        return SubmissionResult(
-            correct=result.correct,
-            message=result.message,
-            flag_count=result.flag_count,
-            flag_got_count=result.flag_got_count,
-        )
+                self.parallel_store.append_event(
+                    self.state.parallel_id,
+                    {
+                        "type": "submit",
+                        "worker_id": worker_id,
+                        "code": challenge_code,
+                        "flag": action.flag,
+                        "correct": submit.correct,
+                        "message": submit.message,
+                    },
+                )
+                results.append(
+                    ContestControlResult(
+                        kind="submit_flag",
+                        attempted=True,
+                        success=submit.correct,
+                        flag=action.flag,
+                        reason=action.reason,
+                        message=submit.message,
+                        correct=submit.correct,
+                        flag_count=current.flag_count,
+                        flag_got_count=current.flag_got_count,
+                        progress_before=progress_before,
+                        progress_after=progress_after,
+                    )
+                )
+                if submit.correct:
+                    break
+                continue
+
+            if action.kind == "view_hint":
+                with self._lock:
+                    hint_used = challenge_state.hint_used
+                    cached_hint = challenge_state.hint_content
+                if hint_used:
+                    results.append(
+                        ContestControlResult(
+                            kind="view_hint",
+                            attempted=False,
+                            success=False,
+                            reason=action.reason,
+                            message="提示已查看过，跳过重复调用",
+                            hint_content=cached_hint,
+                        )
+                    )
+                    continue
+                hint = self._view_hint(worker_id, challenge_code)
+                with self._lock:
+                    challenge_state.hint_used = True
+                    challenge_state.hint_content = hint.hint_content or ""
+                    current.hint_content = challenge_state.hint_content
+                results.append(
+                    ContestControlResult(
+                        kind="view_hint",
+                        attempted=True,
+                        success=bool(challenge_state.hint_content),
+                        reason=action.reason,
+                        message="提示已获取",
+                        hint_content=challenge_state.hint_content,
+                    )
+                )
+        return results
 
     def _challenge_spec_from_platform(self, challenge: PlatformChallenge) -> ChallengeSpec:
         target, target_type, entrypoints = resolve_entrypoints(challenge.entrypoint or [])
@@ -958,32 +1143,44 @@ def _looks_like_http(entrypoint: str) -> bool:
 
 def create_contest_scheduler(
     *,
-    base_url: str,
+    mcp_url: str,
     agent_token: str,
     orchestrator: JasterOrchestrator,
     data_dir: Path,
+    warmup_seconds: int = 60,
 ) -> ContestScheduler:
     return ContestScheduler(
-        client=PlatformClient(base_url=f"{base_url.rstrip('/')}/api", agent_token=agent_token),
+        client=ContestMcpClient(
+            url=mcp_url,
+            agent_token=agent_token,
+            rate_limiter=PlatformRateLimiter(max_requests=3, window_seconds=1.0),
+        ),
         orchestrator=orchestrator,
         session_store=ContestSessionStore(data_dir / "contests"),
         data_dir=data_dir,
+        warmup_seconds=warmup_seconds,
     )
 
 
 def create_parallel_contest_coordinator(
     *,
-    base_url: str,
+    mcp_url: str,
     agent_token: str,
     orchestrator_factory: Callable[[int], JasterOrchestrator],
     data_dir: Path,
     parallel_workers: int = 3,
+    warmup_seconds: int = 60,
 ) -> ParallelContestCoordinator:
     return ParallelContestCoordinator(
-        client=PlatformClient(base_url=f"{base_url.rstrip('/')}/api", agent_token=agent_token),
+        client=ContestMcpClient(
+            url=mcp_url,
+            agent_token=agent_token,
+            rate_limiter=PlatformRateLimiter(max_requests=3, window_seconds=1.0),
+        ),
         session_store=ContestSessionStore(data_dir / "contests"),
         parallel_store=ParallelContestStore(data_dir / "contests_parallel"),
         orchestrator_factory=orchestrator_factory,
         data_dir=data_dir,
         parallel_workers=parallel_workers,
+        warmup_seconds=warmup_seconds,
     )
