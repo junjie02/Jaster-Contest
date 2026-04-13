@@ -39,6 +39,7 @@ class FileRunStore:
                     "planner_history": [item.model_dump() for item in state.planner_history],
                     "reflection_history": [item.model_dump() for item in state.reflection_history],
                     "latest_discoveries": [item.model_dump() for item in state.latest_discoveries],
+                    "persistent_code_evidence": [item.model_dump() for item in state.persistent_code_evidence],
                     "shared_bulletin": [item.model_dump() for item in state.shared_bulletin],
                     "submitted_flags": state.submitted_flags,
                     "rounds_completed": state.rounds_completed,

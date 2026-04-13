@@ -18,6 +18,7 @@ from jaster.domain import (
     ArtifactRef,
     AvailableTool,
     ChallengeSpec,
+    CodeEvidence,
     CompressionNote,
     ExecutionResult,
     FailurePattern,
@@ -28,6 +29,7 @@ from jaster.domain import (
     PlannerContext,
     PlannerHistoryEntry,
     PlanningAttempt,
+    PersistentCodeEvidence,
     RecentObservationRound,
     ReflectionHistoryEntry,
     ReflectionInput,
@@ -303,12 +305,17 @@ class JasterOrchestrator:
                 task_keys=dispatch_keys,
                 reflection_history=state.reflection_history,
                 available_artifacts=state.available_artifacts,
+                persistent_code_evidence=state.persistent_code_evidence,
                 observations=state.observations,
                 shared_bulletin=state.shared_bulletin,
             )
 
             state.observations.extend(observations)
             state.latest_discoveries = _merge_discoveries(state.latest_discoveries, batch_discoveries)
+            state.persistent_code_evidence = _merge_persistent_code_evidence(
+                state.persistent_code_evidence,
+                [item for result in strategy_results for item in result.code_evidence],
+            )
             state.available_artifacts = _merge_artifact_refs(
                 state.available_artifacts,
                 [artifact for result in strategy_results for artifact in result.artifacts],
@@ -469,6 +476,7 @@ class JasterOrchestrator:
         task_keys: list[str],
         reflection_history: list[ReflectionHistoryEntry],
         available_artifacts: list[ArtifactRef],
+        persistent_code_evidence: list[PersistentCodeEvidence],
         observations: list[Observation],
         shared_bulletin: list[SharedBulletinEntry],
     ) -> tuple[list[StrategyTaskResult], list[Observation], list[TaskDiscovery], ExecutionResult | None, _StrategyBulletinBoard]:
@@ -494,6 +502,7 @@ class JasterOrchestrator:
                     task_node=nodes_by_key[key],
                     reflection_history=reflection_history,
                     available_artifacts=available_artifacts,
+                    persistent_code_evidence=persistent_code_evidence,
                     observations=observations,
                     bulletin_board=bulletin_board,
                 ): key
@@ -553,6 +562,7 @@ class JasterOrchestrator:
         task_node: TaskNodeSnapshot,
         reflection_history: list[ReflectionHistoryEntry],
         available_artifacts: list[ArtifactRef],
+        persistent_code_evidence: list[PersistentCodeEvidence],
         observations: list[Observation],
         bulletin_board: _StrategyBulletinBoard,
     ) -> tuple[StrategyTaskResult, list[Observation]]:
@@ -565,6 +575,7 @@ class JasterOrchestrator:
         self._log(f"    [task] {task_node.key} | {task_node.title}")
         latest_execution: ExecutionResult | None = None
         collected: list[Observation] = []
+        new_code_evidence: list[PersistentCodeEvidence] = []
         last_output = None
         termination_reason = "finish"
         rounds_used = 0
@@ -589,6 +600,12 @@ class JasterOrchestrator:
                 latest_execution=latest_execution,
                 reflection_history=reflection_history,
                 available_artifacts=available_artifacts,
+                persistent_code_evidence=_persistent_code_evidence_for_task(
+                    _merge_persistent_code_evidence(persistent_code_evidence, new_code_evidence),
+                    task_tree,
+                    task_node.key,
+                    limit=6,
+                ),
                 bulletin_digest=bulletin_digest,
             )
 
@@ -613,6 +630,14 @@ class JasterOrchestrator:
                 )
                 break
             last_output = strategy_out
+            new_code_evidence = _merge_persistent_code_evidence(
+                new_code_evidence,
+                _persist_code_evidence_entries(
+                    cycle=cycle,
+                    task_node=task_node,
+                    evidence=list(strategy_out.code_evidence),
+                ),
+            )
             self._publish_strategy_shared_findings(
                 bulletin_board=bulletin_board,
                 cycle=cycle,
@@ -679,6 +704,7 @@ class JasterOrchestrator:
             latest_execution=_compact_execution(latest_execution),
             observed_task_results=list(last_output.observed_task_results),
             artifacts=list(latest_execution.artifacts) if latest_execution else [],
+            code_evidence=list(new_code_evidence),
         )
         self._log_task_result(result)
         return result, collected
@@ -720,6 +746,7 @@ class JasterOrchestrator:
         latest_execution: ExecutionResult | None,
         reflection_history: list[ReflectionHistoryEntry],
         available_artifacts: list[ArtifactRef],
+        persistent_code_evidence: list[PersistentCodeEvidence],
         bulletin_digest: SharedBulletinDigest,
     ) -> StrategyInput:
         focus_tree = _task_tree_focus(task_tree, task_node.key, limit=12)
@@ -734,6 +761,7 @@ class JasterOrchestrator:
             latest_execution=_compact_execution(latest_execution),
             reflection_history=[item.model_copy(deep=True) for item in reflection_history],
             dependency_context=dependency_context,
+            persistent_code_evidence=[item.model_copy(deep=True) for item in persistent_code_evidence],
             available_artifacts=_prompt_artifacts(available_artifacts, limit=10),
             available_tools=_available_tools_compact(),
             shared_bulletin=SharedBulletinDigest(
@@ -1018,6 +1046,16 @@ class JasterOrchestrator:
                 payload.dependency_context,
                 keep=keep,
                 field="strategy dependency_context",
+                notes=notes,
+            )
+
+        for keep in (4, 2, 1, 0):
+            if _payload_chars(payload) <= self.context_payload_limit:
+                break
+            payload.persistent_code_evidence = self._trim_list_window(
+                payload.persistent_code_evidence,
+                keep=keep,
+                field="strategy persistent_code_evidence",
                 notes=notes,
             )
 
@@ -2501,6 +2539,55 @@ def _merge_discoveries(left: list[TaskDiscovery], right: list[TaskDiscovery], *,
     return merged[-limit:]
 
 
+def _persist_code_evidence_entries(
+    *,
+    cycle: int,
+    task_node: TaskNodeSnapshot,
+    evidence: list[CodeEvidence],
+) -> list[PersistentCodeEvidence]:
+    persisted: list[PersistentCodeEvidence] = []
+    for item in evidence:
+        snippet = item.snippet.strip()
+        if not snippet:
+            continue
+        persisted.append(
+            PersistentCodeEvidence(
+                cycle=cycle,
+                source_task_key=task_node.key,
+                source_task_title=task_node.title,
+                source=item.source,
+                path_hint=item.path_hint,
+                snippet=snippet,
+                why_it_matters=item.why_it_matters,
+                exploit_hint=item.exploit_hint,
+                confidence=item.confidence,
+            )
+        )
+    return persisted
+
+
+def _merge_persistent_code_evidence(
+    left: list[PersistentCodeEvidence],
+    right: list[PersistentCodeEvidence],
+    *,
+    limit: int = 80,
+) -> list[PersistentCodeEvidence]:
+    merged: list[PersistentCodeEvidence] = []
+    seen: set[tuple[str, str, str, str]] = set()
+    for item in [*left, *right]:
+        key = (
+            item.source_task_key,
+            item.path_hint,
+            item.snippet,
+            item.exploit_hint,
+        )
+        if key in seen:
+            continue
+        seen.add(key)
+        merged.append(item)
+    return merged[-limit:]
+
+
 def _merge_flag_candidates(*groups: list[str]) -> list[str]:
     merged: list[str] = []
     for group in groups:
@@ -2520,6 +2607,57 @@ def _merge_artifact_refs(left: list[ArtifactRef], right: list[ArtifactRef]) -> l
         seen.add(key)
         merged.append(artifact)
     return merged
+
+
+def _persistent_code_evidence_for_task(
+    entries: list[PersistentCodeEvidence],
+    snapshot: TaskTreeSnapshot,
+    task_key: str,
+    *,
+    limit: int,
+) -> list[PersistentCodeEvidence]:
+    if not entries:
+        return []
+
+    nodes_by_key = {node.key: node for node in snapshot.nodes}
+    ancestor_keys: set[str] = set()
+    sibling_keys: set[str] = set()
+    if task_key in nodes_by_key:
+        cursor = nodes_by_key[task_key]
+        ancestor_keys.add(task_key)
+        while cursor.parent_key and cursor.parent_key in nodes_by_key:
+            cursor = nodes_by_key[cursor.parent_key]
+            ancestor_keys.add(cursor.key)
+        parent_key = nodes_by_key[task_key].parent_key
+        if parent_key:
+            sibling_keys = {
+                node.key
+                for node in snapshot.nodes
+                if node.parent_key == parent_key and node.key != task_key
+            }
+
+    def rank(item: PersistentCodeEvidence) -> tuple[int, int]:
+        if item.source_task_key == task_key:
+            return (0, -item.cycle)
+        if item.source_task_key in ancestor_keys:
+            return (1, -item.cycle)
+        if item.source_task_key in sibling_keys:
+            return (2, -item.cycle)
+        return (9, -item.cycle)
+
+    filtered = [item for item in entries if rank(item)[0] < 9]
+    filtered.sort(key=rank)
+    deduped: list[PersistentCodeEvidence] = []
+    seen: set[tuple[str, str, str]] = set()
+    for item in filtered:
+        key = (item.source_task_key, item.path_hint, item.snippet)
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(item.model_copy(deep=True))
+        if len(deduped) >= limit:
+            break
+    return deduped
 
 
 def _agent_trace(agent: object) -> dict | None:

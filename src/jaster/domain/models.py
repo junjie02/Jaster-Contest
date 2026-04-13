@@ -128,6 +128,25 @@ class CompressionNote(BaseModel):
     strategy: str = ""
 
 
+class CodeEvidence(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    source: str = ""
+    path_hint: str = ""
+    snippet: str
+    why_it_matters: str = ""
+    exploit_hint: str = ""
+    confidence: float = Field(default=0.7, ge=0.0, le=1.0)
+
+
+class PersistentCodeEvidence(CodeEvidence):
+    model_config = ConfigDict(extra="forbid")
+
+    cycle: int = 0
+    source_task_key: str = ""
+    source_task_title: str = ""
+
+
 class SharedFinding(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -333,6 +352,7 @@ class StrategyTaskResult(BaseModel):
     latest_execution: LatestExecutionResult | None = None
     observed_task_results: list[ObservedTaskResult] = Field(default_factory=list)
     artifacts: list[ArtifactRef] = Field(default_factory=list)
+    code_evidence: list[PersistentCodeEvidence] = Field(default_factory=list)
 
 
 class ReflectionTaskUpdate(BaseModel):
@@ -393,6 +413,7 @@ class StrategyInput(BaseModel):
     reflection_history: list[ReflectionHistoryEntry] = Field(default_factory=list)
     reflection_digest: str = ""
     dependency_context: list[TaskDependencyContext] = Field(default_factory=list)
+    persistent_code_evidence: list[PersistentCodeEvidence] = Field(default_factory=list)
     available_artifacts: list[ArtifactRef] = Field(default_factory=list)
     available_tools: list[AvailableTool] = Field(default_factory=list)
     shared_bulletin: SharedBulletinDigest = Field(default_factory=SharedBulletinDigest)
@@ -410,6 +431,7 @@ class StrategyOutput(BaseModel):
     observed_task_results: list[ObservedTaskResult] = Field(default_factory=list)
     credentials: list[str] = Field(default_factory=list)
     shared_findings: list[SharedFinding] = Field(default_factory=list)
+    code_evidence: list[CodeEvidence] = Field(default_factory=list)
 
 
 class ReflectionInput(BaseModel):
@@ -475,6 +497,7 @@ class RunState(BaseModel):
     planner_history: list[PlannerHistoryEntry] = Field(default_factory=list)
     reflection_history: list[ReflectionHistoryEntry] = Field(default_factory=list)
     latest_discoveries: list[TaskDiscovery] = Field(default_factory=list)
+    persistent_code_evidence: list[PersistentCodeEvidence] = Field(default_factory=list)
     shared_bulletin: list[SharedBulletinEntry] = Field(default_factory=list)
     available_artifacts: list[ArtifactRef] = Field(default_factory=list)
     observations: list[Observation] = Field(default_factory=list)

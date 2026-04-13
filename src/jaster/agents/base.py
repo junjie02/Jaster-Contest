@@ -121,6 +121,12 @@ def _normalize_agent_response(role: str, payload: dict) -> dict:
             or normalized.get("bulletin_findings")
             or []
         )
+        normalized["code_evidence"] = _normalize_code_evidence(
+            normalized.get("code_evidence")
+            or normalized.get("code_snippets")
+            or normalized.get("source_evidence")
+            or []
+        )
         normalized["actions"] = _normalize_actions(normalized)
     elif role == "reflection":
         normalized.setdefault("summary", str(normalized.get("summary") or normalized.get("phase_summary") or ""))
@@ -177,6 +183,58 @@ def _normalize_actions(payload: dict) -> list[dict]:
         normalized = [_normalize_action({"task_id": "task1", "kind": "finish", "goal": "Stop current task."})]
     if finish_count and len(normalized) > 1:
         raise ValueError("finish action must be the only action in actions")
+    return normalized
+
+
+def _normalize_code_evidence(value: object) -> list[dict]:
+    if isinstance(value, dict):
+        value = [value]
+    if not isinstance(value, list):
+        return []
+
+    normalized: list[dict] = []
+    for item in value:
+        if isinstance(item, str):
+            snippet = item.strip()
+            if not snippet:
+                continue
+            normalized.append(
+                {
+                    "source": "",
+                    "path_hint": "",
+                    "snippet": snippet,
+                    "why_it_matters": "",
+                    "exploit_hint": "",
+                    "confidence": 0.7,
+                }
+            )
+            continue
+        if not isinstance(item, dict):
+            continue
+        snippet = str(
+            item.get("snippet")
+            or item.get("code")
+            or item.get("snippet_text")
+            or item.get("source_snippet")
+            or ""
+        ).strip()
+        if not snippet:
+            continue
+        normalized.append(
+            {
+                "source": str(item.get("source") or item.get("from_action") or item.get("source_action") or ""),
+                "path_hint": str(item.get("path_hint") or item.get("path") or item.get("file") or item.get("url") or ""),
+                "snippet": snippet,
+                "why_it_matters": str(
+                    item.get("why_it_matters")
+                    or item.get("reason")
+                    or item.get("impact")
+                    or ""
+                ),
+                "exploit_hint": str(item.get("exploit_hint") or item.get("next_step") or item.get("payload_hint") or ""),
+                "confidence": _normalize_float(item.get("confidence"), default=0.7),
+            }
+        )
     return normalized
 
 

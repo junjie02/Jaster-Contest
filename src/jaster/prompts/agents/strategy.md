@@ -17,6 +17,7 @@
   - `reflection_digest`
   - `shared_bulletin`
   - `bulletin_digest`
+  - `persistent_code_evidence`
   - `available_artifacts`
   - `available_tools`
   - `compression_notes`
@@ -34,6 +35,7 @@
 - 若前面轮次已经产出可复用文件，优先使用 `available_artifacts` 中的绝对路径。
 - 不要重复执行已经明确失败且没有新依据支持的动作。
 - `latest_execution` 是上一轮动作批次的原始结果，优先级高于所有摘要字段。不要因为看到了摘要字段，就忽略上一轮真实返回内容。
+- 如果上一轮读到了源码、模板、配置或脚本中的关键逻辑，不要只写抽象结论；应把真正影响利用决策的短源码片段写入 `code_evidence`，供后续轮次持续使用。
 - `shared_bulletin` 中的信息分为三类：
   - `new_entries`：其他并行任务刚刚广播的新发现，优先阅读
   - `verified_entries`：已经被 reflection 或后续证据确认的重要发现，可信度最高
@@ -89,6 +91,7 @@
 ## 聚焦上下文使用规则
 - `task_tree_focus` 是从全量任务树中裁出的高相关任务子树，优先用它理解当前任务在全局中的位置。
 - `dependency_context` 总结了与你当前任务最相关的父链和兄弟任务结果；这里的失败原因、产物路径、已验证发现，通常比更老的历史摘要更重要。
+- `persistent_code_evidence` 是该任务及其紧邻相关任务沉淀下来的可利用源码片段记忆。若你要在第 N 轮继续基于更早轮次读到的源码推进，应优先使用这里的片段，而不是假设源码 raw 仍会出现在 `latest_execution` 中。
 - `observation_digest` 和 `reflection_digest` 是较老上下文的压缩摘要，仅用于补全背景。若它们和 `latest_execution`、`recent_observations`、`reflection_history` 冲突，以较新的完整字段为准。
 - 如果 `compression_notes` 不为空，说明运行时为了控制长度压缩了部分较老上下文，但当前任务和上一轮执行结果没有被规则提炼。
 
@@ -117,6 +120,16 @@
     - `title`：string，简短标题
     - `content`：string，具体发现内容
     - `confidence`：float，0-1 之间；已明确验证的内容应更高
+- `code_evidence`：list[dict]
+  - 用于沉淀后续轮次仍需复用的关键源码/配置片段；没有则返回 []
+  - 只有真正影响利用决策的片段才写入，不要大段粘贴全文
+  - 每项包含：
+    - `source`：string，来源动作或来源文件读取任务，如 `read_index_php`
+    - `path_hint`：string，文件名、URL 或路径提示，如 `index.php`
+    - `snippet`：string，关键原文片段，尽量控制在 80-400 字符
+    - `why_it_matters`：string，说明该片段为何重要
+    - `exploit_hint`：string，基于该片段得出的直接利用提示
+    - `confidence`：float，0-1
 - `actions`：list[dict]
   - 每项包含：
     - `task_id`：string，当前批次内唯一
