@@ -22,10 +22,14 @@ import json
 import subprocess
 import time
 import logging
+import random
 import shutil
 import shlex
+import socket
+import uuid
 from typing import Dict, Any, List, Optional, Set
-from http.server import BaseHTTPRequestHandler
+from datetime import datetime
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import sys
 import os
 import threading
@@ -36,7 +40,6 @@ import requests
 try:
     from jaster.mcp.config import (
         SCENARIO_MODE,
-        KNOWLEDGE_SERVICE_URL,
         HACKATHON_API_BASE_URL,
         HACKATHON_AGENT_TOKEN,
         HACKATHON_MAX_ACTIVE_CHALLENGES,
@@ -47,7 +50,6 @@ try:
 except ImportError:
     # Fallback defaults if config cannot be loaded
     SCENARIO_MODE = "general"
-    KNOWLEDGE_SERVICE_URL = "http://127.0.0.1:8081"
     HACKATHON_API_BASE_URL = ""
     HACKATHON_AGENT_TOKEN = ""
     HACKATHON_MAX_ACTIVE_CHALLENGES = 3
@@ -733,8 +735,8 @@ async def expert_analysis(question: str, context_data: str = "") -> str:
     """
     专家分析工具 (元认知工具)。用于请求独立的、深度的问题分析。
     使用时机和范例请参考主提示词中的“指导原则”部分。
-    触发条件：当知识库（RAG）已进行至少两轮不同关键词/源类型检索仍无法获得有效知识，或问题涉及未知格式/算法、复杂正则过滤、黑盒协议逆向等高难度领域。
-    调用建议：在 `context_data` 中附上失败的检索词、源类型、关键证据（错误信息、源码片段、日志、请求/响应样本）与当前假设状态，以便专家快速定位。
+    触发条件：当常规探测、源码分析、网络搜索仍无法获得有效线索，或问题涉及未知格式/算法、复杂正则过滤、黑盒协议逆向等高难度领域。
+    调用建议：在 `context_data` 中附上失败的尝试、关键证据（错误信息、源码片段、日志、请求/响应样本）与当前假设状态，以便专家快速定位。
 
     :param question: 你需要专家回答的具体问题。这个问题应该尽可能清晰、具体。可以使用伪代码来描述你希望专家分析的算法或逻辑。
     :param context_data: (可选) 解决问题所需的所有相关数据，例如代码片段、token字符串、错误信息等。
@@ -809,78 +811,6 @@ async def expert_analysis(question: str, context_data: str = "") -> str:
             indent=2,
         )
 
-
-@mcp.tool()
-async def retrieve_knowledge(
-    query: str, top_k: int = 5, service_url: str = None
-) -> str:
-    """
-    从集中式知识库服务中进行语义检索。
-
-    扫描 knowledge_base 目录下的所有文档。
-    包括：
-    - 攻击技术和绕过方法
-    - 漏洞利用手册
-    等
-
-    **使用场景**：
-    - 需要查找特定攻击技术时（如"SQL注入绕过WAF"）
-    - 遇到陌生漏洞需要参考案例时
-    - 需要了解某个工具的使用方法时
-    - 寻找类似问题的解决方案时
-
-    **最佳实践**：
-    - 使用具体的技术术语作为查询词（如"LFI path traversal"而非"文件漏洞"）
-
-    Args:
-        query: 查询问题或关键字，例如 "如何绕过SQL注入的WAF过滤" 或 "SSRF漏洞利用方法"
-        top_k: 希望检索出的最相关知识条目数量（1-10，推荐5）
-        service_url: 知识服务URL（可选，默认从环境变量 KNOWLEDGE_SERVICE_URL 读取，或回退到 localhost）
-
-    Returns:
-        包含检索结果的JSON字符串，格式：
-        {
-            "success": bool,
-            "query": str,
-            "total_results": int,
-            "results": [
-                {
-                    "id": str,
-                    "snippet": str,  # 相关内容片段
-                    "score": float,  # 相似度分数（0-1，越高越相关）
-                },
-                ...
-            ]
-        }
-
-    示例：
-        # 查找SQL注入相关技术
-        result = await retrieve_knowledge("SQL injection WAF bypass", top_k=3)
-    """
-    # 动态确定服务 URL
-    if not service_url:
-        service_url = KNOWLEDGE_SERVICE_URL
-
-    try:
-        response = await _httpx_client.post(
-            f"{service_url}/retrieve_knowledge", json={"query": query, "top_k": top_k}, timeout=30
-        )
-        response.raise_for_status()
-        return json.dumps(response.json(), ensure_ascii=False, indent=2)
-    except httpx.RequestError as e:
-        return json.dumps(
-            {
-                "success": False,
-                "error": f"无法连接到知识库服务 ({service_url}): {e}",
-                "suggestion": "请确保知识服务已启动（agent.py 会自动启动）",
-            },
-            ensure_ascii=False,
-            indent=2,
-        )
-    except Exception as e:
-        return json.dumps({"success": False, "error": f"检索知识时发生错误: {e}"}, ensure_ascii=False, indent=2)
-
-
 @mcp.tool()
 async def distill_knowledge(insight_summary: str) -> str:
     """
@@ -921,7 +851,7 @@ async def web_search(query: str, num_results: int = 5) -> str:
     """
     通用网络搜索引擎工具 (Web Search Tool)。
     用于在互联网上搜索关于漏洞利用、绕过技巧、最新的CVE披露、开发文档、或任何通用知识。
-    如果你在执行渗透任务时遇到阻碍，且本地技能/知识库不足，应优先使用此工具进行广泛的情报收集。
+    如果你在执行渗透任务时遇到阻碍，且现有线索不足，应优先使用此工具进行广泛的情报收集。
     
     Args:
         query: 检索的关键词 (例如: "SQL injection WAF bypass techniques", "CVE-2023-1234 exploit github")
@@ -1853,14 +1783,14 @@ class PayloadServer:
         self.host = host
         self.routes = routes
         self.request_log: List[Dict] = []
-        self.httpd: Optional[HTTPServer] = None
+        self.httpd: Optional[ThreadingHTTPServer] = None
         self.thread: Optional[threading.Thread] = None
         self.started_at: Optional[datetime] = None
         self.stopped = False
     
     def start(self):
         """启动服务器"""
-        self.httpd = HTTPServer((self.host, self.port), PayloadRequestHandler)
+        self.httpd = ThreadingHTTPServer((self.host, self.port), PayloadRequestHandler)
         self.httpd.routes = self.routes
         self.httpd.request_log = self.request_log
         
@@ -1872,8 +1802,8 @@ class PayloadServer:
     def _serve(self):
         """在线程中运行服务器"""
         try:
-            while not self.stopped:
-                self.httpd.handle_request()
+            if self.httpd:
+                self.httpd.serve_forever(poll_interval=0.2)
         except Exception as e:
             logger.error(f"[PayloadServer] Server {self.server_id} error: {e}")
     
@@ -1883,6 +1813,8 @@ class PayloadServer:
         if self.httpd:
             self.httpd.shutdown()
             self.httpd.server_close()
+        if self.thread and self.thread.is_alive():
+            self.thread.join(timeout=1.0)
         logger.info(f"[PayloadServer] Stopped server {self.server_id}")
     
     def get_logs(self) -> List[Dict]:
@@ -1949,6 +1881,8 @@ class PayloadServerManager:
             routes_dict = {}
             for route in routes:
                 path = route.get('path', '/')
+                if not path.startswith('/'):
+                    path = f"/{path}"
                 routes_dict[path] = {
                     'content': route.get('content', ''),
                     'content_type': route.get('content_type', 'text/plain')

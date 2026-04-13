@@ -4,7 +4,6 @@ import os
 
 
 SCENARIO_MODE = os.environ.get("SCENARIO_MODE", "general").lower()
-KNOWLEDGE_SERVICE_URL = os.environ.get("KNOWLEDGE_SERVICE_URL", "http://127.0.0.1:8081")
 
 HACKATHON_API_BASE_URL = os.environ.get("JASTER_PLATFORM_HOST", "").rstrip("/")
 if HACKATHON_API_BASE_URL and not HACKATHON_API_BASE_URL.endswith("/api"):
