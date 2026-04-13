@@ -87,8 +87,7 @@ class _StrategyBulletinBoard:
         self,
         task_key: str,
         *,
-        verified_window: int = 12,
-        unverified_window: int = 8,
+        verified_window: int = 4,
     ) -> SharedBulletinDigest:
         with self._lock:
             cursor = self._read_cursors.setdefault(task_key, len(self._entries))
@@ -103,15 +102,10 @@ class _StrategyBulletinBoard:
                 for item in self._entries
                 if item.is_verified and item.source_task_key != task_key
             ][-verified_window:]
-            unverified_entries = [
-                item.model_copy(deep=True)
-                for item in self._entries
-                if not item.is_verified and item.source_task_key != task_key
-            ][-unverified_window:]
         return SharedBulletinDigest(
             new_entries=new_entries,
             verified_entries=verified_entries,
-            unverified_entries=unverified_entries,
+            unverified_entries=[],
         )
 
     def post(
@@ -766,8 +760,8 @@ class JasterOrchestrator:
             available_tools=_available_tools_compact(),
             shared_bulletin=SharedBulletinDigest(
                 new_entries=[item.model_copy(deep=True) for item in bulletin_digest.new_entries],
-                verified_entries=[item.model_copy(deep=True) for item in bulletin_digest.verified_entries[-12:]],
-                unverified_entries=[item.model_copy(deep=True) for item in bulletin_digest.unverified_entries[-8:]],
+                verified_entries=[item.model_copy(deep=True) for item in bulletin_digest.verified_entries[-4:]],
+                unverified_entries=[],
             ),
         )
         return self._compress_strategy_input(payload)
@@ -935,25 +929,25 @@ class JasterOrchestrator:
         *,
         notes: list[CompressionNote],
     ) -> tuple[SharedBulletinDigest, str]:
-        if len(bulletin.unverified_entries) <= 8:
+        if len(bulletin.new_entries) <= 8:
             return bulletin, ""
-        older = bulletin.unverified_entries[:-8]
+        older = bulletin.new_entries[:-8]
         source = json.dumps([item.model_dump() for item in older], ensure_ascii=False, indent=2)
-        digest = self._summarize_text(title="strategy unverified bulletin entries", text=source)
+        digest = self._summarize_text(title="strategy older unread bulletin entries", text=source)
         if digest:
             notes.append(
                 CompressionNote(
-                    field="shared_bulletin.unverified_entries",
-                    reason="compressed older unverified bulletin entries with llm",
+                    field="shared_bulletin.new_entries",
+                    reason="compressed older unread bulletin entries with llm",
                     original_chars=len(source),
                     final_chars=len(digest),
                     strategy="llm_summary",
                 )
-        )
+            )
         return SharedBulletinDigest(
-            new_entries=[item.model_copy(deep=True) for item in bulletin.new_entries],
+            new_entries=[item.model_copy(deep=True) for item in bulletin.new_entries[-8:]],
             verified_entries=[item.model_copy(deep=True) for item in bulletin.verified_entries],
-            unverified_entries=[item.model_copy(deep=True) for item in bulletin.unverified_entries[-8:]],
+            unverified_entries=[],
         ), digest
 
     def _shrink_plan_windows(self, payload: PlanInput, notes: list[CompressionNote]) -> PlanInput:
@@ -1027,10 +1021,14 @@ class JasterOrchestrator:
                 notes=notes,
             )
 
-        for keep in (8, 4, 2):
+        for keep in (4, 2, 1, 0):
             if _payload_chars(payload) <= self.context_payload_limit:
                 break
-            trimmed = self._trim_bulletin_window(payload.shared_bulletin, verified_keep=keep, unverified_keep=min(keep, 4))
+            trimmed = self._trim_bulletin_window(
+                payload.shared_bulletin,
+                new_keep=max(keep * 2, 0),
+                verified_keep=keep,
+            )
             self._append_window_reduction_note(
                 field="shared_bulletin windows",
                 before=payload.shared_bulletin,
@@ -1143,13 +1141,13 @@ class JasterOrchestrator:
         self,
         bulletin: SharedBulletinDigest,
         *,
+        new_keep: int,
         verified_keep: int,
-        unverified_keep: int,
     ) -> SharedBulletinDigest:
         return SharedBulletinDigest(
-            new_entries=[item.model_copy(deep=True) for item in bulletin.new_entries],
+            new_entries=[item.model_copy(deep=True) for item in bulletin.new_entries[-new_keep:]],
             verified_entries=[item.model_copy(deep=True) for item in bulletin.verified_entries[-verified_keep:]],
-            unverified_entries=[item.model_copy(deep=True) for item in bulletin.unverified_entries[-unverified_keep:]],
+            unverified_entries=[],
         )
 
     def _append_window_reduction_note(

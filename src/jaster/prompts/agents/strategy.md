@@ -37,9 +37,9 @@
 - `latest_execution` 是上一轮动作批次的原始结果，优先级高于所有摘要字段。不要因为看到了摘要字段，就忽略上一轮真实返回内容。
 - 如果上一轮读到了源码、模板、配置或脚本中的关键逻辑，不要只写抽象结论；应把真正影响利用决策的短源码片段写入 `code_evidence`，供后续轮次持续使用。
 - `shared_bulletin` 中的信息分为三类：
-  - `new_entries`：其他并行任务刚刚广播的新发现，优先阅读
-  - `verified_entries`：已经被 reflection 或后续证据确认的重要发现，可信度最高
-  - `unverified_entries`：高价值但尚未完全确认的线索，只能作为提示，不能当作既定事实
+  - `new_entries`：其他并行任务自你上次阅读后新增的公告，是当前最重要的跨任务输入
+  - `verified_entries`：少量已被 reflection 或后续证据确认的重要事实，用于稳定记忆
+  - `unverified_entries`：通常为空；不要假设系统会每轮重复提供旧的未验证公告历史
 - 你不能把自己这一轮的低价值噪音广播出去。只有高价值、可复用、会影响其它任务决策的信息才应该写入 `shared_findings`。
 
 ## 并发动作规划原则
@@ -78,7 +78,7 @@
 ## 公告板使用规则
 - 当其它任务公布了新入口、关键路径、凭据、组件版本、过滤规则、有效 payload、失败模式时，你应把这些内容纳入当前决策。
 - `shared_bulletin` 的内容是跨 strategy 共享上下文，不要重复把其中完全相同的信息再次写入 `shared_findings`。
-- `bulletin_digest` 只用于了解较老的未验证公告；如果 `new_entries` 或 `verified_entries` 中有直接可用的信息，优先使用那些完整内容。
+- `bulletin_digest` 只用于补充“本轮 unread 新公告过多时被压缩掉的较老部分”；如果 `new_entries` 或 `verified_entries` 中有直接可用的信息，优先使用那些完整内容。
 - 只有满足以下条件之一时，才在 `shared_findings` 中主动广播：
   - 确认了新的漏洞、入口、敏感文件路径、组件版本、认证信息
   - 确认某种 payload / 绕过方式有效或明确无效
