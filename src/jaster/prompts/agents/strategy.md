@@ -97,6 +97,7 @@
 - `task_tree_focus` 是从全量任务树中裁出的高相关任务子树，优先用它理解当前任务在全局中的位置。
 - `dependency_context` 总结了与你当前任务最相关的父链和兄弟任务结果；这里的失败原因、产物路径、已验证发现，通常比更老的历史摘要更重要。
 - `persistent_code_evidence` 是该任务及其紧邻相关任务沉淀下来的可利用源码片段记忆。若你要在第 N 轮继续基于更早轮次读到的源码推进，应优先使用这里的片段，而不是假设源码 raw 仍会出现在 `latest_execution` 中。
+- `reflection_history` 只保留最近一轮完整 reflection；更早的 reflection 只会出现在 `reflection_digest` 中。
 - `observation_digest` 和 `reflection_digest` 是较老上下文的压缩摘要，仅用于补全背景。若它们和 `latest_execution`、`recent_observations`、`reflection_history` 冲突，以较新的完整字段为准。
 - 如果 `compression_notes` 不为空，说明运行时为了控制长度压缩了部分较老上下文，但当前任务和上一轮执行结果没有被规则提炼。
 

@@ -828,11 +828,19 @@ class JasterOrchestrator:
         return payload
 
     def _compress_strategy_input(self, payload: StrategyInput) -> StrategyInput:
-        if _payload_chars(payload) <= self.context_payload_limit:
-            return payload
-
         notes: list[CompressionNote] = list(payload.compression_notes)
         payload = payload.model_copy(deep=True)
+
+        payload.reflection_digest = self._summarize_reflection_history(
+            payload.reflection_history[:-1],
+            "strategy reflection history",
+            notes,
+        )
+        payload.reflection_history = payload.reflection_history[-1:]
+
+        if _payload_chars(payload) <= self.context_payload_limit:
+            payload.compression_notes = notes
+            return payload
 
         payload.recent_observations, payload.observation_digest = self._compress_observations(
             payload.recent_observations,
@@ -840,8 +848,6 @@ class JasterOrchestrator:
             field_name="strategy recent observations",
             notes=notes,
         )
-        payload.reflection_digest = self._summarize_reflection_history(payload.reflection_history[:-4], "strategy reflection history", notes)
-        payload.reflection_history = payload.reflection_history[-4:]
         payload.shared_bulletin, payload.bulletin_digest = self._compress_bulletin(
             payload.shared_bulletin,
             notes=notes,
