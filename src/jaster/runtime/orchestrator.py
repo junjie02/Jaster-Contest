@@ -18,6 +18,7 @@ from jaster.domain import (
     ArtifactRef,
     AvailableTool,
     ChallengeSpec,
+    CompressionNote,
     ExecutionResult,
     FailurePattern,
     LatestExecutionResult,
@@ -42,10 +43,13 @@ from jaster.domain import (
     SubmissionInput,
     SubmissionResult,
     TaskDiscovery,
+    TaskDependencyContext,
     TaskExecutionResult,
     TaskNodeSnapshot,
     TaskNodeUpdatePatch,
     TaskStatus,
+    TaskStatusDigest,
+    TaskStatusDigestItem,
     TaskTree,
     TaskTreePatch,
     TaskTreeSnapshot,
@@ -183,6 +187,7 @@ class JasterOrchestrator:
         self.store = store
         self.prompt_root = prompt_root
         self.skills_dir = skills_dir
+        self.llm = llm
         self.agents = build_agents(prompt_root, llm)
         self.verbose = verbose
         self.phase_max_retries = env_int("JASTER_PHASE_MAX_RETRIES", 3)
@@ -192,6 +197,7 @@ class JasterOrchestrator:
         self.strategy_observation_limit = env_int("JASTER_STRATEGY_RECENT_OBSERVATION_LIMIT", 8)
         self.default_tool_timeout = env_int("JASTER_MCP_TOOL_TIMEOUT", 180)
         self.planner_context_window = env_int("JASTER_PLANNER_CONTEXT_WINDOW", 8)
+        self.context_payload_limit = env_int("JASTER_CONTEXT_PAYLOAD_LIMIT", 150000)
         self._on_tree_update = on_tree_update
 
     def run(
@@ -227,21 +233,19 @@ class JasterOrchestrator:
 
             self._log(f"[*] Cycle {cycle}: plan")
             previous_keys = {node.key for node in state.task_tree.nodes}
+            plan_input = self._build_plan_input(
+                challenge=challenge,
+                task_tree=state.task_tree,
+                bootstrap_execution=bootstrap_execution,
+                planner_context=state.planner_context,
+                reflection_history=state.reflection_history,
+                latest_discoveries=state.latest_discoveries,
+                available_artifacts=state.available_artifacts,
+            )
             plan_out, plan_elapsed = self._timed_agent_run(
                 "plan",
                 challenge.zone,
-                PlanInput(
-                    objective=f"Plan the next batch of penetration tasks for {challenge.target}.",
-                    task_tree=_prompt_task_tree(state.task_tree),
-                    challenge_context=_challenge_context(challenge),
-                    bootstrap_execution=_compact_execution(bootstrap_execution),
-                    planner_context=state.planner_context.model_copy(deep=True) if state.planner_context else None,
-                    task_status_summary=_task_status_summary(state.task_tree),
-                    failure_patterns_summary=_failure_patterns_summary(state.reflection_history),
-                    reflection_history=list(state.reflection_history[-8:]),
-                    latest_discoveries=_prompt_discoveries(state.latest_discoveries),
-                    available_artifacts=_prompt_artifacts(state.available_artifacts),
-                ),
+                plan_input,
             )
             self._log(f"    LLM time: {plan_elapsed:.2f}s")
             task_tree.apply_patch(plan_out.tree_patch)
@@ -273,6 +277,7 @@ class JasterOrchestrator:
                     "cycle": cycle,
                     "agent": "plan",
                     "input": _agent_trace(self.agents.get("plan")),
+                    "input_payload": plan_input.model_dump(),
                     "output": plan_out.model_dump(),
                 },
             )
@@ -576,23 +581,22 @@ class JasterOrchestrator:
                 strategy_round=strategy_round,
                 digest=bulletin_digest,
             )
+            strategy_input = self._build_strategy_input(
+                challenge=challenge,
+                task_tree=task_tree,
+                task_node=task_node,
+                recent_rounds=recent_rounds,
+                latest_execution=latest_execution,
+                reflection_history=reflection_history,
+                available_artifacts=available_artifacts,
+                bulletin_digest=bulletin_digest,
+            )
 
             try:
                 strategy_out, _ = self._timed_agent_run(
                     "strategy",
                     challenge.zone,
-                    StrategyInput(
-                        objective=f"Complete assigned task: {task_node.title}",
-                        assigned_task=task_node,
-                        task_tree=_prompt_task_tree(task_tree),
-                        challenge_context=_challenge_context(challenge),
-                        recent_observations=list(recent_rounds),
-                        latest_execution=_compact_execution(latest_execution),
-                        reflection_history=reflection_history[-8:],
-                        available_artifacts=_prompt_artifacts(available_artifacts),
-                        available_tools=_available_tools(),
-                        shared_bulletin=bulletin_digest,
-                    ),
+                    strategy_input,
                 )
             except Exception as exc:
                 termination_reason = "strategy_error"
@@ -678,6 +682,472 @@ class JasterOrchestrator:
         )
         self._log_task_result(result)
         return result, collected
+
+    def _build_plan_input(
+        self,
+        *,
+        challenge: ChallengeSpec,
+        task_tree: TaskTreeSnapshot,
+        bootstrap_execution: ExecutionResult | None,
+        planner_context: PlannerContext | None,
+        reflection_history: list[ReflectionHistoryEntry],
+        latest_discoveries: list[TaskDiscovery],
+        available_artifacts: list[ArtifactRef],
+    ) -> PlanInput:
+        payload = PlanInput(
+            objective=f"Plan the next batch of penetration tasks for {challenge.target}.",
+            task_tree=_prompt_task_tree(task_tree),
+            challenge_context=_challenge_context(challenge),
+            bootstrap_execution=_compact_execution(bootstrap_execution),
+            planner_context=planner_context.model_copy(deep=True) if planner_context else None,
+            task_status_summary="",
+            failure_patterns_summary="",
+            task_status_digest=_task_status_digest(task_tree),
+            failure_patterns_digest=_failure_patterns_digest(reflection_history),
+            reflection_history=[item.model_copy(deep=True) for item in reflection_history],
+            latest_discoveries=_prompt_discoveries(latest_discoveries, limit=20),
+            available_artifacts=_prompt_artifacts(available_artifacts, limit=15),
+        )
+        return self._compress_plan_input(payload)
+
+    def _build_strategy_input(
+        self,
+        *,
+        challenge: ChallengeSpec,
+        task_tree: TaskTreeSnapshot,
+        task_node: TaskNodeSnapshot,
+        recent_rounds: list[RecentObservationRound],
+        latest_execution: ExecutionResult | None,
+        reflection_history: list[ReflectionHistoryEntry],
+        available_artifacts: list[ArtifactRef],
+        bulletin_digest: SharedBulletinDigest,
+    ) -> StrategyInput:
+        focus_tree = _task_tree_focus(task_tree, task_node.key, limit=12)
+        dependency_context = _dependency_context(task_tree, task_node.key, available_artifacts, limit=6)
+        payload = StrategyInput(
+            objective=f"Complete assigned task: {task_node.title}",
+            assigned_task=task_node,
+            task_tree=TaskTreeSnapshot(nodes=[]),
+            task_tree_focus=focus_tree,
+            challenge_context=_challenge_context(challenge),
+            recent_observations=list(recent_rounds),
+            latest_execution=_compact_execution(latest_execution),
+            reflection_history=[item.model_copy(deep=True) for item in reflection_history],
+            dependency_context=dependency_context,
+            available_artifacts=_prompt_artifacts(available_artifacts, limit=10),
+            available_tools=_available_tools_compact(),
+            shared_bulletin=SharedBulletinDigest(
+                new_entries=[item.model_copy(deep=True) for item in bulletin_digest.new_entries],
+                verified_entries=[item.model_copy(deep=True) for item in bulletin_digest.verified_entries[-12:]],
+                unverified_entries=[item.model_copy(deep=True) for item in bulletin_digest.unverified_entries[-8:]],
+            ),
+        )
+        return self._compress_strategy_input(payload)
+
+    def _compress_plan_input(self, payload: PlanInput) -> PlanInput:
+        if _payload_chars(payload) <= self.context_payload_limit:
+            return payload
+
+        notes: list[CompressionNote] = list(payload.compression_notes)
+        payload = payload.model_copy(deep=True)
+
+        payload.planner_context = self._compress_planner_context(payload.planner_context, notes)
+        payload.reflection_digest = self._summarize_reflection_history(payload.reflection_history[:-4], "plan reflection history", notes)
+        payload.reflection_history = payload.reflection_history[-4:]
+        payload.latest_discoveries, payload.discoveries_digest = self._compress_discoveries(
+            payload.latest_discoveries,
+            "plan latest discoveries",
+            keep=12,
+            notes=notes,
+        )
+        payload.available_artifacts = _prompt_artifacts(payload.available_artifacts, limit=12)
+        payload.compression_notes = notes
+        if _payload_chars(payload) > self.context_payload_limit:
+            payload = self._shrink_plan_windows(payload, notes)
+        if _payload_chars(payload) > self.context_payload_limit:
+            raise RuntimeError("protected_context_overflow: plan payload exceeds limit after compressing non-protected fields")
+        return payload
+
+    def _compress_strategy_input(self, payload: StrategyInput) -> StrategyInput:
+        if _payload_chars(payload) <= self.context_payload_limit:
+            return payload
+
+        notes: list[CompressionNote] = list(payload.compression_notes)
+        payload = payload.model_copy(deep=True)
+
+        payload.recent_observations, payload.observation_digest = self._compress_observations(
+            payload.recent_observations,
+            keep=3,
+            field_name="strategy recent observations",
+            notes=notes,
+        )
+        payload.reflection_digest = self._summarize_reflection_history(payload.reflection_history[:-4], "strategy reflection history", notes)
+        payload.reflection_history = payload.reflection_history[-4:]
+        payload.shared_bulletin, payload.bulletin_digest = self._compress_bulletin(
+            payload.shared_bulletin,
+            notes=notes,
+        )
+        payload.available_artifacts = _prompt_artifacts(payload.available_artifacts, limit=8)
+        payload.compression_notes = notes
+        if _payload_chars(payload) > self.context_payload_limit:
+            payload = self._shrink_strategy_windows(payload, notes)
+        if _payload_chars(payload) > self.context_payload_limit:
+            raise RuntimeError("protected_context_overflow: strategy payload exceeds limit after compressing non-protected fields")
+        return payload
+
+    def _compress_planner_context(
+        self,
+        context: PlannerContext | None,
+        notes: list[CompressionNote],
+    ) -> PlannerContext | None:
+        if context is None:
+            return None
+        context = context.model_copy(deep=True)
+        if len(context.planning_attempts) <= 6:
+            return context
+        older = context.planning_attempts[:-6]
+        source_payload = {
+            "existing_compressed_history_summary": context.compressed_history_summary,
+            "older_planning_attempts": [item.model_dump() for item in older],
+        }
+        source = json.dumps(source_payload, ensure_ascii=False, indent=2)
+        digest = self._summarize_text(title="planner context planning attempts", text=source)
+        if digest:
+            notes.append(
+                CompressionNote(
+                    field="planner_context.planning_attempts",
+                    reason="compressed older planning attempts with llm",
+                    original_chars=len(source),
+                    final_chars=len(digest),
+                    strategy="llm_summary",
+                )
+            )
+            context.compressed_history_summary = digest
+            context.compression_count += 1
+        context.planning_attempts = context.planning_attempts[-6:]
+        return context
+
+    def _compress_observations(
+        self,
+        rounds: list[RecentObservationRound],
+        *,
+        keep: int,
+        field_name: str,
+        notes: list[CompressionNote],
+    ) -> tuple[list[RecentObservationRound], str]:
+        if len(rounds) <= keep:
+            return rounds, ""
+        older = rounds[:-keep]
+        digest = self._summarize_text(
+            title=field_name,
+            text=json.dumps([item.model_dump() for item in older], ensure_ascii=False, indent=2),
+        )
+        if digest:
+            notes.append(
+                CompressionNote(
+                    field=field_name,
+                    reason="compressed older rounds with llm",
+                    original_chars=len(json.dumps([item.model_dump() for item in older], ensure_ascii=False)),
+                    final_chars=len(digest),
+                    strategy="llm_summary",
+                )
+            )
+        return rounds[-keep:], digest
+
+    def _summarize_reflection_history(
+        self,
+        history: list[ReflectionHistoryEntry],
+        field_name: str,
+        notes: list[CompressionNote],
+    ) -> str:
+        if not history:
+            return ""
+        source = json.dumps([item.model_dump() for item in history], ensure_ascii=False, indent=2)
+        digest = self._summarize_text(title=field_name, text=source)
+        if digest:
+            notes.append(
+                CompressionNote(
+                    field=field_name,
+                    reason="compressed older reflection history with llm",
+                    original_chars=len(source),
+                    final_chars=len(digest),
+                    strategy="llm_summary",
+                )
+            )
+        return digest
+
+    def _compress_discoveries(
+        self,
+        discoveries: list[TaskDiscovery],
+        field_name: str,
+        *,
+        keep: int,
+        notes: list[CompressionNote],
+    ) -> tuple[list[TaskDiscovery], str]:
+        if len(discoveries) <= keep:
+            return discoveries, ""
+        older = discoveries[:-keep]
+        source = json.dumps([item.model_dump() for item in older], ensure_ascii=False, indent=2)
+        digest = self._summarize_text(title=field_name, text=source)
+        if digest:
+            notes.append(
+                CompressionNote(
+                    field=field_name,
+                    reason="compressed older discoveries with llm",
+                    original_chars=len(source),
+                    final_chars=len(digest),
+                    strategy="llm_summary",
+                )
+            )
+        return discoveries[-keep:], digest
+
+    def _compress_bulletin(
+        self,
+        bulletin: SharedBulletinDigest,
+        *,
+        notes: list[CompressionNote],
+    ) -> tuple[SharedBulletinDigest, str]:
+        if len(bulletin.unverified_entries) <= 8:
+            return bulletin, ""
+        older = bulletin.unverified_entries[:-8]
+        source = json.dumps([item.model_dump() for item in older], ensure_ascii=False, indent=2)
+        digest = self._summarize_text(title="strategy unverified bulletin entries", text=source)
+        if digest:
+            notes.append(
+                CompressionNote(
+                    field="shared_bulletin.unverified_entries",
+                    reason="compressed older unverified bulletin entries with llm",
+                    original_chars=len(source),
+                    final_chars=len(digest),
+                    strategy="llm_summary",
+                )
+        )
+        return SharedBulletinDigest(
+            new_entries=[item.model_copy(deep=True) for item in bulletin.new_entries],
+            verified_entries=[item.model_copy(deep=True) for item in bulletin.verified_entries],
+            unverified_entries=[item.model_copy(deep=True) for item in bulletin.unverified_entries[-8:]],
+        ), digest
+
+    def _shrink_plan_windows(self, payload: PlanInput, notes: list[CompressionNote]) -> PlanInput:
+        payload = payload.model_copy(deep=True)
+
+        for keep in (4, 2, 0):
+            if _payload_chars(payload) <= self.context_payload_limit:
+                break
+            payload.planner_context = self._trim_planner_attempt_window(payload.planner_context, keep=keep, notes=notes)
+
+        for keep in (2, 1, 0):
+            if _payload_chars(payload) <= self.context_payload_limit:
+                break
+            payload.reflection_history = self._trim_list_window(
+                payload.reflection_history,
+                keep=keep,
+                field="plan reflection history window",
+                notes=notes,
+            )
+
+        for keep in (8, 4, 2, 0):
+            if _payload_chars(payload) <= self.context_payload_limit:
+                break
+            payload.latest_discoveries = self._trim_list_window(
+                payload.latest_discoveries,
+                keep=keep,
+                field="plan latest discoveries window",
+                notes=notes,
+            )
+
+        for limit in (8, 4, 0):
+            if _payload_chars(payload) <= self.context_payload_limit:
+                break
+            trimmed = _prompt_artifacts(payload.available_artifacts, limit=limit)
+            self._append_window_reduction_note(
+                field="plan available_artifacts",
+                before=payload.available_artifacts,
+                after=trimmed,
+                notes=notes,
+            )
+            payload.available_artifacts = trimmed
+
+        payload.compression_notes = list(notes)
+        if _payload_chars(payload) > self.context_payload_limit:
+            for keep in (8, 4, 0):
+                if _payload_chars(payload) <= self.context_payload_limit:
+                    break
+                payload.compression_notes = payload.compression_notes[-keep:] if keep > 0 else []
+        return payload
+
+    def _shrink_strategy_windows(self, payload: StrategyInput, notes: list[CompressionNote]) -> StrategyInput:
+        payload = payload.model_copy(deep=True)
+
+        for keep in (2, 1, 0):
+            if _payload_chars(payload) <= self.context_payload_limit:
+                break
+            payload.recent_observations = self._trim_list_window(
+                payload.recent_observations,
+                keep=keep,
+                field="strategy recent observations window",
+                notes=notes,
+            )
+
+        for keep in (2, 1, 0):
+            if _payload_chars(payload) <= self.context_payload_limit:
+                break
+            payload.reflection_history = self._trim_list_window(
+                payload.reflection_history,
+                keep=keep,
+                field="strategy reflection history window",
+                notes=notes,
+            )
+
+        for keep in (8, 4, 2):
+            if _payload_chars(payload) <= self.context_payload_limit:
+                break
+            trimmed = self._trim_bulletin_window(payload.shared_bulletin, verified_keep=keep, unverified_keep=min(keep, 4))
+            self._append_window_reduction_note(
+                field="shared_bulletin windows",
+                before=payload.shared_bulletin,
+                after=trimmed,
+                notes=notes,
+            )
+            payload.shared_bulletin = trimmed
+
+        for keep in (4, 2, 0):
+            if _payload_chars(payload) <= self.context_payload_limit:
+                break
+            payload.dependency_context = self._trim_list_window(
+                payload.dependency_context,
+                keep=keep,
+                field="strategy dependency_context",
+                notes=notes,
+            )
+
+        for keep in (8, 6, 4, 2):
+            if _payload_chars(payload) <= self.context_payload_limit:
+                break
+            payload.task_tree_focus = self._trim_task_tree_window(
+                payload.task_tree_focus,
+                keep=keep,
+                field="strategy task_tree_focus",
+                notes=notes,
+            )
+
+        for limit in (6, 3, 0):
+            if _payload_chars(payload) <= self.context_payload_limit:
+                break
+            trimmed = _prompt_artifacts(payload.available_artifacts, limit=limit)
+            self._append_window_reduction_note(
+                field="strategy available_artifacts",
+                before=payload.available_artifacts,
+                after=trimmed,
+                notes=notes,
+            )
+            payload.available_artifacts = trimmed
+
+        payload.compression_notes = list(notes)
+        if _payload_chars(payload) > self.context_payload_limit:
+            for keep in (8, 4, 0):
+                if _payload_chars(payload) <= self.context_payload_limit:
+                    break
+                payload.compression_notes = payload.compression_notes[-keep:] if keep > 0 else []
+        return payload
+
+    def _trim_planner_attempt_window(
+        self,
+        context: PlannerContext | None,
+        *,
+        keep: int,
+        notes: list[CompressionNote],
+    ) -> PlannerContext | None:
+        if context is None:
+            return None
+        context = context.model_copy(deep=True)
+        if len(context.planning_attempts) <= keep:
+            return context
+        before = context.model_dump()
+        context.planning_attempts = context.planning_attempts[-keep:] if keep > 0 else []
+        self._append_window_reduction_note(
+            field="planner_context active window",
+            before=before,
+            after=context.model_dump(),
+            notes=notes,
+        )
+        return context
+
+    def _trim_list_window(
+        self,
+        items: list[Any],
+        *,
+        keep: int,
+        field: str,
+        notes: list[CompressionNote],
+    ) -> list[Any]:
+        if len(items) <= keep:
+            return items
+        trimmed = items[-keep:] if keep > 0 else []
+        self._append_window_reduction_note(field=field, before=items, after=trimmed, notes=notes)
+        return trimmed
+
+    def _trim_task_tree_window(
+        self,
+        snapshot: TaskTreeSnapshot,
+        *,
+        keep: int,
+        field: str,
+        notes: list[CompressionNote],
+    ) -> TaskTreeSnapshot:
+        if len(snapshot.nodes) <= keep:
+            return snapshot
+        trimmed = TaskTreeSnapshot(nodes=[item.model_copy(deep=True) for item in snapshot.nodes[:keep]])
+        self._append_window_reduction_note(field=field, before=snapshot, after=trimmed, notes=notes)
+        return trimmed
+
+    def _trim_bulletin_window(
+        self,
+        bulletin: SharedBulletinDigest,
+        *,
+        verified_keep: int,
+        unverified_keep: int,
+    ) -> SharedBulletinDigest:
+        return SharedBulletinDigest(
+            new_entries=[item.model_copy(deep=True) for item in bulletin.new_entries],
+            verified_entries=[item.model_copy(deep=True) for item in bulletin.verified_entries[-verified_keep:]],
+            unverified_entries=[item.model_copy(deep=True) for item in bulletin.unverified_entries[-unverified_keep:]],
+        )
+
+    def _append_window_reduction_note(
+        self,
+        *,
+        field: str,
+        before: Any,
+        after: Any,
+        notes: list[CompressionNote],
+    ) -> None:
+        before_chars = len(json.dumps(_jsonable(before), ensure_ascii=False))
+        after_chars = len(json.dumps(_jsonable(after), ensure_ascii=False))
+        if after_chars >= before_chars:
+            return
+        notes.append(
+            CompressionNote(
+                field=field,
+                reason="reduced retained raw window after summarizing older context",
+                original_chars=before_chars,
+                final_chars=after_chars,
+                strategy="window_reduce",
+            )
+        )
+
+    def _summarize_text(self, *, title: str, text: str) -> str:
+        if not text.strip():
+            return ""
+        if not hasattr(self.llm, "complete_text"):
+            raise RuntimeError(f"llm_summary_unavailable: cannot compress {title}")
+        prompt = (
+            "请将以下上下文压缩为简洁但保真的中文摘要，保留任务目标、关键发现、失败模式、可复用路径、"
+            "凭据、payload、文件路径和下一步决策相关信息。不要杜撰，不要省略明确证据。\n\n"
+            f"上下文类型: {title}\n\n{text}"
+        )
+        system = "你是一个渗透测试上下文压缩器。你的职责是在不改变事实的前提下压缩较老的历史上下文。"
+        return str(self.llm.complete_text(system=system, prompt=prompt) or "").strip()
 
     def _execute_actions(
         self,
@@ -1168,6 +1638,65 @@ def _prompt_discoveries(discoveries: list[TaskDiscovery], *, limit: int = 20) ->
     return [item.model_copy(deep=True) for item in discoveries[-limit:]]
 
 
+def _payload_chars(payload: object) -> int:
+    return len(json.dumps(_jsonable(payload), ensure_ascii=False))
+
+
+def _jsonable(value: object) -> object:
+    if hasattr(value, "model_dump"):
+        return value.model_dump()
+    if isinstance(value, list):
+        return [_jsonable(item) for item in value]
+    if isinstance(value, tuple):
+        return [_jsonable(item) for item in value]
+    if isinstance(value, dict):
+        return {key: _jsonable(item) for key, item in value.items()}
+    return value
+
+
+def _task_status_digest(snapshot: TaskTreeSnapshot) -> TaskStatusDigest:
+    in_progress = [node for node in snapshot.nodes if node.status == TaskStatus.in_progress]
+    completed = [node for node in snapshot.nodes if node.status == TaskStatus.completed]
+    failed = [node for node in snapshot.nodes if node.status == TaskStatus.failed]
+    parent_keys = {node.parent_key for node in snapshot.nodes if node.parent_key}
+    leaf_nodes = [node for node in snapshot.nodes if node.key not in parent_keys]
+    return TaskStatusDigest(
+        in_progress=len(in_progress),
+        completed=len(completed),
+        failed=len(failed),
+        leaf=len(leaf_nodes),
+        in_progress_leaves=[_task_status_digest_item(item) for item in leaf_nodes if item.status == TaskStatus.in_progress][:8],
+        failed_leaves=[_task_status_digest_item(item) for item in leaf_nodes if item.status == TaskStatus.failed][:5],
+        completed_leaves=[_task_status_digest_item(item) for item in leaf_nodes if item.status == TaskStatus.completed][:5],
+    )
+
+
+def _task_status_digest_item(node: TaskNodeSnapshot) -> TaskStatusDigestItem:
+    return TaskStatusDigestItem(
+        key=node.key,
+        title=node.title,
+        status=node.status,
+        attempt_count=node.attempt_count,
+        latest_summary=node.latest_summary,
+        latest_findings=list(node.latest_findings),
+    )
+
+
+def _failure_patterns_digest(reflection_history: list[ReflectionHistoryEntry]) -> list[FailurePattern]:
+    merged: list[FailurePattern] = []
+    seen: set[tuple[str, str]] = set()
+    for entry in reversed(reflection_history):
+        for item in reversed(entry.failure_patterns):
+            key = (item.pattern, item.reason)
+            if key in seen:
+                continue
+            seen.add(key)
+            merged.append(item.model_copy(deep=True))
+            if len(merged) >= 8:
+                return list(reversed(merged))
+    return list(reversed(merged))
+
+
 def _initial_planner_context(challenge: ChallengeSpec, task_tree: TaskTreeSnapshot) -> PlannerContext:
     root = task_tree.nodes[0] if task_tree.nodes else None
     long_term_objectives = []
@@ -1305,11 +1834,11 @@ def _compact_execution(execution: ExecutionResult | None) -> LatestExecutionResu
     return LatestExecutionResult(
         success=execution.success,
         batch_status=execution.batch_status,
-        summary=_excerpt(execution.summary, limit=1200),
-        findings=[_excerpt(item, limit=1600) for item in execution.findings[:20]],
-        stdout=_excerpt_head_tail(execution.stdout, limit=50000),
-        stderr=_excerpt_head_tail(execution.stderr, limit=50000),
-        command=_excerpt(execution.command, limit=1200),
+        summary=execution.summary,
+        findings=list(execution.findings),
+        stdout=execution.stdout,
+        stderr=execution.stderr,
+        command=execution.command,
         source=execution.source,
         failure_stage=execution.failure_stage,
         task_results={key: _compact_task_result(value) for key, value in execution.task_results.items()},
@@ -1319,12 +1848,12 @@ def _compact_execution(execution: ExecutionResult | None) -> LatestExecutionResu
 def _compact_task_result(task_result: TaskExecutionResult) -> TaskExecutionResult:
     return task_result.model_copy(
         update={
-            "summary": _excerpt(task_result.summary, limit=1200),
-            "findings": [_excerpt(item, limit=1600) for item in task_result.findings[:20]],
-            "stdout": _excerpt_head_tail(task_result.stdout, limit=50000),
-            "stderr": _excerpt_head_tail(task_result.stderr, limit=50000),
-            "command": _excerpt(task_result.command, limit=1200),
-            "script_path": _excerpt(task_result.script_path, limit=600),
+            "summary": task_result.summary,
+            "findings": list(task_result.findings),
+            "stdout": task_result.stdout,
+            "stderr": task_result.stderr,
+            "command": task_result.command,
+            "script_path": task_result.script_path,
         },
         deep=True,
     )
@@ -1344,6 +1873,117 @@ def _available_tools() -> list[AvailableTool]:
             )
         )
     return tools
+
+
+def _available_tools_compact() -> list[AvailableTool]:
+    tools: list[AvailableTool] = []
+    for item in tool_inventory():
+        input_schema = item.get("inputSchema") or {}
+        properties = input_schema.get("properties") or {}
+        required = set(input_schema.get("required") or [])
+        optional = [name for name in properties if name not in required]
+        tools.append(
+            AvailableTool(
+                name=str(item.get("name") or ""),
+                summary=str(item.get("summary") or ""),
+                server_name=str(item.get("server_name") or ""),
+                required_args=[str(name) for name in required],
+                optional_args=[str(name) for name in optional],
+            )
+        )
+    return tools
+
+
+def _task_tree_focus(snapshot: TaskTreeSnapshot, task_key: str, *, limit: int) -> TaskTreeSnapshot:
+    nodes_by_key = {node.key: node for node in snapshot.nodes}
+    if task_key not in nodes_by_key:
+        return TaskTreeSnapshot(nodes=[])
+
+    selected: list[str] = []
+    current = nodes_by_key[task_key]
+    selected.append(current.key)
+    cursor = current
+    while cursor.parent_key and cursor.parent_key in nodes_by_key:
+        cursor = nodes_by_key[cursor.parent_key]
+        if cursor.key not in selected:
+            selected.append(cursor.key)
+
+    current_parent = current.parent_key
+    if current_parent:
+        siblings = [
+            node for node in snapshot.nodes
+            if node.parent_key == current_parent and node.key != task_key
+            and (node.latest_findings or node.status != TaskStatus.completed or node.latest_summary)
+        ]
+        for sibling in siblings:
+            if sibling.key not in selected:
+                selected.append(sibling.key)
+            if len(selected) >= limit:
+                break
+
+    if len(selected) < limit:
+        for node in snapshot.nodes:
+            if node.status == TaskStatus.in_progress and node.key not in selected:
+                selected.append(node.key)
+            if len(selected) >= limit:
+                break
+
+    ordered = [node.model_copy(deep=True) for node in snapshot.nodes if node.key in set(selected[:limit])]
+    return TaskTreeSnapshot(nodes=ordered)
+
+
+def _dependency_context(
+    snapshot: TaskTreeSnapshot,
+    task_key: str,
+    available_artifacts: list[ArtifactRef],
+    *,
+    limit: int,
+) -> list[TaskDependencyContext]:
+    nodes_by_key = {node.key: node for node in snapshot.nodes}
+    if task_key not in nodes_by_key:
+        return []
+
+    candidates: list[TaskNodeSnapshot] = []
+    cursor = nodes_by_key[task_key]
+    while cursor.parent_key and cursor.parent_key in nodes_by_key:
+        cursor = nodes_by_key[cursor.parent_key]
+        candidates.append(cursor)
+
+    parent_key = nodes_by_key[task_key].parent_key
+    if parent_key:
+        for node in snapshot.nodes:
+            if node.parent_key != parent_key or node.key == task_key:
+                continue
+            if node.latest_findings or node.status != TaskStatus.in_progress or node.latest_summary:
+                candidates.append(node)
+
+    artifacts = filter_available_artifacts(available_artifacts)
+    seen: set[str] = set()
+    context: list[TaskDependencyContext] = []
+    for node in candidates:
+        if node.key in seen:
+            continue
+        seen.add(node.key)
+        related_artifacts = [
+            item.model_copy(deep=True)
+            for item in artifacts
+            if item.producer_task_key == node.key
+        ][:3]
+        failure_reason = node.latest_summary if node.status == TaskStatus.failed else ""
+        context.append(
+            TaskDependencyContext(
+                task_key=node.key,
+                title=node.title,
+                status=node.status,
+                latest_summary=node.latest_summary,
+                latest_findings=list(node.latest_findings),
+                failure_reason=failure_reason,
+                artifacts=related_artifacts,
+            )
+        )
+        if len(context) >= limit:
+            break
+    return context
 
 
 def _render_tool_schema_text(name: str, schema: dict[str, Any]) -> str:

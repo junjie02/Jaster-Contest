@@ -114,6 +114,18 @@ class AvailableTool(BaseModel):
     server_name: str = ""
     tool_schema_text: str = ""
     tool_definition_json: str = ""
+    required_args: list[str] = Field(default_factory=list)
+    optional_args: list[str] = Field(default_factory=list)
+
+
+class CompressionNote(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    field: str
+    reason: str = ""
+    original_chars: int = 0
+    final_chars: int = 0
+    strategy: str = ""
 
 
 class SharedFinding(BaseModel):
@@ -146,6 +158,41 @@ class SharedBulletinDigest(BaseModel):
     new_entries: list[SharedBulletinEntry] = Field(default_factory=list)
     verified_entries: list[SharedBulletinEntry] = Field(default_factory=list)
     unverified_entries: list[SharedBulletinEntry] = Field(default_factory=list)
+
+
+class TaskStatusDigestItem(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    key: str
+    title: str
+    status: TaskStatus
+    attempt_count: int = 0
+    latest_summary: str = ""
+    latest_findings: list[str] = Field(default_factory=list)
+
+
+class TaskStatusDigest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    in_progress: int = 0
+    completed: int = 0
+    failed: int = 0
+    leaf: int = 0
+    in_progress_leaves: list[TaskStatusDigestItem] = Field(default_factory=list)
+    failed_leaves: list[TaskStatusDigestItem] = Field(default_factory=list)
+    completed_leaves: list[TaskStatusDigestItem] = Field(default_factory=list)
+
+
+class TaskDependencyContext(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    task_key: str
+    title: str
+    status: TaskStatus
+    latest_summary: str = ""
+    latest_findings: list[str] = Field(default_factory=list)
+    failure_reason: str = ""
+    artifacts: list[ArtifactRef] = Field(default_factory=list)
 
 
 class TaskNodeSnapshot(BaseModel):
@@ -316,9 +363,14 @@ class PlanInput(BaseModel):
     planner_context: PlannerContext | None = None
     task_status_summary: str = ""
     failure_patterns_summary: str = ""
+    task_status_digest: TaskStatusDigest | None = None
+    failure_patterns_digest: list[FailurePattern] = Field(default_factory=list)
+    reflection_digest: str = ""
+    discoveries_digest: str = ""
     reflection_history: list[ReflectionHistoryEntry] = Field(default_factory=list)
     latest_discoveries: list[TaskDiscovery] = Field(default_factory=list)
     available_artifacts: list[ArtifactRef] = Field(default_factory=list)
+    compression_notes: list[CompressionNote] = Field(default_factory=list)
 
 
 class PlanOutput(BaseModel):
@@ -333,13 +385,19 @@ class StrategyInput(BaseModel):
     objective: str
     assigned_task: TaskNodeSnapshot
     task_tree: TaskTreeSnapshot
+    task_tree_focus: TaskTreeSnapshot = Field(default_factory=TaskTreeSnapshot)
     challenge_context: str = ""
     recent_observations: list[RecentObservationRound] = Field(default_factory=list)
+    observation_digest: str = ""
     latest_execution: LatestExecutionResult | None = None
     reflection_history: list[ReflectionHistoryEntry] = Field(default_factory=list)
+    reflection_digest: str = ""
+    dependency_context: list[TaskDependencyContext] = Field(default_factory=list)
     available_artifacts: list[ArtifactRef] = Field(default_factory=list)
     available_tools: list[AvailableTool] = Field(default_factory=list)
     shared_bulletin: SharedBulletinDigest = Field(default_factory=SharedBulletinDigest)
+    bulletin_digest: str = ""
+    compression_notes: list[CompressionNote] = Field(default_factory=list)
 
 
 class StrategyOutput(BaseModel):

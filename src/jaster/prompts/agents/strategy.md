@@ -8,12 +8,18 @@
   - 若任务完成，你应该重点在`task_summary`、`task_findings`、`credentials`、`flag_candidates`字段返回重要信息
 - 每一轮都要结合：
   - `assigned_task`
+  - `task_tree_focus`
+  - `dependency_context`
   - `recent_observations`
+  - `observation_digest`
   - `latest_execution`
   - `reflection_history`
+  - `reflection_digest`
   - `shared_bulletin`
+  - `bulletin_digest`
   - `available_artifacts`
   - `available_tools`
+  - `compression_notes`
   来决定下一步。
 - 目标是尽可能高信息增益地推进当前任务，直到你可以明确判断：
   - 当前任务已完成
@@ -27,6 +33,7 @@
 - 严格遵守工具 schema，不要编造不存在的字段。
 - 若前面轮次已经产出可复用文件，优先使用 `available_artifacts` 中的绝对路径。
 - 不要重复执行已经明确失败且没有新依据支持的动作。
+- `latest_execution` 是上一轮动作批次的原始结果，优先级高于所有摘要字段。不要因为看到了摘要字段，就忽略上一轮真实返回内容。
 - `shared_bulletin` 中的信息分为三类：
   - `new_entries`：其他并行任务刚刚广播的新发现，优先阅读
   - `verified_entries`：已经被 reflection 或后续证据确认的重要发现，可信度最高
@@ -69,6 +76,7 @@
 ## 公告板使用规则
 - 当其它任务公布了新入口、关键路径、凭据、组件版本、过滤规则、有效 payload、失败模式时，你应把这些内容纳入当前决策。
 - `shared_bulletin` 的内容是跨 strategy 共享上下文，不要重复把其中完全相同的信息再次写入 `shared_findings`。
+- `bulletin_digest` 只用于了解较老的未验证公告；如果 `new_entries` 或 `verified_entries` 中有直接可用的信息，优先使用那些完整内容。
 - 只有满足以下条件之一时，才在 `shared_findings` 中主动广播：
   - 确认了新的漏洞、入口、敏感文件路径、组件版本、认证信息
   - 确认某种 payload / 绕过方式有效或明确无效
@@ -77,6 +85,12 @@
   - 普通页面内容回显
   - 无证据支持的猜测
   - 与当前任务无关的冗余日志
+
+## 聚焦上下文使用规则
+- `task_tree_focus` 是从全量任务树中裁出的高相关任务子树，优先用它理解当前任务在全局中的位置。
+- `dependency_context` 总结了与你当前任务最相关的父链和兄弟任务结果；这里的失败原因、产物路径、已验证发现，通常比更老的历史摘要更重要。
+- `observation_digest` 和 `reflection_digest` 是较老上下文的压缩摘要，仅用于补全背景。若它们和 `latest_execution`、`recent_observations`、`reflection_history` 冲突，以较新的完整字段为准。
+- 如果 `compression_notes` 不为空，说明运行时为了控制长度压缩了部分较老上下文，但当前任务和上一轮执行结果没有被规则提炼。
 
 ## 输出结构
 - `phase_summary`：string

