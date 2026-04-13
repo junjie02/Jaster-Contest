@@ -21,6 +21,7 @@ Comprehensive SQL injection techniques for CTF challenges. For other server-side
 - [Shift-JIS Encoding SQL Injection (Boston Key Party 2016)](#shift-jis-encoding-sql-injection-boston-key-party-2016)
 - [SQL Injection via QR Code Input (H4ckIT CTF 2016)](#sql-injection-via-qr-code-input-h4ckit-ctf-2016)
 - [SQL Double-Keyword Filter Bypass (DefCamp CTF 2016)](#sql-double-keyword-filter-bypass-defcamp-ctf-2016)
+  - [Inline Comment Keyword / Whitespace Bypass](#inline-comment-keyword--whitespace-bypass)
 - [MySQL Session Variable for Dual-Value Injection (MeePwn CTF 2017)](#mysql-session-variable-for-dual-value-injection-meepwn-ctf-2017)
 - [PHP PCRE Backtrack Limit WAF Bypass (SECUINSIDE 2017)](#php-pcre-backtrack-limit-waf-bypass-secuinside-2017)
 - [information_schema.processlist Race Condition Leak (SECUINSIDE 2017)](#information_schemaprocesslist-race-condition-leak-secuinside-2017)
@@ -228,6 +229,24 @@ Bypass SQL keyword filters that perform single-pass removal by nesting the keywo
 ```
 
 **Key insight:** Single-pass keyword filters that replace/remove SQL keywords once are trivially bypassed by embedding the keyword within itself. The outer characters survive removal, reconstructing the forbidden keyword. Always test if the filter runs iteratively or just once.
+
+### Inline Comment Keyword / Whitespace Bypass
+
+When the filter is not deleting keywords but is instead blocking spaces, matching `union select` literally, or using a simple regex over adjacent SQL tokens, split the statement with inline comments instead of nested keywords.
+
+```text
+# MySQL / MariaDB treat /**/ as a token separator
+1 union/**/select 1,2,3
+1/**/union/**/select/**/1,2,3
+'/**/UNION/**/SELECT/**/flag,2,3/**/FROM/**/flags-- -
+```
+
+**When to use which bypass:**
+- Use `ununionion` / `sselectelect` when the application removes or replaces SQL keywords once.
+- Use `UNION/**/SELECT` when spaces are blocked, `union select` is matched literally, or a weak WAF expects adjacent keywords.
+- Do not assume the nested-keyword trick is the default answer. If the response already changed from a fixed WAF block page to a real SQL syntax error, you likely passed the filter and should fix the SQL payload shape first.
+
+**Key insight:** In MySQL and MariaDB, `/**/` can often stand in for whitespace between tokens. This is usually a better fit than `ununionion` when the defense is a space filter or a naive keyword regex, not a single-pass keyword deletion routine.
 
 ## MySQL Session Variable for Dual-Value Injection (MeePwn CTF 2017)
 

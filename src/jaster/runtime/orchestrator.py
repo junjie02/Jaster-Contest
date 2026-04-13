@@ -197,7 +197,7 @@ class JasterOrchestrator:
         self.phase_max_retries = env_int("JASTER_PHASE_MAX_RETRIES", 3)
         self.parallel_task_workers = env_int("JASTER_PARALLEL_TASK_WORKERS", 4)
         self.parallel_action_workers = env_int("JASTER_PARALLEL_ACTION_WORKERS", 4)
-        self.strategy_max_rounds = env_int("JASTER_STRATEGY_MAX_ROUNDS", 8)
+        self.strategy_max_rounds = env_int("JASTER_STRATEGY_MAX_ROUNDS", 10)
         self.strategy_observation_limit = env_int("JASTER_STRATEGY_RECENT_OBSERVATION_LIMIT", 8)
         self.default_tool_timeout = env_int("JASTER_MCP_TOOL_TIMEOUT", 180)
         self.planner_context_window = env_int("JASTER_PLANNER_CONTEXT_WINDOW", 8)
