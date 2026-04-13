@@ -134,6 +134,14 @@ def _normalize_agent_response(role: str, payload: dict) -> dict:
             or []
         )
         normalized["actions"] = _normalize_actions(normalized)
+    elif role == "team_manager":
+        normalized.setdefault("phase_summary", str(normalized.get("phase_summary") or normalized.get("summary") or ""))
+        normalized["assignments"] = _normalize_task_skill_assignments(
+            normalized.get("assignments")
+            or normalized.get("task_skills")
+            or normalized.get("skills")
+            or []
+        )
     elif role == "reflection":
         normalized.setdefault("summary", str(normalized.get("summary") or normalized.get("phase_summary") or ""))
         normalized.setdefault(
@@ -195,6 +203,45 @@ def _normalize_actions(payload: dict) -> list[dict]:
         normalized = [_normalize_action({"task_id": "task1", "kind": "finish", "goal": "Stop current task."})]
     if finish_count and len(normalized) > 1:
         raise ValueError("finish action must be the only action in actions")
+    return normalized
+
+
+def _normalize_task_skill_assignments(value: object) -> list[dict]:
+    if isinstance(value, dict):
+        value = [value]
+    if not isinstance(value, list):
+        return []
+
+    normalized: list[dict] = []
+    seen: set[str] = set()
+    for item in value:
+        if not isinstance(item, dict):
+            continue
+        task_key = str(item.get("task_key") or item.get("key") or item.get("task") or "").strip()
+        if not task_key or task_key in seen:
+            continue
+        seen.add(task_key)
+        normalized.append(
+            {
+                "task_key": task_key,
+                "skill_name": str(
+                    item.get("skill_name")
+                    or item.get("skill")
+                    or item.get("name")
+                    or ""
+                ).strip(),
+                "selection_reason": str(
+                    item.get("selection_reason")
+                    or item.get("reason")
+                    or item.get("why")
+                    or ""
+                ),
+                "confidence": _normalize_float(item.get("confidence"), default=0.0),
+                "no_match": bool(
+                    item.get("no_match", item.get("skip", item.get("unmatched", False)))
+                ),
+            }
+        )
     return normalized
 
 

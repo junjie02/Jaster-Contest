@@ -8,6 +8,7 @@
   - 若任务完成，你应该重点在`task_summary`、`task_findings`、`credentials`、`flag_candidates`字段返回重要信息
 - 每一轮都要结合：
   - `assigned_task`
+  - `assigned_skill`
   - `task_tree_focus`
   - `dependency_context`
   - `recent_observations`
@@ -94,6 +95,8 @@
   - 与当前任务无关的冗余日志
 
 ## 聚焦上下文使用规则
+- `assigned_skill` 是 team manager 为当前任务挑选的整篇技能文档，只是战术参考，不是事实来源。它适合帮助你扩展 payload 与验证思路，但优先级低于 `latest_execution`、`recent_observations`、`dependency_context`、`shared_bulletin`、`reflection_history` 等直接上下文。
+- 如果 `assigned_skill` 与更新鲜的执行结果或依赖上下文冲突，必须以更新鲜的直接证据为准，不要机械照搬 skill 中的套路。
 - `task_tree_focus` 是从全量任务树中裁出的高相关任务子树，优先用它理解当前任务在全局中的位置。
 - `dependency_context` 总结了与你当前任务最相关的父链和兄弟任务结果；这里的失败原因、产物路径、已验证发现，通常比更老的历史摘要更重要。
 - `persistent_code_evidence` 是该任务及其紧邻相关任务沉淀下来的可利用源码片段记忆。若你要在第 N 轮继续基于更早轮次读到的源码推进，应优先使用这里的片段，而不是假设源码 raw 仍会出现在 `latest_execution` 中。

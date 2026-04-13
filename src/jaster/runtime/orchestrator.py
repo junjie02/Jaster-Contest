@@ -24,6 +24,7 @@ from jaster.domain import (
     ContestControlResult,
     ExecutionResult,
     FailurePattern,
+    InjectedSkill,
     LatestExecutionResult,
     Observation,
     ObservedTaskResult,
@@ -37,7 +38,9 @@ from jaster.domain import (
     ReflectionInput,
     ReflectionOutput,
     ReflectionTaskUpdate,
+    RoutableTask,
     RunState,
+    SkillCard,
     SharedBulletinDigest,
     SharedBulletinEntry,
     SharedFinding,
@@ -47,12 +50,16 @@ from jaster.domain import (
     SubmissionAttempt,
     TaskDiscovery,
     TaskDependencyContext,
+    TaskSkillBinding,
+    TaskSkillSelection,
     TaskExecutionResult,
     TaskNodeSnapshot,
     TaskNodeUpdatePatch,
     TaskStatus,
     TaskStatusDigest,
     TaskStatusDigestItem,
+    TeamManagerInput,
+    TeamManagerOutput,
     TaskTree,
     TaskTreePatch,
     TaskTreeSnapshot,
@@ -195,6 +202,9 @@ class JasterOrchestrator:
         self.default_tool_timeout = env_int("JASTER_MCP_TOOL_TIMEOUT", 180)
         self.planner_context_window = env_int("JASTER_PLANNER_CONTEXT_WINDOW", 8)
         self.context_payload_limit = env_int("JASTER_CONTEXT_PAYLOAD_LIMIT", 150000)
+        self.skill_catalog = _load_skill_catalog(skills_dir)
+        self._skill_catalog_by_name = {item.name.lower(): item for item in self.skill_catalog}
+        self._skill_body_cache: dict[str, str] = {}
         self._on_tree_update = on_tree_update
 
     def run(
@@ -312,6 +322,22 @@ class JasterOrchestrator:
                     break
                 dispatch_keys = in_progress
 
+            state.skill_bindings = self._prune_skill_bindings(state.task_tree, state.skill_bindings)
+            state.skill_bindings = self._ensure_task_skill_bindings(
+                run_id=run_id,
+                cycle=cycle,
+                challenge=challenge,
+                task_tree=state.task_tree,
+                task_keys=dispatch_keys,
+                skill_bindings=state.skill_bindings,
+            )
+            self.store.save_state(state)
+            self._log_effective_skill_bindings(
+                task_tree=state.task_tree,
+                task_keys=dispatch_keys,
+                skill_bindings=state.skill_bindings,
+            )
+
             self._log(f"[*] Cycle {cycle}: strategy batch | tasks={len(dispatch_keys)}")
             strategy_results, observations, batch_discoveries, batch_execution, bulletin_board = self._run_strategy_batch(
                 run_id=run_id,
@@ -322,6 +348,7 @@ class JasterOrchestrator:
                 reflection_history=state.reflection_history,
                 available_artifacts=state.available_artifacts,
                 persistent_code_evidence=state.persistent_code_evidence,
+                skill_bindings=state.skill_bindings,
                 observations=state.observations,
                 shared_bulletin=state.shared_bulletin,
                 submitted_flags=state.submitted_flags,
@@ -475,6 +502,7 @@ class JasterOrchestrator:
         reflection_history: list[ReflectionHistoryEntry],
         available_artifacts: list[ArtifactRef],
         persistent_code_evidence: list[PersistentCodeEvidence],
+        skill_bindings: list[TaskSkillBinding],
         observations: list[Observation],
         shared_bulletin: list[SharedBulletinEntry],
         submitted_flags: list[str],
@@ -504,6 +532,7 @@ class JasterOrchestrator:
                     reflection_history=reflection_history,
                     available_artifacts=available_artifacts,
                     persistent_code_evidence=persistent_code_evidence,
+                    skill_bindings=skill_bindings,
                     observations=observations,
                     bulletin_board=bulletin_board,
                     submitted_flags=submitted_flags,
@@ -567,6 +596,7 @@ class JasterOrchestrator:
         reflection_history: list[ReflectionHistoryEntry],
         available_artifacts: list[ArtifactRef],
         persistent_code_evidence: list[PersistentCodeEvidence],
+        skill_bindings: list[TaskSkillBinding],
         observations: list[Observation],
         bulletin_board: _StrategyBulletinBoard,
         submitted_flags: list[str],
@@ -583,6 +613,7 @@ class JasterOrchestrator:
         latest_execution: ExecutionResult | None = None
         collected: list[Observation] = []
         new_code_evidence: list[PersistentCodeEvidence] = []
+        assigned_skill = self._resolve_injected_skill(task_node, skill_bindings)
         last_output = None
         termination_reason = "finish"
         rounds_used = 0
@@ -603,6 +634,7 @@ class JasterOrchestrator:
                 challenge=challenge,
                 task_tree=task_tree,
                 task_node=task_node,
+                assigned_skill=assigned_skill,
                 recent_rounds=recent_rounds,
                 latest_execution=latest_execution,
                 reflection_history=reflection_history,
@@ -765,15 +797,16 @@ class JasterOrchestrator:
         challenge: ChallengeSpec,
         task_tree: TaskTreeSnapshot,
         task_node: TaskNodeSnapshot,
+        assigned_skill: InjectedSkill | None = None,
         recent_rounds: list[RecentObservationRound],
         latest_execution: ExecutionResult | None,
         reflection_history: list[ReflectionHistoryEntry],
         available_artifacts: list[ArtifactRef],
         persistent_code_evidence: list[PersistentCodeEvidence],
         bulletin_digest: SharedBulletinDigest,
-        submitted_flags: list[str],
-        incorrect_flags: list[str],
-        submission_history: list[SubmissionAttempt],
+        submitted_flags: list[str] | None = None,
+        incorrect_flags: list[str] | None = None,
+        submission_history: list[SubmissionAttempt] | None = None,
     ) -> StrategyInput:
         focus_tree = _task_tree_focus(task_tree, task_node.key, limit=12)
         dependency_context = _dependency_context(task_tree, task_node.key, available_artifacts, limit=6)
@@ -784,10 +817,11 @@ class JasterOrchestrator:
             task_tree_focus=focus_tree,
             challenge_context=_challenge_context(
                 challenge,
-                submitted_flags=submitted_flags,
-                incorrect_flags=incorrect_flags,
-                submission_history=submission_history,
+                submitted_flags=submitted_flags or [],
+                incorrect_flags=incorrect_flags or [],
+                submission_history=submission_history or [],
             ),
+            assigned_skill=assigned_skill.model_copy(deep=True) if assigned_skill else None,
             recent_observations=list(recent_rounds),
             latest_execution=_compact_execution(latest_execution),
             reflection_history=[item.model_copy(deep=True) for item in reflection_history],
@@ -1568,6 +1602,153 @@ class JasterOrchestrator:
                 merged.append(key)
         return merged
 
+    def _prune_skill_bindings(
+        self,
+        task_tree: TaskTreeSnapshot,
+        skill_bindings: list[TaskSkillBinding],
+    ) -> list[TaskSkillBinding]:
+        nodes_by_key = {node.key: node for node in task_tree.nodes}
+        deduped: dict[str, TaskSkillBinding] = {}
+        for binding in skill_bindings:
+            if binding.task_key not in nodes_by_key:
+                continue
+            deduped[binding.task_key] = binding.model_copy(deep=True)
+        return list(deduped.values())
+
+    def _ensure_task_skill_bindings(
+        self,
+        *,
+        run_id: str,
+        cycle: int,
+        challenge: ChallengeSpec,
+        task_tree: TaskTreeSnapshot,
+        task_keys: list[str],
+        skill_bindings: list[TaskSkillBinding],
+    ) -> list[TaskSkillBinding]:
+        binding_map = {item.task_key: item.model_copy(deep=True) for item in skill_bindings}
+        nodes_by_key = {node.key: node for node in task_tree.nodes}
+        tasks_to_route = [
+            nodes_by_key[key]
+            for key in task_keys
+            if key in nodes_by_key and not _binding_matches_task(binding_map.get(key), nodes_by_key[key])
+        ]
+        if not tasks_to_route or "team_manager" not in self.agents or not self.skill_catalog:
+            return list(binding_map.values())
+
+        payload = self._build_team_manager_input(challenge=challenge, tasks=tasks_to_route)
+        team_out, elapsed = self._timed_agent_run("team_manager", challenge.zone, payload)
+        self._log(f"[*] Cycle {cycle}: team manager")
+        self._log(f"    LLM time: {elapsed:.2f}s")
+        self._log_team_manager_cycle(tasks_to_route, team_out)
+
+        assignments_by_key = {
+            item.task_key: item.model_copy(deep=True)
+            for item in team_out.assignments
+            if item.task_key
+        }
+        for task_node in tasks_to_route:
+            selection = assignments_by_key.get(task_node.key)
+            binding_map[task_node.key] = self._selection_to_binding(task_node, selection)
+
+        self.store.append_round(
+            run_id,
+            f"team_manager_round_{cycle:03d}",
+            {
+                "cycle": cycle,
+                "agent": "team_manager",
+                "input": _agent_trace(self.agents.get("team_manager")),
+                "input_payload": payload.model_dump(),
+                "output": team_out.model_dump(),
+            },
+        )
+        return list(binding_map.values())
+
+    def _build_team_manager_input(
+        self,
+        *,
+        challenge: ChallengeSpec,
+        tasks: list[TaskNodeSnapshot],
+    ) -> TeamManagerInput:
+        return TeamManagerInput(
+            objective="Assign at most one skill to each dispatched task.",
+            challenge_context=_challenge_context(challenge),
+            tasks=[
+                RoutableTask(
+                    task_key=item.key,
+                    title=item.title,
+                    reason=item.reason,
+                    completion_criteria=item.completion_criteria,
+                    latest_summary=item.latest_summary,
+                    latest_findings=list(item.latest_findings),
+                )
+                for item in tasks
+            ],
+            available_skills=[item.model_copy(deep=True) for item in self.skill_catalog],
+        )
+
+    def _selection_to_binding(
+        self,
+        task_node: TaskNodeSnapshot,
+        selection: TaskSkillSelection | None,
+    ) -> TaskSkillBinding:
+        task_signature = _task_signature(task_node)
+        if selection is None or selection.no_match or not selection.skill_name.strip():
+            return TaskSkillBinding(
+                task_key=task_node.key,
+                task_signature=task_signature,
+                selection_reason="" if selection is None else selection.selection_reason,
+                confidence=0.0 if selection is None else selection.confidence,
+                no_match=True,
+            )
+
+        catalog_item = self._skill_catalog_by_name.get(selection.skill_name.strip().lower())
+        if catalog_item is None:
+            raise ValueError(f"team manager returned unknown skill: {selection.skill_name}")
+
+        return TaskSkillBinding(
+            task_key=task_node.key,
+            task_signature=task_signature,
+            skill_name=catalog_item.name,
+            skill_path=catalog_item.source_path,
+            selection_reason=selection.selection_reason,
+            confidence=selection.confidence,
+            no_match=False,
+        )
+
+    def _resolve_injected_skill(
+        self,
+        task_node: TaskNodeSnapshot,
+        skill_bindings: list[TaskSkillBinding],
+    ) -> InjectedSkill | None:
+        binding = next(
+            (
+                item
+                for item in skill_bindings
+                if item.task_key == task_node.key and _binding_matches_task(item, task_node)
+            ),
+            None,
+        )
+        if binding is None or binding.no_match or not binding.skill_path:
+            return None
+
+        body = self._skill_body_cache.get(binding.skill_path)
+        if body is None:
+            _, body = _read_skill_markdown(Path(binding.skill_path))
+            self._skill_body_cache[binding.skill_path] = body
+
+        catalog_item = self._skill_catalog_by_name.get(binding.skill_name.lower())
+        summary = catalog_item.summary if catalog_item else ""
+        use_when = catalog_item.use_when if catalog_item else ""
+        return InjectedSkill(
+            name=binding.skill_name,
+            summary=summary,
+            use_when=use_when,
+            body=body,
+            selection_reason=binding.selection_reason,
+            confidence=binding.confidence,
+            source_path=binding.skill_path,
+        )
+
     def _initial_bootstrap_execution(self, challenge: ChallengeSpec) -> ExecutionResult | None:
         if challenge.target_type != "http":
             return None
@@ -1690,6 +1871,63 @@ class JasterOrchestrator:
             node = task_tree.get(key)
             title = node.title if node else key
             self._log("    " + _style("[plan:dispatch]", ANSI_BLUE, bold=True) + f" {key} | {title}")
+
+    def _log_team_manager_cycle(
+        self,
+        tasks: list[TaskNodeSnapshot],
+        team_out: TeamManagerOutput,
+    ) -> None:
+        if team_out.phase_summary:
+            self._log(
+                f"    {_style('[team:summary]', ANSI_GREEN, bold=True)} {_excerpt(team_out.phase_summary, limit=240)}"
+            )
+        tasks_by_key = {item.key: item for item in tasks}
+        for assignment in team_out.assignments[:8]:
+            task = tasks_by_key.get(assignment.task_key)
+            title = task.title if task else assignment.task_key
+            if assignment.no_match or not assignment.skill_name:
+                detail = assignment.selection_reason or "no matching skill"
+                self._log(
+                    "    "
+                    + _style("[team:no-match]", ANSI_YELLOW, bold=True)
+                    + f" {assignment.task_key} | {title} | {_excerpt(detail, limit=180)}"
+                )
+                continue
+            self._log(
+                "    "
+                + _style("[team:skill]", ANSI_GREEN, bold=True)
+                + f" {assignment.task_key} | {title} -> {assignment.skill_name}"
+                + f" | {_excerpt(assignment.selection_reason, limit=160)}"
+            )
+
+    def _log_effective_skill_bindings(
+        self,
+        *,
+        task_tree: TaskTreeSnapshot,
+        task_keys: list[str],
+        skill_bindings: list[TaskSkillBinding],
+    ) -> None:
+        nodes_by_key = {node.key: node for node in task_tree.nodes}
+        bindings_by_key = {item.task_key: item for item in skill_bindings}
+        for key in task_keys:
+            node = nodes_by_key.get(key)
+            if node is None:
+                continue
+            binding = bindings_by_key.get(key)
+            if binding is None or binding.no_match or not binding.skill_name:
+                self._log(
+                    "    "
+                    + _style("[task:skill]", ANSI_MAGENTA, bold=True)
+                    + f" {key} | {node.title} | no injected skill"
+                )
+                continue
+            detail = _excerpt(binding.selection_reason, limit=140)
+            self._log(
+                "    "
+                + _style("[task:skill]", ANSI_MAGENTA, bold=True)
+                + f" {key} | {node.title} -> {binding.skill_name}"
+                + (f" | {detail}" if detail else "")
+            )
 
     def _log_reflection_cycle(self, reflection_out: ReflectionOutput) -> None:
         if reflection_out.summary:
@@ -2860,6 +3098,70 @@ def _persistent_code_evidence_for_task(
         if len(deduped) >= limit:
             break
     return deduped
+
+
+def _load_skill_catalog(skills_dir: Path) -> list[SkillCard]:
+    if not skills_dir.exists():
+        return []
+
+    catalog: list[SkillCard] = []
+    for path in sorted(skills_dir.glob("*.md")):
+        metadata, _ = _read_skill_markdown(path)
+        name = metadata.get("name", path.stem).strip()
+        if not name:
+            continue
+        catalog.append(
+            SkillCard(
+                name=name,
+                summary=metadata.get("summary", "").strip(),
+                use_when=metadata.get("use_when", "").strip(),
+                source_path=str(path.resolve()),
+            )
+        )
+    return catalog
+
+
+def _read_skill_markdown(path: Path) -> tuple[dict[str, str], str]:
+    text = path.read_text(encoding="utf-8")
+    return _parse_simple_frontmatter(text)
+
+
+def _parse_simple_frontmatter(text: str) -> tuple[dict[str, str], str]:
+    lines = text.splitlines()
+    if not lines or lines[0].strip() != "---":
+        return {}, text.strip()
+
+    metadata: dict[str, str] = {}
+    closing_index = None
+    for index, line in enumerate(lines[1:], start=1):
+        if line.strip() == "---":
+            closing_index = index
+            break
+        if ":" not in line:
+            continue
+        key, value = line.split(":", 1)
+        metadata[key.strip()] = value.strip()
+
+    if closing_index is None:
+        return {}, text.strip()
+
+    body = "\n".join(lines[closing_index + 1 :]).strip()
+    return metadata, body
+
+
+def _task_signature(task_node: TaskNodeSnapshot) -> str:
+    material = "||".join(
+        [
+            task_node.title.strip(),
+            task_node.reason.strip(),
+            task_node.completion_criteria.strip(),
+        ]
+    )
+    return hashlib.sha1(material.encode("utf-8")).hexdigest()
+
+
+def _binding_matches_task(binding: TaskSkillBinding | None, task_node: TaskNodeSnapshot) -> bool:
+    return binding is not None and binding.task_signature == _task_signature(task_node)
 
 
 def _agent_trace(agent: object) -> dict | None:
