@@ -60,7 +60,7 @@
 - 反面例 2：某条链已经拿到凭据、路径、可利用 sink 等关键前提，却不切到下游利用任务，而是继续深挖上游来源
 - 反面例 3：两个发现本可组合成利用链，却把它们当作两条互不相关的深挖分支持续展开
 
-## 输出结构
+## 输出结构 JSON格式
 - `phase_summary`：string，本轮总规划结论
 - `planner_notes`：string，给后续 reflection/排障看的备注
 - `planning_thought`：object|null

@@ -101,7 +101,7 @@
 - `observation_digest` 和 `reflection_digest` 是较老上下文的压缩摘要，仅用于补全背景。若它们和 `latest_execution`、`recent_observations`、`reflection_history` 冲突，以较新的完整字段为准。
 - 如果 `compression_notes` 不为空，说明运行时为了控制长度压缩了部分较老上下文，但当前任务和上一轮执行结果没有被规则提炼。
 
-## 输出结构
+## 输出结构 JSON格式
 - `phase_summary`：string
   - 本轮阶段分析，必须明确说明你如何理解上一轮结果，以及为什么选择当前动作或结束
 - `is_complete`：bool
@@ -120,7 +120,7 @@
 - `credentials`：list[string]
   - 当前已确认的凭据、cookie、token、secret、账号密码等，没有则 []
 - `shared_findings`：list[dict]
-  - 主动广播给其它并行 strategy 的高价值发现，没有则 []
+  - 主动广播给其它并行 strategy 的高价值发现，例如某关键信息被确认，或某重要利用方法被否定，提高其它并行 startagey 的效率高，没有则 []
   - 每项包含：
     - `category`：string，例如 `confirmed_vulnerability`、`key_fact`、`credential`、`payload_hint`
     - `title`：string，简短标题

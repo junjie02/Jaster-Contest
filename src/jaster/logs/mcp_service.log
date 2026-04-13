@@ -13,3 +13,276 @@
 2026-04-13 17:07:44,213 - jaster.mcp.mcp_service - ERROR - HTTP连接错误: http://93.184.216.34 - All connection attempts failed
 2026-04-13 17:08:56,111 - jaster.mcp.mcp_service - ERROR - HTTP连接错误: http://127.0.0.1:8765 - All connection attempts failed
 2026-04-13 17:09:42,466 - jaster.mcp.mcp_service - ERROR - HTTP请求超时: https://httpbin.org/delay/3 - 
+2026-04-13 17:46:33,749 - jaster.mcp.mcp_service - INFO - Executing sqlmap command: sqlmap -u http://node4.anna.nssctf.cn:28783/view.php?no=1 --batch --random-agent --level 3 --risk 2 --dbms mysql --batch --smart --union-cols=4
+2026-04-13 17:47:37,516 - jaster.mcp.mcp_service - INFO - Executing sqlmap command: sqlmap -u http://node4.anna.nssctf.cn:28783/view.php?no=1 --batch --random-agent --level 3 --risk 2 --dbms mysql --batch --columns --tables
+2026-04-13 17:55:54,162 - jaster.mcp.mcp_service - ERROR - HTTP连接错误: http://node4.anna.nssctf.cn:28383/login.php.bak - All connection attempts failed
+2026-04-13 17:55:56,473 - jaster.mcp.mcp_service - ERROR - HTTP连接错误: http://node4.anna.nssctf.cn:28383/index.php.bak - All connection attempts failed
+2026-04-13 17:55:58,768 - jaster.mcp.mcp_service - ERROR - HTTP连接错误: http://node4.anna.nssctf.cn:28383/config.php.bak - All connection attempts failed
+2026-04-13 17:56:01,099 - jaster.mcp.mcp_service - ERROR - HTTP连接错误: http://node4.anna.nssctf.cn:28383/db.php.bak - All connection attempts failed
+2026-04-13 17:56:03,434 - jaster.mcp.mcp_service - ERROR - HTTP连接错误: http://node4.anna.nssctf.cn:28383/view.php.bak - All connection attempts failed
+2026-04-13 17:56:39,116 - primp - INFO - response: https://www.bing.com/search?q=PHP+join.php+SQL+injection+authentication+bypass+techniques 302
+2026-04-13 17:56:39,117 - duckduckgo_search.DDGS - INFO - Error to search using bing backend: https://www.bing.com/search?q=PHP+join.php+SQL+injection+authentication+bypass+techniques return None. params={'q': 'PHP join.php SQL injection authentication bypass techniques'} content=None data=None
+2026-04-13 17:56:39,117 - jaster.mcp.mcp_service - ERROR - web_search tool execution failed
+Traceback (most recent call last):
+  File "/home/kali/桌面/Jaster-Plus/src/jaster/mcp/mcp_service.py", line 867, in web_search
+    results = list(ddgs.text(query, max_results=num_results))
+                   ~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/kali/桌面/Jaster-Plus/venv/lib/python3.13/site-packages/duckduckgo_search/duckduckgo_search.py", line 198, in text
+    raise DuckDuckGoSearchException(err)
+duckduckgo_search.exceptions.DuckDuckGoSearchException: https://www.bing.com/search?q=PHP+join.php+SQL+injection+authentication+bypass+techniques return None. params={'q': 'PHP join.php SQL injection authentication bypass techniques'} content=None data=None
+2026-04-13 18:02:45,328 - duckduckgo_search.DDGS - INFO - Error to search using bing backend: https://www.bing.com/search ConnectError: ('error sending request for url (https://www.bing.com/search?q=site%3Aexample.com+smoke+test)', 'https://www.bing.com/search?q=site%3Aexample.com+smoke+test')
+2026-04-13 18:02:45,328 - jaster.mcp.mcp_service - WARNING - web_search DDGS backend failed, falling back to HTML scraping: https://www.bing.com/search ConnectError: ('error sending request for url (https://www.bing.com/search?q=site%3Aexample.com+smoke+test)', 'https://www.bing.com/search?q=site%3Aexample.com+smoke+test')
+2026-04-13 18:03:00,374 - jaster.mcp.mcp_service - ERROR - web_search tool execution failed
+Traceback (most recent call last):
+  File "/home/kali/桌面/Jaster-Plus/venv/lib/python3.13/site-packages/httpx/_transports/default.py", line 101, in map_httpcore_exceptions
+    yield
+  File "/home/kali/桌面/Jaster-Plus/venv/lib/python3.13/site-packages/httpx/_transports/default.py", line 394, in handle_async_request
+    resp = await self._pool.handle_async_request(req)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/kali/桌面/Jaster-Plus/venv/lib/python3.13/site-packages/httpcore/_async/connection_pool.py", line 256, in handle_async_request
+    raise exc from None
+  File "/home/kali/桌面/Jaster-Plus/venv/lib/python3.13/site-packages/httpcore/_async/connection_pool.py", line 236, in handle_async_request
+    response = await connection.handle_async_request(
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        pool_request.request
+        ^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/home/kali/桌面/Jaster-Plus/venv/lib/python3.13/site-packages/httpcore/_async/connection.py", line 101, in handle_async_request
+    raise exc
+  File "/home/kali/桌面/Jaster-Plus/venv/lib/python3.13/site-packages/httpcore/_async/connection.py", line 78, in handle_async_request
+    stream = await self._connect(request)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/kali/桌面/Jaster-Plus/venv/lib/python3.13/site-packages/httpcore/_async/connection.py", line 124, in _connect
+    stream = await self._network_backend.connect_tcp(**kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/kali/桌面/Jaster-Plus/venv/lib/python3.13/site-packages/httpcore/_backends/auto.py", line 31, in connect_tcp
+    return await self._backend.connect_tcp(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<5 lines>...
+    )
+    ^
+  File "/home/kali/桌面/Jaster-Plus/venv/lib/python3.13/site-packages/httpcore/_backends/anyio.py", line 113, in connect_tcp
+    with map_exceptions(exc_map):
+         ~~~~~~~~~~~~~~^^^^^^^^^
+  File "/usr/lib/python3.13/contextlib.py", line 162, in __exit__
+    self.gen.throw(value)
+    ~~~~~~~~~~~~~~^^^^^^^
+  File "/home/kali/桌面/Jaster-Plus/venv/lib/python3.13/site-packages/httpcore/_exceptions.py", line 14, in map_exceptions
+    raise to_exc(exc) from exc
+httpcore.ConnectError: [Errno -3] Temporary failure in name resolution
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/home/kali/桌面/Jaster-Plus/src/jaster/mcp/mcp_service.py", line 890, in web_search
+    resp = await _httpx_client.post(url, headers=headers, data=data, follow_redirects=True, timeout=15)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/kali/桌面/Jaster-Plus/venv/lib/python3.13/site-packages/httpx/_client.py", line 1859, in post
+    return await self.request(
+           ^^^^^^^^^^^^^^^^^^^
+    ...<13 lines>...
+    )
+    ^
+  File "/home/kali/桌面/Jaster-Plus/venv/lib/python3.13/site-packages/httpx/_client.py", line 1540, in request
+    return await self.send(request, auth=auth, follow_redirects=follow_redirects)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/kali/桌面/Jaster-Plus/venv/lib/python3.13/site-packages/httpx/_client.py", line 1629, in send
+    response = await self._send_handling_auth(
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<4 lines>...
+    )
+    ^
+  File "/home/kali/桌面/Jaster-Plus/venv/lib/python3.13/site-packages/httpx/_client.py", line 1657, in _send_handling_auth
+    response = await self._send_handling_redirects(
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<3 lines>...
+    )
+    ^
+  File "/home/kali/桌面/Jaster-Plus/venv/lib/python3.13/site-packages/httpx/_client.py", line 1694, in _send_handling_redirects
+    response = await self._send_single_request(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/kali/桌面/Jaster-Plus/venv/lib/python3.13/site-packages/httpx/_client.py", line 1730, in _send_single_request
+    response = await transport.handle_async_request(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/kali/桌面/Jaster-Plus/venv/lib/python3.13/site-packages/httpx/_transports/default.py", line 393, in handle_async_request
+    with map_httpcore_exceptions():
+         ~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "/usr/lib/python3.13/contextlib.py", line 162, in __exit__
+    self.gen.throw(value)
+    ~~~~~~~~~~~~~~^^^^^^^
+  File "/home/kali/桌面/Jaster-Plus/venv/lib/python3.13/site-packages/httpx/_transports/default.py", line 118, in map_httpcore_exceptions
+    raise mapped_exc(message) from exc
+httpx.ConnectError: [Errno -3] Temporary failure in name resolution
+2026-04-13 18:52:49,875 - primp - INFO - response: https://www.bing.com/search?q=site%3Aexample.com+smoke+test 302
+2026-04-13 18:52:49,875 - duckduckgo_search.DDGS - INFO - Error to search using bing backend: https://www.bing.com/search?q=site%3Aexample.com+smoke+test return None. params={'q': 'site:example.com smoke test'} content=None data=None
+2026-04-13 18:52:49,875 - jaster.mcp.mcp_service - WARNING - web_search DDGS backend failed, falling back to HTML scraping: https://www.bing.com/search?q=site%3Aexample.com+smoke+test return None. params={'q': 'site:example.com smoke test'} content=None data=None
+2026-04-13 18:53:04,936 - jaster.mcp.mcp_service - ERROR - web_search tool execution failed
+Traceback (most recent call last):
+  File "/home/kali/桌面/Jaster-Plus/venv/lib/python3.13/site-packages/httpx/_transports/default.py", line 101, in map_httpcore_exceptions
+    yield
+  File "/home/kali/桌面/Jaster-Plus/venv/lib/python3.13/site-packages/httpx/_transports/default.py", line 394, in handle_async_request
+    resp = await self._pool.handle_async_request(req)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/kali/桌面/Jaster-Plus/venv/lib/python3.13/site-packages/httpcore/_async/connection_pool.py", line 256, in handle_async_request
+    raise exc from None
+  File "/home/kali/桌面/Jaster-Plus/venv/lib/python3.13/site-packages/httpcore/_async/connection_pool.py", line 236, in handle_async_request
+    response = await connection.handle_async_request(
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        pool_request.request
+        ^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/home/kali/桌面/Jaster-Plus/venv/lib/python3.13/site-packages/httpcore/_async/connection.py", line 101, in handle_async_request
+    raise exc
+  File "/home/kali/桌面/Jaster-Plus/venv/lib/python3.13/site-packages/httpcore/_async/connection.py", line 78, in handle_async_request
+    stream = await self._connect(request)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/kali/桌面/Jaster-Plus/venv/lib/python3.13/site-packages/httpcore/_async/connection.py", line 124, in _connect
+    stream = await self._network_backend.connect_tcp(**kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/kali/桌面/Jaster-Plus/venv/lib/python3.13/site-packages/httpcore/_backends/auto.py", line 31, in connect_tcp
+    return await self._backend.connect_tcp(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<5 lines>...
+    )
+    ^
+  File "/home/kali/桌面/Jaster-Plus/venv/lib/python3.13/site-packages/httpcore/_backends/anyio.py", line 113, in connect_tcp
+    with map_exceptions(exc_map):
+         ~~~~~~~~~~~~~~^^^^^^^^^
+  File "/usr/lib/python3.13/contextlib.py", line 162, in __exit__
+    self.gen.throw(value)
+    ~~~~~~~~~~~~~~^^^^^^^
+  File "/home/kali/桌面/Jaster-Plus/venv/lib/python3.13/site-packages/httpcore/_exceptions.py", line 14, in map_exceptions
+    raise to_exc(exc) from exc
+httpcore.ConnectTimeout
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/home/kali/桌面/Jaster-Plus/src/jaster/mcp/mcp_service.py", line 890, in web_search
+    resp = await _httpx_client.post(url, headers=headers, data=data, follow_redirects=True, timeout=15)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/kali/桌面/Jaster-Plus/venv/lib/python3.13/site-packages/httpx/_client.py", line 1859, in post
+    return await self.request(
+           ^^^^^^^^^^^^^^^^^^^
+    ...<13 lines>...
+    )
+    ^
+  File "/home/kali/桌面/Jaster-Plus/venv/lib/python3.13/site-packages/httpx/_client.py", line 1540, in request
+    return await self.send(request, auth=auth, follow_redirects=follow_redirects)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/kali/桌面/Jaster-Plus/venv/lib/python3.13/site-packages/httpx/_client.py", line 1629, in send
+    response = await self._send_handling_auth(
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<4 lines>...
+    )
+    ^
+  File "/home/kali/桌面/Jaster-Plus/venv/lib/python3.13/site-packages/httpx/_client.py", line 1657, in _send_handling_auth
+    response = await self._send_handling_redirects(
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<3 lines>...
+    )
+    ^
+  File "/home/kali/桌面/Jaster-Plus/venv/lib/python3.13/site-packages/httpx/_client.py", line 1694, in _send_handling_redirects
+    response = await self._send_single_request(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/kali/桌面/Jaster-Plus/venv/lib/python3.13/site-packages/httpx/_client.py", line 1730, in _send_single_request
+    response = await transport.handle_async_request(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/kali/桌面/Jaster-Plus/venv/lib/python3.13/site-packages/httpx/_transports/default.py", line 393, in handle_async_request
+    with map_httpcore_exceptions():
+         ~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "/usr/lib/python3.13/contextlib.py", line 162, in __exit__
+    self.gen.throw(value)
+    ~~~~~~~~~~~~~~^^^^^^^
+  File "/home/kali/桌面/Jaster-Plus/venv/lib/python3.13/site-packages/httpx/_transports/default.py", line 118, in map_httpcore_exceptions
+    raise mapped_exc(message) from exc
+httpx.ConnectTimeout
+2026-04-13 19:02:25,508 - primp - INFO - response: https://www.bing.com/search?q=%E5%8C%97%E4%BA%AC+%E4%BB%8A%E6%97%A5+%E5%A4%A9%E6%B0%94 302
+2026-04-13 19:02:25,508 - duckduckgo_search.DDGS - INFO - Error to search using bing backend: https://www.bing.com/search?q=%E5%8C%97%E4%BA%AC+%E4%BB%8A%E6%97%A5+%E5%A4%A9%E6%B0%94 return None. params={'q': '北京 今日 天气'} content=None data=None
+2026-04-13 19:02:25,508 - __main__ - WARNING - web_search DDGS backend failed, falling back to HTML scraping: https://www.bing.com/search?q=%E5%8C%97%E4%BA%AC+%E4%BB%8A%E6%97%A5+%E5%A4%A9%E6%B0%94 return None. params={'q': '北京 今日 天气'} content=None data=None
+2026-04-13 19:02:28,167 - __main__ - ERROR - web_search tool execution failed
+Traceback (most recent call last):
+  File "/home/kali/桌面/Jaster-Plus/venv/lib/python3.13/site-packages/httpx/_transports/default.py", line 101, in map_httpcore_exceptions
+    yield
+  File "/home/kali/桌面/Jaster-Plus/venv/lib/python3.13/site-packages/httpx/_transports/default.py", line 394, in handle_async_request
+    resp = await self._pool.handle_async_request(req)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/kali/桌面/Jaster-Plus/venv/lib/python3.13/site-packages/httpcore/_async/connection_pool.py", line 256, in handle_async_request
+    raise exc from None
+  File "/home/kali/桌面/Jaster-Plus/venv/lib/python3.13/site-packages/httpcore/_async/connection_pool.py", line 236, in handle_async_request
+    response = await connection.handle_async_request(
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        pool_request.request
+        ^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/home/kali/桌面/Jaster-Plus/venv/lib/python3.13/site-packages/httpcore/_async/connection.py", line 101, in handle_async_request
+    raise exc
+  File "/home/kali/桌面/Jaster-Plus/venv/lib/python3.13/site-packages/httpcore/_async/connection.py", line 78, in handle_async_request
+    stream = await self._connect(request)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/kali/桌面/Jaster-Plus/venv/lib/python3.13/site-packages/httpcore/_async/connection.py", line 124, in _connect
+    stream = await self._network_backend.connect_tcp(**kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/kali/桌面/Jaster-Plus/venv/lib/python3.13/site-packages/httpcore/_backends/auto.py", line 31, in connect_tcp
+    return await self._backend.connect_tcp(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<5 lines>...
+    )
+    ^
+  File "/home/kali/桌面/Jaster-Plus/venv/lib/python3.13/site-packages/httpcore/_backends/anyio.py", line 113, in connect_tcp
+    with map_exceptions(exc_map):
+         ~~~~~~~~~~~~~~^^^^^^^^^
+  File "/usr/lib/python3.13/contextlib.py", line 162, in __exit__
+    self.gen.throw(value)
+    ~~~~~~~~~~~~~~^^^^^^^
+  File "/home/kali/桌面/Jaster-Plus/venv/lib/python3.13/site-packages/httpcore/_exceptions.py", line 14, in map_exceptions
+    raise to_exc(exc) from exc
+httpcore.ConnectError: All connection attempts failed
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/home/kali/桌面/Jaster-Plus/src/jaster/mcp/mcp_service.py", line 890, in web_search
+    resp = await _httpx_client.post(url, headers=headers, data=data, follow_redirects=True, timeout=15)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/kali/桌面/Jaster-Plus/venv/lib/python3.13/site-packages/httpx/_client.py", line 1859, in post
+    return await self.request(
+           ^^^^^^^^^^^^^^^^^^^
+    ...<13 lines>...
+    )
+    ^
+  File "/home/kali/桌面/Jaster-Plus/venv/lib/python3.13/site-packages/httpx/_client.py", line 1540, in request
+    return await self.send(request, auth=auth, follow_redirects=follow_redirects)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/kali/桌面/Jaster-Plus/venv/lib/python3.13/site-packages/httpx/_client.py", line 1629, in send
+    response = await self._send_handling_auth(
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<4 lines>...
+    )
+    ^
+  File "/home/kali/桌面/Jaster-Plus/venv/lib/python3.13/site-packages/httpx/_client.py", line 1657, in _send_handling_auth
+    response = await self._send_handling_redirects(
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<3 lines>...
+    )
+    ^
+  File "/home/kali/桌面/Jaster-Plus/venv/lib/python3.13/site-packages/httpx/_client.py", line 1694, in _send_handling_redirects
+    response = await self._send_single_request(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/kali/桌面/Jaster-Plus/venv/lib/python3.13/site-packages/httpx/_client.py", line 1730, in _send_single_request
+    response = await transport.handle_async_request(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/kali/桌面/Jaster-Plus/venv/lib/python3.13/site-packages/httpx/_transports/default.py", line 393, in handle_async_request
+    with map_httpcore_exceptions():
+         ~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "/usr/lib/python3.13/contextlib.py", line 162, in __exit__
+    self.gen.throw(value)
+    ~~~~~~~~~~~~~~^^^^^^^
+  File "/home/kali/桌面/Jaster-Plus/venv/lib/python3.13/site-packages/httpx/_transports/default.py", line 118, in map_httpcore_exceptions
+    raise mapped_exc(message) from exc
+httpx.ConnectError: All connection attempts failed
+2026-04-13 19:05:16,803 - duckduckgo_search.DDGS - INFO - Error to search using bing backend: https://www.bing.com/search ConnectError: ('error sending request for url (https://www.bing.com/search?q=%E5%8C%97%E4%BA%AC+%E4%BB%8A%E6%97%A5+%E5%A4%A9%E6%B0%94)', 'https://www.bing.com/search?q=%E5%8C%97%E4%BA%AC+%E4%BB%8A%E6%97%A5+%E5%A4%A9%E6%B0%94')
+2026-04-13 19:05:16,804 - jaster.mcp.mcp_service - WARNING - web_search DDGS backend failed, falling back to HTML scraping: https://www.bing.com/search ConnectError: ('error sending request for url (https://www.bing.com/search?q=%E5%8C%97%E4%BA%AC+%E4%BB%8A%E6%97%A5+%E5%A4%A9%E6%B0%94)', 'https://www.bing.com/search?q=%E5%8C%97%E4%BA%AC+%E4%BB%8A%E6%97%A5+%E5%A4%A9%E6%B0%94')

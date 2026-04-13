@@ -861,51 +861,102 @@ async def web_search(query: str, num_results: int = 5) -> str:
         包含标题(title)、摘要(body)和链接(href)的JSON字符串搜索结果。
     """
     try:
+        from bs4 import BeautifulSoup
+
         try:
-            from duckduckgo_search import DDGS
+            try:
+                from ddgs import DDGS
+            except ImportError:
+                from duckduckgo_search import DDGS
             with DDGS() as ddgs:
                 results = list(ddgs.text(query, max_results=num_results))
-                return json.dumps({"success": True, "query": query, "results": results}, ensure_ascii=False)
-        except ImportError:
-            # Fallback to pure httpx/bs4 scraping of DDG HTML if library is missing
-            import urllib.parse
-            from bs4 import BeautifulSoup
-            
-            headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"}
-            url = "https://html.duckduckgo.com/html/"
-            data = {"q": query}
-            
-            resp = await _httpx_client.post(url, headers=headers, data=data, follow_redirects=True, timeout=15)
-            
-            soup = BeautifulSoup(resp.text, 'html.parser')
+                if results:
+                    return json.dumps({"success": True, "query": query, "results": results}, ensure_ascii=False)
+                logger.warning("web_search DDGS backend returned no results, falling back to HTML scraping")
+        except Exception as search_exc:
+            logger.warning("web_search DDGS backend failed, falling back to HTML scraping: %s", search_exc)
+
+        headers = {
+            "User-Agent": (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            )
+        }
+
+        backend_errors: list[str] = []
+
+        # Fallback 1: scrape Bing HTML directly. This is reachable in the current environment.
+        try:
+            resp = await _httpx_client.get(
+                "https://www.bing.com/search",
+                headers=headers,
+                params={"q": query},
+                follow_redirects=True,
+                timeout=15,
+            )
+            soup = BeautifulSoup(resp.text, "html.parser")
             results = []
-            
-            for div in soup.find_all('div', class_='result'):
+            for item in soup.select("li.b_algo"):
                 if len(results) >= num_results:
                     break
-                    
-                a_tag = div.find('a', class_='result__url')
+                title_link = item.select_one("h2 a")
+                if not title_link:
+                    continue
+                title = title_link.get_text(" ", strip=True)
+                link = title_link.get("href") or ""
+                snippet_elem = item.select_one(".b_caption p") or item.select_one("p")
+                snippet = snippet_elem.get_text(" ", strip=True) if snippet_elem else ""
+                if title and link:
+                    results.append({"title": title, "body": snippet, "href": link})
+            if results:
+                return json.dumps({"success": True, "query": query, "results": results}, ensure_ascii=False)
+            backend_errors.append("bing_html:no_results")
+        except Exception as exc:
+            backend_errors.append(f"bing_html:{exc}")
+
+        # Fallback 2: scrape DuckDuckGo HTML directly for environments where Bing is blocked but DDG is reachable.
+        try:
+            import urllib.parse
+
+            resp = await _httpx_client.post(
+                "https://html.duckduckgo.com/html/",
+                headers=headers,
+                data={"q": query},
+                follow_redirects=True,
+                timeout=15,
+            )
+            soup = BeautifulSoup(resp.text, "html.parser")
+            results = []
+            for div in soup.find_all("div", class_="result"):
+                if len(results) >= num_results:
+                    break
+                a_tag = div.find("a", class_="result__url")
                 if not a_tag:
                     continue
-                    
-                link = a_tag.get('href')
-                if link and 'uddg=' in link:
-                    link = urllib.parse.unquote(link.split('uddg=')[1].split('&')[0])
-                    
-                snippet_elem = div.find('a', class_='result__snippet')
+                link = a_tag.get("href")
+                if link and "uddg=" in link:
+                    link = urllib.parse.unquote(link.split("uddg=")[1].split("&")[0])
+                snippet_elem = div.find("a", class_="result__snippet")
                 snippet = snippet_elem.text.strip() if snippet_elem else ""
-                
-                title_elem = div.find('h2', class_='result__title')
+                title_elem = div.find("h2", class_="result__title")
                 title = title_elem.text.strip() if title_elem else ""
-                
-                if link and title:
+                if title and link:
                     results.append({"title": title, "body": snippet, "href": link})
-                
-            if not results:
-                return json.dumps({"success": False, "error": "Search returned no results or was blocked by anti-bot. Try tweaking the query or installing 'duckduckgo-search' package via pip."}, ensure_ascii=False)
-                
-            return json.dumps({"success": True, "query": query, "results": results}, ensure_ascii=False)
-            
+            if results:
+                return json.dumps({"success": True, "query": query, "results": results}, ensure_ascii=False)
+            backend_errors.append("ddg_html:no_results")
+        except Exception as exc:
+            backend_errors.append(f"ddg_html:{exc}")
+
+        return json.dumps(
+            {
+                "success": False,
+                "error": "all search backends failed",
+                "backends": backend_errors,
+            },
+            ensure_ascii=False,
+        )
+
     except Exception as e:
         logger.exception("web_search tool execution failed")
         return json.dumps({"success": False, "error": str(e)}, ensure_ascii=False)

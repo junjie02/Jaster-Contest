@@ -1,7 +1,0 @@
-# Dirsearch started Mon Apr 13 17:21:10 2026 as: /home/kali/桌面/Jaster-Plus/venv/bin/dirsearch -u http://node4.anna.nssctf.cn:28783/ -e php -q -w /usr/share/wordlists/dirb/common.txt
-
-301   185B   http://node4.anna.nssctf.cn:28783/css    -> REDIRECTS TO: http://node4.anna.nssctf.cn/css/
-404   571B   http://node4.anna.nssctf.cn:28783/favicon.ico
-301   185B   http://node4.anna.nssctf.cn:28783/js    -> REDIRECTS TO: http://node4.anna.nssctf.cn/js/
-200    37B   http://node4.anna.nssctf.cn:28783/robots.txt
-404   571B   http://node4.anna.nssctf.cn:28783/swfobject.js

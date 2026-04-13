@@ -47,7 +47,7 @@
 - 当任务 A 的结果已经足够作为任务 B 的前置条件时，你必须在 `planner_guidance` 中明确写出这种前置关系，促使 planner 切换主线或下发下游任务
 - 当更高价值主线已经出现时，应在 `planner_guidance` 中明确建议收敛资源，不再保留与主线无关的低价值探索
 
-## 输出结构
+## 输出结构 JSON格式
 - `summary`：string，本批次总反思结论
 - `planner_guidance`：string，给下一轮 plan 的直接建议
 - `task_updates`：list[dict]

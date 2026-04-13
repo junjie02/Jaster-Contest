@@ -5,7 +5,7 @@
 ## 目标
 - 判断一个候选 Flag 是否应当提交。
 
-## 输出结构
+## 输出结构 JSON格式
 - should_submit：bool，是否提交
 - flag：string|null，不提交时为 null
 - reason：string，原因
