@@ -1,0 +1,338 @@
+{
+  "cycle": 2,
+  "agent": "team_manager",
+  "input": {
+    "role": "team_manager",
+    "zone": "zone1",
+    "system": "你是一个严格的json生成器.遵循角色指令并严格返回json字段.请注意你自身的身份，只做你应该做的事。",
+    "attempts": [
+      {
+        "attempt": 1,
+        "payload": {
+          "objective": "Assign at most one skill to each dispatched task.",
+          "challenge_context": "主入口: node4.anna.nssctf.cn:24052",
+          "tasks": [
+            {
+              "task_key": "98f86594c10b650e",
+              "title": "分析注册/登录功能并获取用户凭证",
+              "reason": "SSRF利用需要用户认证才能通过blog参数触发getBlogContents，需先注册账户或登录已有账户。",
+              "completion_criteria": "成功注册账户并登录，获取有效的cookie或session token，确认UserInfo对象可被操作。",
+              "latest_summary": "",
+              "latest_findings": []
+            },
+            {
+              "task_key": "3a0cda185a991ec5",
+              "title": "利用SSRF读取flag.php",
+              "reason": "通过UserInfo类的blog参数设置目标为flag.php，利用getBlogContents方法发起请求，获取flag内容。可能需要绕过正则或认证检查。",
+              "completion_criteria": "成功发起SSRF请求并读取flag.php的响应（非0B），如获取到flag则提交；否则记录失败原因并调整策略。",
+              "latest_summary": "",
+              "latest_findings": []
+            }
+          ],
+          "available_skills": [
+            {
+              "name": "adversarial-ml",
+              "summary": "汇总对图像与通用机器学习模型的对抗样本、物理贴片、规避攻击、数据投毒与后门检测思路。",
+              "use_when": "目标是分类器、视觉模型或其它传统 ML 挑战，需要围绕输入扰动、模型鲁棒性或训练数据污染设计攻击与验证路径。",
+              "source_path": "/home/kali/桌面/Jaster-Plus/skills/adversarial-ml.md"
+            },
+            {
+              "name": "auth-and-access",
+              "summary": "汇总 Web 鉴权、访问控制、会话与权限边界常见绕过手法，包括 NoSQL、Cookie、Host Header、IDOR 和弱校验。",
+              "use_when": "已发现登录、鉴权、中间件、权限判断或会话控制入口，需要快速枚举认证绕过、越权访问与错误授权利用路径。",
+              "source_path": "/home/kali/桌面/Jaster-Plus/skills/auth-and-access.md"
+            },
+            {
+              "name": "auth-infra",
+              "summary": "覆盖 OAuth、OIDC、SAML、CORS、CI/CD 凭据泄露与基础设施身份系统相关攻击链。",
+              "use_when": "目标涉及第三方登录、单点登录、身份提供商、CORS 或运维认证组件，需要从协议流与外部系统集成处寻找突破口。",
+              "source_path": "/home/kali/桌面/Jaster-Plus/skills/auth-infra.md"
+            },
+            {
+              "name": "auth-jwt",
+              "summary": "聚焦 JWT/JWE 相关攻击，包括 alg:none、算法混淆、弱密钥爆破、JWK/JKU/KID 注入与加密令牌伪造。",
+              "use_when": "已识别出 JWT、JWE 或类似 token 机制，需要系统检查签名验证、密钥获取、头部注入和声明伪造利用面。",
+              "source_path": "/home/kali/桌面/Jaster-Plus/skills/auth-jwt.md"
+            },
+            {
+              "name": "client-side-advanced",
+              "summary": "汇总高级前端攻击技巧，包括 Unicode 绕过、CSS 数据外带、CSP 绕过、XSSI 与时序型客户端利用。",
+              "use_when": "已确认目标存在较强前端过滤、浏览器侧安全策略或非常规 DOM/JS 行为，需要更激进的客户端绕过与外带技巧。",
+              "source_path": "/home/kali/桌面/Jaster-Plus/skills/client-side-advanced.md"
+            },
+            {
+              "name": "client-side",
+              "summary": "汇总常见客户端攻击面，包括 XSS、DOM 污染、缓存投毒、前端路由滥用与浏览器侧输入操控。",
+              "use_when": "目标交互主要发生在浏览器端，已观察到反射、DOM 操作、前端框架逻辑或静态资源线索，需要优先评估客户端利用。",
+              "source_path": "/home/kali/桌面/Jaster-Plus/skills/client-side.md"
+            },
+            {
+              "name": "cves",
+              "summary": "汇总 Web、浏览器与常见组件的 CVE/N-day 利用片段，便于按具体漏洞编号或产品特征快速匹配利用思路。",
+              "use_when": "已识别出明确组件、版本、漏洞编号或可疑实现细节，需要把组件指纹快速映射到已知公开利用路径。",
+              "source_path": "/home/kali/桌面/Jaster-Plus/skills/cves.md"
+            },
+            {
+              "name": "field-notes",
+              "summary": "提供偏速查性质的 CTF Web 长篇笔记与交叉参考，适合在信息杂乱时快速回忆常见利用模式。",
+              "use_when": "需要一个广覆盖的备忘录来交叉比对多类漏洞线索，或当前证据零散、尚未明确归类到某一专门 skill。",
+              "source_path": "/home/kali/桌面/Jaster-Plus/skills/field-notes.md"
+            },
+            {
+              "name": "llm-attacks",
+              "summary": "汇总针对大语言模型系统的攻击方式，包括提示注入、越狱、上下文操控、token 走私与工具调用滥用。",
+              "use_when": "目标是聊天机器人、代理系统或接入工具调用的 LLM 应用，需要围绕提示层、上下文层和代理层设计攻击路径。",
+              "source_path": "/home/kali/桌面/Jaster-Plus/skills/llm-attacks.md"
+            },
+            {
+              "name": "model-attacks",
+              "summary": "聚焦对机器学习模型本体的攻击，包括权重操纵、模型反演、抽取、LoRA 利用与成员推断。",
+              "use_when": "已拿到模型文件、推理接口或适配器权重，需要直接从模型参数、输出行为或训练痕迹中恢复敏感信息。",
+              "source_path": "/home/kali/桌面/Jaster-Plus/skills/model-attacks.md"
+            },
+            {
+              "name": "node-and-prototype",
+              "summary": "聚焦 Node.js 原型污染、模板/AST 污染与 VM 沙箱逃逸等 JavaScript 服务端高危利用链。",
+              "use_when": "目标技术栈是 Node.js、存在对象合并/反序列化/沙箱执行场景，或已观察到原型链与 VM 相关可疑代码。",
+              "source_path": "/home/kali/桌面/Jaster-Plus/skills/node-and-prototype.md"
+            },
+            {
+              "name": "server-side-advanced-2",
+              "summary": "收录第二部分高级服务端技巧，覆盖 SSRF 链、反序列化、路径绕过、LaTeX、ElasticSearch 与 rogue MySQL 等复杂链路。",
+              "use_when": "常规服务端注入与文件读取思路已尝试，需要继续深挖偏框架差异、协议联动或复杂组件链式利用。",
+              "source_path": "/home/kali/桌面/Jaster-Plus/skills/server-side-advanced-2.md"
+            },
+            {
+              "name": "server-side-advanced",
+              "summary": "汇总高级服务端利用技巧，包括路径穿越绕过、调试器利用、外部 DTD、WeasyPrint SSRF 与模板/上传复合链。",
+              "use_when": "已确认是服务端题且常规 SSTI/SSRF/LFI 思路不够，需要从框架细节、组件边界和高级绕过技巧继续推进。",
+              "source_path": "/home/kali/桌面/Jaster-Plus/skills/server-side-advanced.md"
+            },
+            {
+              "name": "server-side-deser",
+              "summary": "聚焦反序列化与竞争条件攻击，包括 Java、Pickle、.NET、PHP 反序列化与 TOCTOU 类利用。",
+              "use_when": "已发现序列化 blob、对象恢复逻辑、危险反序列化函数或并发窗口，需要验证对象级执行与竞态利用可能性。",
+              "source_path": "/home/kali/桌面/Jaster-Plus/skills/server-side-deser.md"
+            },
+            {
+              "name": "server-side-exec-2",
+              "summary": "汇总第二部分服务端执行与访问技巧，覆盖命令注入冷门绕过、文件上传变体、文件读写旁路与序列化补充手法。",
+              "use_when": "已进入服务端代码执行或文件操作方向，且需要更多非主流 payload、文件格式技巧或链式执行补充。",
+              "source_path": "/home/kali/桌面/Jaster-Plus/skills/server-side-exec-2.md"
+            },
+            {
+              "name": "server-side-exec",
+              "summary": "聚焦服务端代码执行与文件落地技巧，包括 Ruby/Perl/LaTeX/JS/PHP/Prolog 注入、上传转 RCE 与后利用读取。",
+              "use_when": "已观察到 eval、模板执行、命令拼接、文件上传或解释器级执行入口，需要快速扩展到可落地的 RCE 思路。",
+              "source_path": "/home/kali/桌面/Jaster-Plus/skills/server-side-exec.md"
+            },
+            {
+              "name": "server-side",
+              "summary": "汇总常见服务端注入面，包括 PHP 类型混淆、文件包含、SSTI、SSRF、XXE、命令注入与 GraphQL 利用。",
+              "use_when": "目标主要风险在后端处理逻辑，已发现可控参数、模板渲染、文件读取或网络请求能力，需要系统梳理核心注入面。",
+              "source_path": "/home/kali/桌面/Jaster-Plus/skills/server-side.md"
+            },
+            {
+              "name": "sql-injection",
+              "summary": "聚焦 SQL 注入专项技巧，覆盖过滤绕过、二次注入、盲注、编码差异、竞态泄露与 SQLi 向其它漏洞链的转化。",
+              "use_when": "已确认或强烈怀疑存在 SQL 注入，需要按数据库特性、过滤逻辑和回显条件选择更细粒度的注入与提取方案。",
+              "source_path": "/home/kali/桌面/Jaster-Plus/skills/sql-injection.md"
+            }
+          ]
+        },
+        "payload_json": "{\n  \"objective\": \"Assign at most one skill to each dispatched task.\",\n  \"challenge_context\": \"主入口: node4.anna.nssctf.cn:24052\",\n  \"tasks\": [\n    {\n      \"task_key\": \"98f86594c10b650e\",\n      \"title\": \"分析注册/登录功能并获取用户凭证\",\n      \"reason\": \"SSRF利用需要用户认证才能通过blog参数触发getBlogContents，需先注册账户或登录已有账户。\",\n      \"completion_criteria\": \"成功注册账户并登录，获取有效的cookie或session token，确认UserInfo对象可被操作。\",\n      \"latest_summary\": \"\",\n      \"latest_findings\": []\n    },\n    {\n      \"task_key\": \"3a0cda185a991ec5\",\n      \"title\": \"利用SSRF读取flag.php\",\n      \"reason\": \"通过UserInfo类的blog参数设置目标为flag.php，利用getBlogContents方法发起请求，获取flag内容。可能需要绕过正则或认证检查。\",\n      \"completion_criteria\": \"成功发起SSRF请求并读取flag.php的响应（非0B），如获取到flag则提交；否则记录失败原因并调整策略。\",\n      \"latest_summary\": \"\",\n      \"latest_findings\": []\n    }\n  ],\n  \"available_skills\": [\n    {\n      \"name\": \"adversarial-ml\",\n      \"summary\": \"汇总对图像与通用机器学习模型的对抗样本、物理贴片、规避攻击、数据投毒与后门检测思路。\",\n      \"use_when\": \"目标是分类器、视觉模型或其它传统 ML 挑战，需要围绕输入扰动、模型鲁棒性或训练数据污染设计攻击与验证路径。\",\n      \"source_path\": \"/home/kali/桌面/Jaster-Plus/skills/adversarial-ml.md\"\n    },\n    {\n      \"name\": \"auth-and-access\",\n      \"summary\": \"汇总 Web 鉴权、访问控制、会话与权限边界常见绕过手法，包括 NoSQL、Cookie、Host Header、IDOR 和弱校验。\",\n      \"use_when\": \"已发现登录、鉴权、中间件、权限判断或会话控制入口，需要快速枚举认证绕过、越权访问与错误授权利用路径。\",\n      \"source_path\": \"/home/kali/桌面/Jaster-Plus/skills/auth-and-access.md\"\n    },\n    {\n      \"name\": \"auth-infra\",\n      \"summary\": \"覆盖 OAuth、OIDC、SAML、CORS、CI/CD 凭据泄露与基础设施身份系统相关攻击链。\",\n      \"use_when\": \"目标涉及第三方登录、单点登录、身份提供商、CORS 或运维认证组件，需要从协议流与外部系统集成处寻找突破口。\",\n      \"source_path\": \"/home/kali/桌面/Jaster-Plus/skills/auth-infra.md\"\n    },\n    {\n      \"name\": \"auth-jwt\",\n      \"summary\": \"聚焦 JWT/JWE 相关攻击，包括 alg:none、算法混淆、弱密钥爆破、JWK/JKU/KID 注入与加密令牌伪造。\",\n      \"use_when\": \"已识别出 JWT、JWE 或类似 token 机制，需要系统检查签名验证、密钥获取、头部注入和声明伪造利用面。\",\n      \"source_path\": \"/home/kali/桌面/Jaster-Plus/skills/auth-jwt.md\"\n    },\n    {\n      \"name\": \"client-side-advanced\",\n      \"summary\": \"汇总高级前端攻击技巧，包括 Unicode 绕过、CSS 数据外带、CSP 绕过、XSSI 与时序型客户端利用。\",\n      \"use_when\": \"已确认目标存在较强前端过滤、浏览器侧安全策略或非常规 DOM/JS 行为，需要更激进的客户端绕过与外带技巧。\",\n      \"source_path\": \"/home/kali/桌面/Jaster-Plus/skills/client-side-advanced.md\"\n    },\n    {\n      \"name\": \"client-side\",\n      \"summary\": \"汇总常见客户端攻击面，包括 XSS、DOM 污染、缓存投毒、前端路由滥用与浏览器侧输入操控。\",\n      \"use_when\": \"目标交互主要发生在浏览器端，已观察到反射、DOM 操作、前端框架逻辑或静态资源线索，需要优先评估客户端利用。\",\n      \"source_path\": \"/home/kali/桌面/Jaster-Plus/skills/client-side.md\"\n    },\n    {\n      \"name\": \"cves\",\n      \"summary\": \"汇总 Web、浏览器与常见组件的 CVE/N-day 利用片段，便于按具体漏洞编号或产品特征快速匹配利用思路。\",\n      \"use_when\": \"已识别出明确组件、版本、漏洞编号或可疑实现细节，需要把组件指纹快速映射到已知公开利用路径。\",\n      \"source_path\": \"/home/kali/桌面/Jaster-Plus/skills/cves.md\"\n    },\n    {\n      \"name\": \"field-notes\",\n      \"summary\": \"提供偏速查性质的 CTF Web 长篇笔记与交叉参考，适合在信息杂乱时快速回忆常见利用模式。\",\n      \"use_when\": \"需要一个广覆盖的备忘录来交叉比对多类漏洞线索，或当前证据零散、尚未明确归类到某一专门 skill。\",\n      \"source_path\": \"/home/kali/桌面/Jaster-Plus/skills/field-notes.md\"\n    },\n    {\n      \"name\": \"llm-attacks\",\n      \"summary\": \"汇总针对大语言模型系统的攻击方式，包括提示注入、越狱、上下文操控、token 走私与工具调用滥用。\",\n      \"use_when\": \"目标是聊天机器人、代理系统或接入工具调用的 LLM 应用，需要围绕提示层、上下文层和代理层设计攻击路径。\",\n      \"source_path\": \"/home/kali/桌面/Jaster-Plus/skills/llm-attacks.md\"\n    },\n    {\n      \"name\": \"model-attacks\",\n      \"summary\": \"聚焦对机器学习模型本体的攻击，包括权重操纵、模型反演、抽取、LoRA 利用与成员推断。\",\n      \"use_when\": \"已拿到模型文件、推理接口或适配器权重，需要直接从模型参数、输出行为或训练痕迹中恢复敏感信息。\",\n      \"source_path\": \"/home/kali/桌面/Jaster-Plus/skills/model-attacks.md\"\n    },\n    {\n      \"name\": \"node-and-prototype\",\n      \"summary\": \"聚焦 Node.js 原型污染、模板/AST 污染与 VM 沙箱逃逸等 JavaScript 服务端高危利用链。\",\n      \"use_when\": \"目标技术栈是 Node.js、存在对象合并/反序列化/沙箱执行场景，或已观察到原型链与 VM 相关可疑代码。\",\n      \"source_path\": \"/home/kali/桌面/Jaster-Plus/skills/node-and-prototype.md\"\n    },\n    {\n      \"name\": \"server-side-advanced-2\",\n      \"summary\": \"收录第二部分高级服务端技巧，覆盖 SSRF 链、反序列化、路径绕过、LaTeX、ElasticSearch 与 rogue MySQL 等复杂链路。\",\n      \"use_when\": \"常规服务端注入与文件读取思路已尝试，需要继续深挖偏框架差异、协议联动或复杂组件链式利用。\",\n      \"source_path\": \"/home/kali/桌面/Jaster-Plus/skills/server-side-advanced-2.md\"\n    },\n    {\n      \"name\": \"server-side-advanced\",\n      \"summary\": \"汇总高级服务端利用技巧，包括路径穿越绕过、调试器利用、外部 DTD、WeasyPrint SSRF 与模板/上传复合链。\",\n      \"use_when\": \"已确认是服务端题且常规 SSTI/SSRF/LFI 思路不够，需要从框架细节、组件边界和高级绕过技巧继续推进。\",\n      \"source_path\": \"/home/kali/桌面/Jaster-Plus/skills/server-side-advanced.md\"\n    },\n    {\n      \"name\": \"server-side-deser\",\n      \"summary\": \"聚焦反序列化与竞争条件攻击，包括 Java、Pickle、.NET、PHP 反序列化与 TOCTOU 类利用。\",\n      \"use_when\": \"已发现序列化 blob、对象恢复逻辑、危险反序列化函数或并发窗口，需要验证对象级执行与竞态利用可能性。\",\n      \"source_path\": \"/home/kali/桌面/Jaster-Plus/skills/server-side-deser.md\"\n    },\n    {\n      \"name\": \"server-side-exec-2\",\n      \"summary\": \"汇总第二部分服务端执行与访问技巧，覆盖命令注入冷门绕过、文件上传变体、文件读写旁路与序列化补充手法。\",\n      \"use_when\": \"已进入服务端代码执行或文件操作方向，且需要更多非主流 payload、文件格式技巧或链式执行补充。\",\n      \"source_path\": \"/home/kali/桌面/Jaster-Plus/skills/server-side-exec-2.md\"\n    },\n    {\n      \"name\": \"server-side-exec\",\n      \"summary\": \"聚焦服务端代码执行与文件落地技巧，包括 Ruby/Perl/LaTeX/JS/PHP/Prolog 注入、上传转 RCE 与后利用读取。\",\n      \"use_when\": \"已观察到 eval、模板执行、命令拼接、文件上传或解释器级执行入口，需要快速扩展到可落地的 RCE 思路。\",\n      \"source_path\": \"/home/kali/桌面/Jaster-Plus/skills/server-side-exec.md\"\n    },\n    {\n      \"name\": \"server-side\",\n      \"summary\": \"汇总常见服务端注入面，包括 PHP 类型混淆、文件包含、SSTI、SSRF、XXE、命令注入与 GraphQL 利用。\",\n      \"use_when\": \"目标主要风险在后端处理逻辑，已发现可控参数、模板渲染、文件读取或网络请求能力，需要系统梳理核心注入面。\",\n      \"source_path\": \"/home/kali/桌面/Jaster-Plus/skills/server-side.md\"\n    },\n    {\n      \"name\": \"sql-injection\",\n      \"summary\": \"聚焦 SQL 注入专项技巧，覆盖过滤绕过、二次注入、盲注、编码差异、竞态泄露与 SQLi 向其它漏洞链的转化。\",\n      \"use_when\": \"已确认或强烈怀疑存在 SQL 注入，需要按数据库特性、过滤逻辑和回显条件选择更细粒度的注入与提取方案。\",\n      \"source_path\": \"/home/kali/桌面/Jaster-Plus/skills/sql-injection.md\"\n    }\n  ]\n}",
+        "prompt": "当前区域：zone1\n输入载荷：{\n  \"objective\": \"Assign at most one skill to each dispatched task.\",\n  \"challenge_context\": \"主入口: node4.anna.nssctf.cn:24052\",\n  \"tasks\": [\n    {\n      \"task_key\": \"98f86594c10b650e\",\n      \"title\": \"分析注册/登录功能并获取用户凭证\",\n      \"reason\": \"SSRF利用需要用户认证才能通过blog参数触发getBlogContents，需先注册账户或登录已有账户。\",\n      \"completion_criteria\": \"成功注册账户并登录，获取有效的cookie或session token，确认UserInfo对象可被操作。\",\n      \"latest_summary\": \"\",\n      \"latest_findings\": []\n    },\n    {\n      \"task_key\": \"3a0cda185a991ec5\",\n      \"title\": \"利用SSRF读取flag.php\",\n      \"reason\": \"通过UserInfo类的blog参数设置目标为flag.php，利用getBlogContents方法发起请求，获取flag内容。可能需要绕过正则或认证检查。\",\n      \"completion_criteria\": \"成功发起SSRF请求并读取flag.php的响应（非0B），如获取到flag则提交；否则记录失败原因并调整策略。\",\n      \"latest_summary\": \"\",\n      \"latest_findings\": []\n    }\n  ],\n  \"available_skills\": [\n    {\n      \"name\": \"adversarial-ml\",\n      \"summary\": \"汇总对图像与通用机器学习模型的对抗样本、物理贴片、规避攻击、数据投毒与后门检测思路。\",\n      \"use_when\": \"目标是分类器、视觉模型或其它传统 ML 挑战，需要围绕输入扰动、模型鲁棒性或训练数据污染设计攻击与验证路径。\",\n      \"source_path\": \"/home/kali/桌面/Jaster-Plus/skills/adversarial-ml.md\"\n    },\n    {\n      \"name\": \"auth-and-access\",\n      \"summary\": \"汇总 Web 鉴权、访问控制、会话与权限边界常见绕过手法，包括 NoSQL、Cookie、Host Header、IDOR 和弱校验。\",\n      \"use_when\": \"已发现登录、鉴权、中间件、权限判断或会话控制入口，需要快速枚举认证绕过、越权访问与错误授权利用路径。\",\n      \"source_path\": \"/home/kali/桌面/Jaster-Plus/skills/auth-and-access.md\"\n    },\n    {\n      \"name\": \"auth-infra\",\n      \"summary\": \"覆盖 OAuth、OIDC、SAML、CORS、CI/CD 凭据泄露与基础设施身份系统相关攻击链。\",\n      \"use_when\": \"目标涉及第三方登录、单点登录、身份提供商、CORS 或运维认证组件，需要从协议流与外部系统集成处寻找突破口。\",\n      \"source_path\": \"/home/kali/桌面/Jaster-Plus/skills/auth-infra.md\"\n    },\n    {\n      \"name\": \"auth-jwt\",\n      \"summary\": \"聚焦 JWT/JWE 相关攻击，包括 alg:none、算法混淆、弱密钥爆破、JWK/JKU/KID 注入与加密令牌伪造。\",\n      \"use_when\": \"已识别出 JWT、JWE 或类似 token 机制，需要系统检查签名验证、密钥获取、头部注入和声明伪造利用面。\",\n      \"source_path\": \"/home/kali/桌面/Jaster-Plus/skills/auth-jwt.md\"\n    },\n    {\n      \"name\": \"client-side-advanced\",\n      \"summary\": \"汇总高级前端攻击技巧，包括 Unicode 绕过、CSS 数据外带、CSP 绕过、XSSI 与时序型客户端利用。\",\n      \"use_when\": \"已确认目标存在较强前端过滤、浏览器侧安全策略或非常规 DOM/JS 行为，需要更激进的客户端绕过与外带技巧。\",\n      \"source_path\": \"/home/kali/桌面/Jaster-Plus/skills/client-side-advanced.md\"\n    },\n    {\n      \"name\": \"client-side\",\n      \"summary\": \"汇总常见客户端攻击面，包括 XSS、DOM 污染、缓存投毒、前端路由滥用与浏览器侧输入操控。\",\n      \"use_when\": \"目标交互主要发生在浏览器端，已观察到反射、DOM 操作、前端框架逻辑或静态资源线索，需要优先评估客户端利用。\",\n      \"source_path\": \"/home/kali/桌面/Jaster-Plus/skills/client-side.md\"\n    },\n    {\n      \"name\": \"cves\",\n      \"summary\": \"汇总 Web、浏览器与常见组件的 CVE/N-day 利用片段，便于按具体漏洞编号或产品特征快速匹配利用思路。\",\n      \"use_when\": \"已识别出明确组件、版本、漏洞编号或可疑实现细节，需要把组件指纹快速映射到已知公开利用路径。\",\n      \"source_path\": \"/home/kali/桌面/Jaster-Plus/skills/cves.md\"\n    },\n    {\n      \"name\": \"field-notes\",\n      \"summary\": \"提供偏速查性质的 CTF Web 长篇笔记与交叉参考，适合在信息杂乱时快速回忆常见利用模式。\",\n      \"use_when\": \"需要一个广覆盖的备忘录来交叉比对多类漏洞线索，或当前证据零散、尚未明确归类到某一专门 skill。\",\n      \"source_path\": \"/home/kali/桌面/Jaster-Plus/skills/field-notes.md\"\n    },\n    {\n      \"name\": \"llm-attacks\",\n      \"summary\": \"汇总针对大语言模型系统的攻击方式，包括提示注入、越狱、上下文操控、token 走私与工具调用滥用。\",\n      \"use_when\": \"目标是聊天机器人、代理系统或接入工具调用的 LLM 应用，需要围绕提示层、上下文层和代理层设计攻击路径。\",\n      \"source_path\": \"/home/kali/桌面/Jaster-Plus/skills/llm-attacks.md\"\n    },\n    {\n      \"name\": \"model-attacks\",\n      \"summary\": \"聚焦对机器学习模型本体的攻击，包括权重操纵、模型反演、抽取、LoRA 利用与成员推断。\",\n      \"use_when\": \"已拿到模型文件、推理接口或适配器权重，需要直接从模型参数、输出行为或训练痕迹中恢复敏感信息。\",\n      \"source_path\": \"/home/kali/桌面/Jaster-Plus/skills/model-attacks.md\"\n    },\n    {\n      \"name\": \"node-and-prototype\",\n      \"summary\": \"聚焦 Node.js 原型污染、模板/AST 污染与 VM 沙箱逃逸等 JavaScript 服务端高危利用链。\",\n      \"use_when\": \"目标技术栈是 Node.js、存在对象合并/反序列化/沙箱执行场景，或已观察到原型链与 VM 相关可疑代码。\",\n      \"source_path\": \"/home/kali/桌面/Jaster-Plus/skills/node-and-prototype.md\"\n    },\n    {\n      \"name\": \"server-side-advanced-2\",\n      \"summary\": \"收录第二部分高级服务端技巧，覆盖 SSRF 链、反序列化、路径绕过、LaTeX、ElasticSearch 与 rogue MySQL 等复杂链路。\",\n      \"use_when\": \"常规服务端注入与文件读取思路已尝试，需要继续深挖偏框架差异、协议联动或复杂组件链式利用。\",\n      \"source_path\": \"/home/kali/桌面/Jaster-Plus/skills/server-side-advanced-2.md\"\n    },\n    {\n      \"name\": \"server-side-advanced\",\n      \"summary\": \"汇总高级服务端利用技巧，包括路径穿越绕过、调试器利用、外部 DTD、WeasyPrint SSRF 与模板/上传复合链。\",\n      \"use_when\": \"已确认是服务端题且常规 SSTI/SSRF/LFI 思路不够，需要从框架细节、组件边界和高级绕过技巧继续推进。\",\n      \"source_path\": \"/home/kali/桌面/Jaster-Plus/skills/server-side-advanced.md\"\n    },\n    {\n      \"name\": \"server-side-deser\",\n      \"summary\": \"聚焦反序列化与竞争条件攻击，包括 Java、Pickle、.NET、PHP 反序列化与 TOCTOU 类利用。\",\n      \"use_when\": \"已发现序列化 blob、对象恢复逻辑、危险反序列化函数或并发窗口，需要验证对象级执行与竞态利用可能性。\",\n      \"source_path\": \"/home/kali/桌面/Jaster-Plus/skills/server-side-deser.md\"\n    },\n    {\n      \"name\": \"server-side-exec-2\",\n      \"summary\": \"汇总第二部分服务端执行与访问技巧，覆盖命令注入冷门绕过、文件上传变体、文件读写旁路与序列化补充手法。\",\n      \"use_when\": \"已进入服务端代码执行或文件操作方向，且需要更多非主流 payload、文件格式技巧或链式执行补充。\",\n      \"source_path\": \"/home/kali/桌面/Jaster-Plus/skills/server-side-exec-2.md\"\n    },\n    {\n      \"name\": \"server-side-exec\",\n      \"summary\": \"聚焦服务端代码执行与文件落地技巧，包括 Ruby/Perl/LaTeX/JS/PHP/Prolog 注入、上传转 RCE 与后利用读取。\",\n      \"use_when\": \"已观察到 eval、模板执行、命令拼接、文件上传或解释器级执行入口，需要快速扩展到可落地的 RCE 思路。\",\n      \"source_path\": \"/home/kali/桌面/Jaster-Plus/skills/server-side-exec.md\"\n    },\n    {\n      \"name\": \"server-side\",\n      \"summary\": \"汇总常见服务端注入面，包括 PHP 类型混淆、文件包含、SSTI、SSRF、XXE、命令注入与 GraphQL 利用。\",\n      \"use_when\": \"目标主要风险在后端处理逻辑，已发现可控参数、模板渲染、文件读取或网络请求能力，需要系统梳理核心注入面。\",\n      \"source_path\": \"/home/kali/桌面/Jaster-Plus/skills/server-side.md\"\n    },\n    {\n      \"name\": \"sql-injection\",\n      \"summary\": \"聚焦 SQL 注入专项技巧，覆盖过滤绕过、二次注入、盲注、编码差异、竞态泄露与 SQLi 向其它漏洞链的转化。\",\n      \"use_when\": \"已确认或强烈怀疑存在 SQL 注入，需要按数据库特性、过滤逻辑和回显条件选择更细粒度的注入与提取方案。\",\n      \"source_path\": \"/home/kali/桌面/Jaster-Plus/skills/sql-injection.md\"\n    }\n  ]\n}\n如果输入载荷包含 `retry_context`，说明你上一轮失败了。\n你必须优先修复 `retry_context` 中指出的问题，不要重复输出同样的错误 JSON、同样的无效字段，或机械重复上一次失败的动作。\n如果上一轮是工具或脚本执行失败，先根据失败信息调整动作、参数或方案，再继续。\n\n\n# Team Manager Agent\n## Role\nYou only route dispatched tasks to the most relevant skill document. You do not decompose tasks, rewrite tasks, or plan tool actions.\n\n## Goal\n- For each item in `tasks`, decide whether one skill from `available_skills` should be injected into that task's `strategy` context.\n- Return at most one skill per task.\n- If no skill is clearly relevant, return `no_match=true` for that task.\n\n## Routing Rules\n- Use only the metadata already provided in `available_skills`: `name`, `summary`, `use_when`, `source_path`.\n- Match based on the task's `title`, `reason`, `completion_criteria`, `latest_summary`, and `latest_findings`.\n- Prefer precision over coverage. If relevance is weak or ambiguous, choose `no_match=true`.\n- Do not assign broad fallback skills just to avoid empty output.\n- Do not return multiple skills for one task.\n- Every routed task in `tasks` must appear exactly once in `assignments`.\n- `skill_name` must exactly match one item from `available_skills.name` when `no_match=false`.\n\n## Output JSON\n- `phase_summary`: string\n  - Briefly summarize the routing decision quality for this batch.\n- `assignments`: list[dict]\n  - One item per task in `tasks`\n  - Each item contains:\n    - `task_key`: string\n    - `skill_name`: string, empty when `no_match=true`\n    - `selection_reason`: string, explain why this skill matches the task or why no clear match exists\n    - `confidence`: float, 0-1\n    - `no_match`: bool\n\n\n## 区域指引：\n- 侧重src挖掘，ctf web渗透，主流漏洞发现。\n- web探测前期应重点收集：页面源代码 ; HTTP请求 ; robots协议 ; 文件/源码泄露 ; git泄露 ; 路径扫描 ; 域名解析。\n  git获取到的源码若不完整或错误，应尝试在该仓库查看其它版本源码，查找完整源码",
+        "raw_response": {
+          "phase_summary": "Both tasks have a clear and precise skill match. Task 1 targets auth bypass, Task 2 targets SSRF chain exploitation.",
+          "assignments": [
+            {
+              "task_key": "98f86594c10b650e",
+              "skill_name": "auth-and-access",
+              "selection_reason": "Task involves analyzing registration/login and obtaining credentials, directly matching the auth-and-access skill which covers Web authentication bypass, session manipulation, and access control.",
+              "confidence": 0.95,
+              "no_match": false
+            },
+            {
+              "task_key": "3a0cda185a991ec5",
+              "skill_name": "server-side-advanced-2",
+              "selection_reason": "Task requires SSRF exploitation to read flag.php, which is explicitly covered by the server-side-advanced-2 skill that includes SSRF chains and complex server-side techniques.",
+              "confidence": 0.9,
+              "no_match": false
+            }
+          ]
+        },
+        "normalized_response": {
+          "phase_summary": "Both tasks have a clear and precise skill match. Task 1 targets auth bypass, Task 2 targets SSRF chain exploitation.",
+          "assignments": [
+            {
+              "task_key": "98f86594c10b650e",
+              "skill_name": "auth-and-access",
+              "selection_reason": "Task involves analyzing registration/login and obtaining credentials, directly matching the auth-and-access skill which covers Web authentication bypass, session manipulation, and access control.",
+              "confidence": 0.95,
+              "no_match": false
+            },
+            {
+              "task_key": "3a0cda185a991ec5",
+              "skill_name": "server-side-advanced-2",
+              "selection_reason": "Task requires SSRF exploitation to read flag.php, which is explicitly covered by the server-side-advanced-2 skill that includes SSRF chains and complex server-side techniques.",
+              "confidence": 0.9,
+              "no_match": false
+            }
+          ]
+        }
+      }
+    ],
+    "succeeded_attempt": 1
+  },
+  "input_payload": {
+    "objective": "Assign at most one skill to each dispatched task.",
+    "challenge_context": "主入口: node4.anna.nssctf.cn:24052",
+    "tasks": [
+      {
+        "task_key": "98f86594c10b650e",
+        "title": "分析注册/登录功能并获取用户凭证",
+        "reason": "SSRF利用需要用户认证才能通过blog参数触发getBlogContents，需先注册账户或登录已有账户。",
+        "completion_criteria": "成功注册账户并登录，获取有效的cookie或session token，确认UserInfo对象可被操作。",
+        "latest_summary": "",
+        "latest_findings": []
+      },
+      {
+        "task_key": "3a0cda185a991ec5",
+        "title": "利用SSRF读取flag.php",
+        "reason": "通过UserInfo类的blog参数设置目标为flag.php，利用getBlogContents方法发起请求，获取flag内容。可能需要绕过正则或认证检查。",
+        "completion_criteria": "成功发起SSRF请求并读取flag.php的响应（非0B），如获取到flag则提交；否则记录失败原因并调整策略。",
+        "latest_summary": "",
+        "latest_findings": []
+      }
+    ],
+    "available_skills": [
+      {
+        "name": "adversarial-ml",
+        "summary": "汇总对图像与通用机器学习模型的对抗样本、物理贴片、规避攻击、数据投毒与后门检测思路。",
+        "use_when": "目标是分类器、视觉模型或其它传统 ML 挑战，需要围绕输入扰动、模型鲁棒性或训练数据污染设计攻击与验证路径。",
+        "source_path": "/home/kali/桌面/Jaster-Plus/skills/adversarial-ml.md"
+      },
+      {
+        "name": "auth-and-access",
+        "summary": "汇总 Web 鉴权、访问控制、会话与权限边界常见绕过手法，包括 NoSQL、Cookie、Host Header、IDOR 和弱校验。",
+        "use_when": "已发现登录、鉴权、中间件、权限判断或会话控制入口，需要快速枚举认证绕过、越权访问与错误授权利用路径。",
+        "source_path": "/home/kali/桌面/Jaster-Plus/skills/auth-and-access.md"
+      },
+      {
+        "name": "auth-infra",
+        "summary": "覆盖 OAuth、OIDC、SAML、CORS、CI/CD 凭据泄露与基础设施身份系统相关攻击链。",
+        "use_when": "目标涉及第三方登录、单点登录、身份提供商、CORS 或运维认证组件，需要从协议流与外部系统集成处寻找突破口。",
+        "source_path": "/home/kali/桌面/Jaster-Plus/skills/auth-infra.md"
+      },
+      {
+        "name": "auth-jwt",
+        "summary": "聚焦 JWT/JWE 相关攻击，包括 alg:none、算法混淆、弱密钥爆破、JWK/JKU/KID 注入与加密令牌伪造。",
+        "use_when": "已识别出 JWT、JWE 或类似 token 机制，需要系统检查签名验证、密钥获取、头部注入和声明伪造利用面。",
+        "source_path": "/home/kali/桌面/Jaster-Plus/skills/auth-jwt.md"
+      },
+      {
+        "name": "client-side-advanced",
+        "summary": "汇总高级前端攻击技巧，包括 Unicode 绕过、CSS 数据外带、CSP 绕过、XSSI 与时序型客户端利用。",
+        "use_when": "已确认目标存在较强前端过滤、浏览器侧安全策略或非常规 DOM/JS 行为，需要更激进的客户端绕过与外带技巧。",
+        "source_path": "/home/kali/桌面/Jaster-Plus/skills/client-side-advanced.md"
+      },
+      {
+        "name": "client-side",
+        "summary": "汇总常见客户端攻击面，包括 XSS、DOM 污染、缓存投毒、前端路由滥用与浏览器侧输入操控。",
+        "use_when": "目标交互主要发生在浏览器端，已观察到反射、DOM 操作、前端框架逻辑或静态资源线索，需要优先评估客户端利用。",
+        "source_path": "/home/kali/桌面/Jaster-Plus/skills/client-side.md"
+      },
+      {
+        "name": "cves",
+        "summary": "汇总 Web、浏览器与常见组件的 CVE/N-day 利用片段，便于按具体漏洞编号或产品特征快速匹配利用思路。",
+        "use_when": "已识别出明确组件、版本、漏洞编号或可疑实现细节，需要把组件指纹快速映射到已知公开利用路径。",
+        "source_path": "/home/kali/桌面/Jaster-Plus/skills/cves.md"
+      },
+      {
+        "name": "field-notes",
+        "summary": "提供偏速查性质的 CTF Web 长篇笔记与交叉参考，适合在信息杂乱时快速回忆常见利用模式。",
+        "use_when": "需要一个广覆盖的备忘录来交叉比对多类漏洞线索，或当前证据零散、尚未明确归类到某一专门 skill。",
+        "source_path": "/home/kali/桌面/Jaster-Plus/skills/field-notes.md"
+      },
+      {
+        "name": "llm-attacks",
+        "summary": "汇总针对大语言模型系统的攻击方式，包括提示注入、越狱、上下文操控、token 走私与工具调用滥用。",
+        "use_when": "目标是聊天机器人、代理系统或接入工具调用的 LLM 应用，需要围绕提示层、上下文层和代理层设计攻击路径。",
+        "source_path": "/home/kali/桌面/Jaster-Plus/skills/llm-attacks.md"
+      },
+      {
+        "name": "model-attacks",
+        "summary": "聚焦对机器学习模型本体的攻击，包括权重操纵、模型反演、抽取、LoRA 利用与成员推断。",
+        "use_when": "已拿到模型文件、推理接口或适配器权重，需要直接从模型参数、输出行为或训练痕迹中恢复敏感信息。",
+        "source_path": "/home/kali/桌面/Jaster-Plus/skills/model-attacks.md"
+      },
+      {
+        "name": "node-and-prototype",
+        "summary": "聚焦 Node.js 原型污染、模板/AST 污染与 VM 沙箱逃逸等 JavaScript 服务端高危利用链。",
+        "use_when": "目标技术栈是 Node.js、存在对象合并/反序列化/沙箱执行场景，或已观察到原型链与 VM 相关可疑代码。",
+        "source_path": "/home/kali/桌面/Jaster-Plus/skills/node-and-prototype.md"
+      },
+      {
+        "name": "server-side-advanced-2",
+        "summary": "收录第二部分高级服务端技巧，覆盖 SSRF 链、反序列化、路径绕过、LaTeX、ElasticSearch 与 rogue MySQL 等复杂链路。",
+        "use_when": "常规服务端注入与文件读取思路已尝试，需要继续深挖偏框架差异、协议联动或复杂组件链式利用。",
+        "source_path": "/home/kali/桌面/Jaster-Plus/skills/server-side-advanced-2.md"
+      },
+      {
+        "name": "server-side-advanced",
+        "summary": "汇总高级服务端利用技巧，包括路径穿越绕过、调试器利用、外部 DTD、WeasyPrint SSRF 与模板/上传复合链。",
+        "use_when": "已确认是服务端题且常规 SSTI/SSRF/LFI 思路不够，需要从框架细节、组件边界和高级绕过技巧继续推进。",
+        "source_path": "/home/kali/桌面/Jaster-Plus/skills/server-side-advanced.md"
+      },
+      {
+        "name": "server-side-deser",
+        "summary": "聚焦反序列化与竞争条件攻击，包括 Java、Pickle、.NET、PHP 反序列化与 TOCTOU 类利用。",
+        "use_when": "已发现序列化 blob、对象恢复逻辑、危险反序列化函数或并发窗口，需要验证对象级执行与竞态利用可能性。",
+        "source_path": "/home/kali/桌面/Jaster-Plus/skills/server-side-deser.md"
+      },
+      {
+        "name": "server-side-exec-2",
+        "summary": "汇总第二部分服务端执行与访问技巧，覆盖命令注入冷门绕过、文件上传变体、文件读写旁路与序列化补充手法。",
+        "use_when": "已进入服务端代码执行或文件操作方向，且需要更多非主流 payload、文件格式技巧或链式执行补充。",
+        "source_path": "/home/kali/桌面/Jaster-Plus/skills/server-side-exec-2.md"
+      },
+      {
+        "name": "server-side-exec",
+        "summary": "聚焦服务端代码执行与文件落地技巧，包括 Ruby/Perl/LaTeX/JS/PHP/Prolog 注入、上传转 RCE 与后利用读取。",
+        "use_when": "已观察到 eval、模板执行、命令拼接、文件上传或解释器级执行入口，需要快速扩展到可落地的 RCE 思路。",
+        "source_path": "/home/kali/桌面/Jaster-Plus/skills/server-side-exec.md"
+      },
+      {
+        "name": "server-side",
+        "summary": "汇总常见服务端注入面，包括 PHP 类型混淆、文件包含、SSTI、SSRF、XXE、命令注入与 GraphQL 利用。",
+        "use_when": "目标主要风险在后端处理逻辑，已发现可控参数、模板渲染、文件读取或网络请求能力，需要系统梳理核心注入面。",
+        "source_path": "/home/kali/桌面/Jaster-Plus/skills/server-side.md"
+      },
+      {
+        "name": "sql-injection",
+        "summary": "聚焦 SQL 注入专项技巧，覆盖过滤绕过、二次注入、盲注、编码差异、竞态泄露与 SQLi 向其它漏洞链的转化。",
+        "use_when": "已确认或强烈怀疑存在 SQL 注入，需要按数据库特性、过滤逻辑和回显条件选择更细粒度的注入与提取方案。",
+        "source_path": "/home/kali/桌面/Jaster-Plus/skills/sql-injection.md"
+      }
+    ]
+  },
+  "output": {
+    "phase_summary": "Both tasks have a clear and precise skill match. Task 1 targets auth bypass, Task 2 targets SSRF chain exploitation.",
+    "assignments": [
+      {
+        "task_key": "98f86594c10b650e",
+        "skill_name": "auth-and-access",
+        "selection_reason": "Task involves analyzing registration/login and obtaining credentials, directly matching the auth-and-access skill which covers Web authentication bypass, session manipulation, and access control.",
+        "confidence": 0.95,
+        "no_match": false
+      },
+      {
+        "task_key": "3a0cda185a991ec5",
+        "skill_name": "server-side-advanced-2",
+        "selection_reason": "Task requires SSRF exploitation to read flag.php, which is explicitly covered by the server-side-advanced-2 skill that includes SSRF chains and complex server-side techniques.",
+        "confidence": 0.9,
+        "no_match": false
+      }
+    ]
+  }
+}

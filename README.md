@@ -2,6 +2,10 @@
 
 Jaster is a pentest multi-agent runtime built around a shared task tree and MCP tools.
 
+以2018年fakebook题目为例，该题目为偏困难题目，本项目使用deepseek-v4-pro模型进行渗透，总耗时30min以内：
+![alt text](a3c466f7-fb7b-4b23-98f4-a525cf2f5228.png)
+由于时间较长，不作视频演示，解题过程详情可查看data runs下的日志。
+
 ## Runtime Flow
 
 - `plan` reads the full task tree, bootstrap curl result, latest discoveries, and reflection history, then patches the task tree and dispatches task keys.
