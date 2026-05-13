@@ -3,7 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
-import subprocess
+
 import sys
 import tempfile
 import threading
@@ -197,7 +197,7 @@ class JasterOrchestrator:
         self.phase_max_retries = env_int("JASTER_PHASE_MAX_RETRIES", 3)
         self.parallel_task_workers = env_int("JASTER_PARALLEL_TASK_WORKERS", 4)
         self.parallel_action_workers = env_int("JASTER_PARALLEL_ACTION_WORKERS", 4)
-        self.strategy_max_rounds = env_int("JASTER_STRATEGY_MAX_ROUNDS", 10)
+        self.strategy_max_rounds = env_int("JASTER_STRATEGY_MAX_ROUNDS", 100)
         self.strategy_observation_limit = env_int("JASTER_STRATEGY_RECENT_OBSERVATION_LIMIT", 8)
         self.default_tool_timeout = env_int("JASTER_MCP_TOOL_TIMEOUT", 180)
         self.planner_context_window = env_int("JASTER_PLANNER_CONTEXT_WINDOW", 8)
@@ -229,10 +229,6 @@ class JasterOrchestrator:
         self._log(f"[*] Target: {challenge.target} | type={challenge.target_type} | zone={challenge.zone}")
         self._log(f"[*] Run dir: {self.store.run_dir(run_id)}")
 
-        bootstrap_execution = self._initial_bootstrap_execution(challenge)
-        if bootstrap_execution and bootstrap_execution.artifacts:
-            state.available_artifacts = _merge_artifact_refs(state.available_artifacts, bootstrap_execution.artifacts)
-
         for cycle in range(1, max_rounds + 1):
             if self._halt_requested(run_id):
                 self._log("[*] Run stopping: halt signal detected")
@@ -243,7 +239,6 @@ class JasterOrchestrator:
             plan_input = self._build_plan_input(
                 challenge=challenge,
                 task_tree=state.task_tree,
-                bootstrap_execution=bootstrap_execution,
                 planner_context=state.planner_context,
                 reflection_history=state.reflection_history,
                 latest_discoveries=state.latest_discoveries,
@@ -345,15 +340,11 @@ class JasterOrchestrator:
                 challenge=challenge,
                 task_tree=state.task_tree,
                 task_keys=dispatch_keys,
-                reflection_history=state.reflection_history,
                 available_artifacts=state.available_artifacts,
                 persistent_code_evidence=state.persistent_code_evidence,
                 skill_bindings=state.skill_bindings,
                 observations=state.observations,
                 shared_bulletin=state.shared_bulletin,
-                submitted_flags=state.submitted_flags,
-                incorrect_flags=state.incorrect_flags,
-                submission_history=state.submission_history,
             )
 
             state.observations.extend(observations)
@@ -375,24 +366,11 @@ class JasterOrchestrator:
                 challenge.zone,
                 ReflectionInput(
                     objective="Review the latest strategy batch, update task states, and advise the next planning cycle.",
+                    challenge_context=_challenge_context(challenge),
                     task_tree=_prompt_task_tree(state.task_tree),
-                    challenge_context=_challenge_context(
-                        challenge,
-                        submitted_flags=state.submitted_flags,
-                    incorrect_flags=state.incorrect_flags,
-                    submission_history=state.submission_history,
-                ),
-                    strategy_results=strategy_results,
-                    candidate_flags=_merge_flag_candidates(
-                        *[result.flag_candidates for result in strategy_results],
-                    ),
-                    submitted_flags=list(state.submitted_flags),
-                    incorrect_flags=list(state.incorrect_flags),
-                    submission_history=list(state.submission_history[-6:]),
                     reflection_history=list(state.reflection_history),
+                    strategy_results=strategy_results,
                     latest_discoveries=_prompt_discoveries(batch_discoveries),
-                    available_artifacts=_prompt_artifacts(state.available_artifacts),
-                    available_control_tools=[],
                 ),
             )
             self._log(f"[*] Cycle {cycle}: reflection")
@@ -434,8 +412,8 @@ class JasterOrchestrator:
                         source="reflection",
                         summary=update.latest_summary,
                         findings=list(update.latest_findings),
-                        credentials=list(reflection_out.credentials),
-                        flag_candidates=list(reflection_out.flag_candidates),
+                        credentials=[],
+                        flag_candidates=[],
                     )
                     for update in reflection_out.task_updates
                     if update.latest_summary or update.latest_findings
@@ -449,8 +427,8 @@ class JasterOrchestrator:
                             source="reflection",
                             summary=reflection_out.summary,
                             findings=list(reflection_out.critical_findings),
-                            credentials=list(reflection_out.credentials),
-                            flag_candidates=list(reflection_out.flag_candidates),
+                            credentials=[],
+                            flag_candidates=[],
                         )
                     ]
                     if reflection_out.summary or reflection_out.critical_findings
@@ -499,15 +477,11 @@ class JasterOrchestrator:
         challenge: ChallengeSpec,
         task_tree: TaskTreeSnapshot,
         task_keys: list[str],
-        reflection_history: list[ReflectionHistoryEntry],
         available_artifacts: list[ArtifactRef],
         persistent_code_evidence: list[PersistentCodeEvidence],
         skill_bindings: list[TaskSkillBinding],
         observations: list[Observation],
         shared_bulletin: list[SharedBulletinEntry],
-        submitted_flags: list[str],
-        incorrect_flags: list[str],
-        submission_history: list[SubmissionAttempt],
     ) -> tuple[list[StrategyTaskResult], list[Observation], list[TaskDiscovery], ExecutionResult | None, _StrategyBulletinBoard]:
         nodes_by_key = {node.key: node for node in task_tree.nodes}
         valid_keys = [key for key in task_keys if key in nodes_by_key]
@@ -529,15 +503,11 @@ class JasterOrchestrator:
                     challenge=challenge,
                     task_tree=task_tree,
                     task_node=nodes_by_key[key],
-                    reflection_history=reflection_history,
                     available_artifacts=available_artifacts,
                     persistent_code_evidence=persistent_code_evidence,
                     skill_bindings=skill_bindings,
                     observations=observations,
                     bulletin_board=bulletin_board,
-                    submitted_flags=submitted_flags,
-                    incorrect_flags=incorrect_flags,
-                    submission_history=submission_history,
                 ): key
                 for key in valid_keys
             }
@@ -593,15 +563,11 @@ class JasterOrchestrator:
         challenge: ChallengeSpec,
         task_tree: TaskTreeSnapshot,
         task_node: TaskNodeSnapshot,
-        reflection_history: list[ReflectionHistoryEntry],
         available_artifacts: list[ArtifactRef],
         persistent_code_evidence: list[PersistentCodeEvidence],
         skill_bindings: list[TaskSkillBinding],
         observations: list[Observation],
         bulletin_board: _StrategyBulletinBoard,
-        submitted_flags: list[str],
-        incorrect_flags: list[str],
-        submission_history: list[SubmissionAttempt],
     ) -> tuple[StrategyTaskResult, list[Observation]]:
         recent_rounds = _recent_observations_for_task(
             observations,
@@ -617,8 +583,9 @@ class JasterOrchestrator:
         last_output = None
         termination_reason = "finish"
         rounds_used = 0
+        _SAFETY_CAP = 100
 
-        for strategy_round in range(1, self.strategy_max_rounds + 1):
+        for strategy_round in range(1, _SAFETY_CAP + 1):
             if self._halt_requested(run_id):
                 termination_reason = "halt"
                 break
@@ -637,7 +604,6 @@ class JasterOrchestrator:
                 assigned_skill=assigned_skill,
                 recent_rounds=recent_rounds,
                 latest_execution=latest_execution,
-                reflection_history=reflection_history,
                 available_artifacts=available_artifacts,
                 persistent_code_evidence=_persistent_code_evidence_for_task(
                     _merge_persistent_code_evidence(persistent_code_evidence, new_code_evidence),
@@ -646,9 +612,6 @@ class JasterOrchestrator:
                     limit=6,
                 ),
                 bulletin_digest=bulletin_digest,
-                submitted_flags=submitted_flags,
-                incorrect_flags=incorrect_flags,
-                submission_history=submission_history,
             )
 
             try:
@@ -662,6 +625,7 @@ class JasterOrchestrator:
                 last_output = self.agents["strategy"].output_model(
                     phase_summary=f"Strategy agent failed: {exc}",
                     is_complete=False,
+                    stop_reason="",
                     task_summary="",
                     task_findings=[str(exc)],
                     actions=[ActionPlan(task_id="finish", kind="finish", goal="Stop current task.")],
@@ -692,6 +656,10 @@ class JasterOrchestrator:
                 termination_reason = "completed"
                 break
 
+            if strategy_out.stop_reason == "dead_end":
+                termination_reason = "dead_end"
+                break
+
             actions = strategy_out.actions
             if _is_finish_only(actions):
                 termination_reason = "finish"
@@ -720,6 +688,7 @@ class JasterOrchestrator:
             last_output = self.agents["strategy"].output_model(
                 phase_summary="Strategy did not produce any output.",
                 is_complete=False,
+                stop_reason="",
                 task_summary="",
                 task_findings=[],
                 actions=[ActionPlan(task_id="finish", kind="finish", goal="Stop current task.")],
@@ -729,15 +698,13 @@ class JasterOrchestrator:
                 shared_findings=[],
             )
 
-        if not last_output.is_complete and termination_reason == "finish" and rounds_used >= self.strategy_max_rounds:
-            termination_reason = "max_rounds"
-
         result = StrategyTaskResult(
             task_key=task_node.key,
             task_title=task_node.title,
             completed=last_output.is_complete,
             rounds_used=rounds_used,
             termination_reason=termination_reason,
+            stop_reason=last_output.stop_reason,
             phase_summary=last_output.phase_summary,
             task_summary=last_output.task_summary,
             task_findings=list(last_output.task_findings),
@@ -756,7 +723,6 @@ class JasterOrchestrator:
         *,
         challenge: ChallengeSpec,
         task_tree: TaskTreeSnapshot,
-        bootstrap_execution: ExecutionResult | None,
         planner_context: PlannerContext | None,
         reflection_history: list[ReflectionHistoryEntry],
         latest_discoveries: list[TaskDiscovery],
@@ -767,27 +733,23 @@ class JasterOrchestrator:
     ) -> PlanInput:
         payload = PlanInput(
             objective=f"Plan the next batch of penetration tasks for {challenge.target}.",
-            task_tree=_prompt_task_tree(task_tree),
             challenge_context=_challenge_context(
                 challenge,
                 submitted_flags=submitted_flags,
                 incorrect_flags=incorrect_flags,
                 submission_history=submission_history,
             ),
-            bootstrap_execution=_compact_execution(bootstrap_execution),
+            available_control_tools=_contest_control_tools(),
             planner_context=planner_context.model_copy(deep=True) if planner_context else None,
-            task_status_summary=_task_status_summary(task_tree),
+            task_tree=_prompt_task_tree(task_tree),
             failure_patterns_summary=_failure_patterns_summary(reflection_history),
-            task_status_digest=_task_status_digest(task_tree),
             failure_patterns_digest=_failure_patterns_digest(reflection_history),
+            latest_discoveries=_prompt_discoveries(latest_discoveries, limit=20),
             candidate_flags=_merge_flag_candidates(*[item.flag_candidates for item in latest_discoveries[-12:]]),
             submitted_flags=list(submitted_flags),
             incorrect_flags=list(incorrect_flags),
             submission_history=list(submission_history[-6:]),
-            reflection_history=[item.model_copy(deep=True) for item in reflection_history],
-            latest_discoveries=_prompt_discoveries(latest_discoveries, limit=20),
             available_artifacts=_prompt_artifacts(available_artifacts, limit=15),
-            available_control_tools=_contest_control_tools(),
         )
         return self._compress_plan_input(payload)
 
@@ -800,40 +762,27 @@ class JasterOrchestrator:
         assigned_skill: InjectedSkill | None = None,
         recent_rounds: list[RecentObservationRound],
         latest_execution: ExecutionResult | None,
-        reflection_history: list[ReflectionHistoryEntry],
         available_artifacts: list[ArtifactRef],
         persistent_code_evidence: list[PersistentCodeEvidence],
-        bulletin_digest: SharedBulletinDigest,
-        submitted_flags: list[str] | None = None,
-        incorrect_flags: list[str] | None = None,
-        submission_history: list[SubmissionAttempt] | None = None,
+        bulletin_digest: SharedBulletinDigest | None = None,
     ) -> StrategyInput:
-        focus_tree = _task_tree_focus(task_tree, task_node.key, limit=12)
-        dependency_context = _dependency_context(task_tree, task_node.key, available_artifacts, limit=6)
+        bd = bulletin_digest or SharedBulletinDigest()
         payload = StrategyInput(
             objective=f"Complete assigned task: {task_node.title}",
+            challenge_context=_challenge_context(challenge),
             assigned_task=task_node,
-            task_tree=TaskTreeSnapshot(nodes=[]),
-            task_tree_focus=focus_tree,
-            challenge_context=_challenge_context(
-                challenge,
-                submitted_flags=submitted_flags or [],
-                incorrect_flags=incorrect_flags or [],
-                submission_history=submission_history or [],
-            ),
             assigned_skill=assigned_skill.model_copy(deep=True) if assigned_skill else None,
-            recent_observations=list(recent_rounds),
-            latest_execution=_compact_execution(latest_execution),
-            reflection_history=[item.model_copy(deep=True) for item in reflection_history],
-            dependency_context=dependency_context,
+            task_tree=_prompt_task_tree(task_tree),
             persistent_code_evidence=[item.model_copy(deep=True) for item in persistent_code_evidence],
             available_artifacts=_prompt_artifacts(available_artifacts, limit=10),
             available_tools=_available_tools_compact(),
             shared_bulletin=SharedBulletinDigest(
-                new_entries=[item.model_copy(deep=True) for item in bulletin_digest.new_entries],
-                verified_entries=[item.model_copy(deep=True) for item in bulletin_digest.verified_entries[-4:]],
+                new_entries=[item.model_copy(deep=True) for item in bd.new_entries],
+                verified_entries=[item.model_copy(deep=True) for item in bd.verified_entries[-4:]],
                 unverified_entries=[],
             ),
+            recent_observations=list(recent_rounds),
+            latest_execution=_compact_execution(latest_execution),
         )
         return self._compress_strategy_input(payload)
 
@@ -845,12 +794,10 @@ class JasterOrchestrator:
         payload = payload.model_copy(deep=True)
 
         payload.planner_context = self._compress_planner_context(payload.planner_context, notes)
-        payload.reflection_digest = self._summarize_reflection_history(payload.reflection_history[:-4], "plan reflection history", notes)
-        payload.reflection_history = payload.reflection_history[-4:]
-        payload.latest_discoveries, payload.discoveries_digest = self._compress_discoveries(
+        payload.latest_discoveries = self._trim_list_window(
             payload.latest_discoveries,
-            "plan latest discoveries",
             keep=12,
+            field="plan latest discoveries",
             notes=notes,
         )
         payload.available_artifacts = _prompt_artifacts(payload.available_artifacts, limit=12)
@@ -865,26 +812,19 @@ class JasterOrchestrator:
         notes: list[CompressionNote] = list(payload.compression_notes)
         payload = payload.model_copy(deep=True)
 
-        payload.reflection_digest = self._summarize_reflection_history(
-            payload.reflection_history[:-1],
-            "strategy reflection history",
-            notes,
-        )
-        payload.reflection_history = payload.reflection_history[-1:]
-
         if _payload_chars(payload) <= self.context_payload_limit:
-            payload.compression_notes = notes
             return payload
 
-        payload.recent_observations, payload.observation_digest = self._compress_observations(
+        payload.recent_observations = self._trim_list_window(
             payload.recent_observations,
             keep=3,
-            field_name="strategy recent observations",
+            field="strategy recent observations",
             notes=notes,
         )
-        payload.shared_bulletin, payload.bulletin_digest = self._compress_bulletin(
+        payload.shared_bulletin = self._trim_bulletin_window(
             payload.shared_bulletin,
-            notes=notes,
+            new_keep=8,
+            verified_keep=4,
         )
         payload.available_artifacts = _prompt_artifacts(payload.available_artifacts, limit=8)
         payload.compression_notes = notes
@@ -926,107 +866,6 @@ class JasterOrchestrator:
         context.planning_attempts = context.planning_attempts[-6:]
         return context
 
-    def _compress_observations(
-        self,
-        rounds: list[RecentObservationRound],
-        *,
-        keep: int,
-        field_name: str,
-        notes: list[CompressionNote],
-    ) -> tuple[list[RecentObservationRound], str]:
-        if len(rounds) <= keep:
-            return rounds, ""
-        older = rounds[:-keep]
-        digest = self._summarize_text(
-            title=field_name,
-            text=json.dumps([item.model_dump() for item in older], ensure_ascii=False, indent=2),
-        )
-        if digest:
-            notes.append(
-                CompressionNote(
-                    field=field_name,
-                    reason="compressed older rounds with llm",
-                    original_chars=len(json.dumps([item.model_dump() for item in older], ensure_ascii=False)),
-                    final_chars=len(digest),
-                    strategy="llm_summary",
-                )
-            )
-        return rounds[-keep:], digest
-
-    def _summarize_reflection_history(
-        self,
-        history: list[ReflectionHistoryEntry],
-        field_name: str,
-        notes: list[CompressionNote],
-    ) -> str:
-        if not history:
-            return ""
-        source = json.dumps([item.model_dump() for item in history], ensure_ascii=False, indent=2)
-        digest = self._summarize_text(title=field_name, text=source)
-        if digest:
-            notes.append(
-                CompressionNote(
-                    field=field_name,
-                    reason="compressed older reflection history with llm",
-                    original_chars=len(source),
-                    final_chars=len(digest),
-                    strategy="llm_summary",
-                )
-            )
-        return digest
-
-    def _compress_discoveries(
-        self,
-        discoveries: list[TaskDiscovery],
-        field_name: str,
-        *,
-        keep: int,
-        notes: list[CompressionNote],
-    ) -> tuple[list[TaskDiscovery], str]:
-        if len(discoveries) <= keep:
-            return discoveries, ""
-        older = discoveries[:-keep]
-        source = json.dumps([item.model_dump() for item in older], ensure_ascii=False, indent=2)
-        digest = self._summarize_text(title=field_name, text=source)
-        if digest:
-            notes.append(
-                CompressionNote(
-                    field=field_name,
-                    reason="compressed older discoveries with llm",
-                    original_chars=len(source),
-                    final_chars=len(digest),
-                    strategy="llm_summary",
-                )
-            )
-        return discoveries[-keep:], digest
-
-    def _compress_bulletin(
-        self,
-        bulletin: SharedBulletinDigest,
-        *,
-        notes: list[CompressionNote],
-    ) -> tuple[SharedBulletinDigest, str]:
-        if len(bulletin.new_entries) <= 8:
-            return bulletin, ""
-        older = bulletin.new_entries[:-8]
-        source = json.dumps([item.model_dump() for item in older], ensure_ascii=False, indent=2)
-        digest = self._summarize_text(title="strategy older unread bulletin entries", text=source)
-        if digest:
-            notes.append(
-                CompressionNote(
-                    field="shared_bulletin.new_entries",
-                    reason="compressed older unread bulletin entries with llm",
-                    original_chars=len(source),
-                    final_chars=len(digest),
-                    strategy="llm_summary",
-                )
-            )
-        return SharedBulletinDigest(
-            new_entries=[item.model_copy(deep=True) for item in bulletin.new_entries[-8:]],
-            verified_entries=[item.model_copy(deep=True) for item in bulletin.verified_entries],
-            unverified_entries=[],
-        ), digest
-
     def _shrink_plan_windows(self, payload: PlanInput, notes: list[CompressionNote]) -> PlanInput:
         payload = payload.model_copy(deep=True)
 
@@ -1034,16 +873,6 @@ class JasterOrchestrator:
             if _payload_chars(payload) <= self.context_payload_limit:
                 break
             payload.planner_context = self._trim_planner_attempt_window(payload.planner_context, keep=keep, notes=notes)
-
-        for keep in (2, 1, 0):
-            if _payload_chars(payload) <= self.context_payload_limit:
-                break
-            payload.reflection_history = self._trim_list_window(
-                payload.reflection_history,
-                keep=keep,
-                field="plan reflection history window",
-                notes=notes,
-            )
 
         for keep in (8, 4, 2, 0):
             if _payload_chars(payload) <= self.context_payload_limit:
@@ -1088,16 +917,6 @@ class JasterOrchestrator:
                 notes=notes,
             )
 
-        for keep in (2, 1, 0):
-            if _payload_chars(payload) <= self.context_payload_limit:
-                break
-            payload.reflection_history = self._trim_list_window(
-                payload.reflection_history,
-                keep=keep,
-                field="strategy reflection history window",
-                notes=notes,
-            )
-
         for keep in (4, 2, 1, 0):
             if _payload_chars(payload) <= self.context_payload_limit:
                 break
@@ -1114,16 +933,6 @@ class JasterOrchestrator:
             )
             payload.shared_bulletin = trimmed
 
-        for keep in (4, 2, 0):
-            if _payload_chars(payload) <= self.context_payload_limit:
-                break
-            payload.dependency_context = self._trim_list_window(
-                payload.dependency_context,
-                keep=keep,
-                field="strategy dependency_context",
-                notes=notes,
-            )
-
         for keep in (4, 2, 1, 0):
             if _payload_chars(payload) <= self.context_payload_limit:
                 break
@@ -1137,10 +946,10 @@ class JasterOrchestrator:
         for keep in (8, 6, 4, 2):
             if _payload_chars(payload) <= self.context_payload_limit:
                 break
-            payload.task_tree_focus = self._trim_task_tree_window(
-                payload.task_tree_focus,
+            payload.task_tree = self._trim_task_tree_window(
+                payload.task_tree,
                 keep=keep,
-                field="strategy task_tree_focus",
+                field="strategy task_tree",
                 notes=notes,
             )
 
@@ -1397,26 +1206,18 @@ class JasterOrchestrator:
         task_tree: TaskTreeSnapshot,
         reflection_out: ReflectionOutput,
     ) -> None:
-        titles = {node.key: node.title for node in task_tree.nodes}
-        for update in reflection_out.task_updates:
-            source_title = titles.get(update.key, update.key)
-            for finding_text in update.latest_findings:
-                posted = bulletin_board.post(
-                    cycle=cycle,
-                    source_task_key=update.key,
-                    source_task_title=source_title,
-                    source_strategy_round=0,
-                    finding=SharedFinding(
-                        category="verified_task_finding",
-                        title=_excerpt(finding_text, limit=80),
-                        content=finding_text,
-                        confidence=1.0,
-                    ),
-                    is_verified=True,
-                )
-                if posted:
-                    self._log_bulletin_verified(source=f"{update.key} | {source_title}", entry=posted)
+        # 只有 critical_findings 贴到公告板。
+        # task_updates[].latest_findings 已经写入任务节点，不再广播到公告板避免冗余。
+        posted_signatures: set[str] = set()
+        _MAX_CRITICAL = 5
+
         for finding_text in reflection_out.critical_findings:
+            if len(posted_signatures) >= _MAX_CRITICAL:
+                break
+            sig = _dedup_signature(finding_text)
+            if sig in posted_signatures:
+                continue
+            posted_signatures.add(sig)
             posted = bulletin_board.post(
                 cycle=cycle,
                 source_task_key="__reflection__",
@@ -1749,28 +1550,6 @@ class JasterOrchestrator:
             source_path=binding.skill_path,
         )
 
-    def _initial_bootstrap_execution(self, challenge: ChallengeSpec) -> ExecutionResult | None:
-        if challenge.target_type != "http":
-            return None
-        self._log(f"[*] Initial curl: {challenge.target}")
-        result = subprocess.run(
-            ["curl", "-s", "-L", "--max-time", "30", challenge.target],
-            capture_output=True,
-            text=True,
-            errors="replace",
-        )
-        return ExecutionResult(
-            success=result.returncode == 0,
-            summary="Initial HTTP response captured" if result.stdout else "",
-            findings=[],
-            stdout=result.stdout,
-            stderr=result.stderr,
-            exit_code=result.returncode,
-            command=f"curl -s -L {challenge.target}",
-            source="bootstrap",
-            failure_stage="" if result.returncode == 0 else "bootstrap",
-        )
-
     def _halt_requested(self, run_id: str) -> bool:
         return Path(tempfile.gettempdir(), f"{run_id}.halt").exists()
 
@@ -2090,34 +1869,6 @@ def _jsonable(value: object) -> object:
     return value
 
 
-def _task_status_digest(snapshot: TaskTreeSnapshot) -> TaskStatusDigest:
-    in_progress = [node for node in snapshot.nodes if node.status == TaskStatus.in_progress]
-    completed = [node for node in snapshot.nodes if node.status == TaskStatus.completed]
-    failed = [node for node in snapshot.nodes if node.status == TaskStatus.failed]
-    parent_keys = {node.parent_key for node in snapshot.nodes if node.parent_key}
-    leaf_nodes = [node for node in snapshot.nodes if node.key not in parent_keys]
-    return TaskStatusDigest(
-        in_progress=len(in_progress),
-        completed=len(completed),
-        failed=len(failed),
-        leaf=len(leaf_nodes),
-        in_progress_leaves=[_task_status_digest_item(item) for item in leaf_nodes if item.status == TaskStatus.in_progress][:8],
-        failed_leaves=[_task_status_digest_item(item) for item in leaf_nodes if item.status == TaskStatus.failed][:5],
-        completed_leaves=[_task_status_digest_item(item) for item in leaf_nodes if item.status == TaskStatus.completed][:5],
-    )
-
-
-def _task_status_digest_item(node: TaskNodeSnapshot) -> TaskStatusDigestItem:
-    return TaskStatusDigestItem(
-        key=node.key,
-        title=node.title,
-        status=node.status,
-        attempt_count=node.attempt_count,
-        latest_summary=node.latest_summary,
-        latest_findings=list(node.latest_findings),
-    )
-
-
 def _failure_patterns_digest(reflection_history: list[ReflectionHistoryEntry]) -> list[FailurePattern]:
     merged: list[FailurePattern] = []
     seen: set[tuple[str, str]] = set()
@@ -2145,34 +1896,6 @@ def _initial_planner_context(challenge: ChallengeSpec, task_tree: TaskTreeSnapsh
         target=challenge.target,
         long_term_objectives=long_term_objectives,
     )
-
-
-def _task_status_summary(snapshot: TaskTreeSnapshot) -> str:
-    in_progress = [node for node in snapshot.nodes if node.status == TaskStatus.in_progress]
-    completed = [node for node in snapshot.nodes if node.status == TaskStatus.completed]
-    failed = [node for node in snapshot.nodes if node.status == TaskStatus.failed]
-    leaf_keys = {node.key for node in snapshot.nodes}
-    parent_keys = {node.parent_key for node in snapshot.nodes if node.parent_key}
-    leaf_nodes = [node for node in snapshot.nodes if node.key in leaf_keys - parent_keys]
-
-    lines = [
-        f"任务统计: in_progress={len(in_progress)}, completed={len(completed)}, failed={len(failed)}, leaf={len(leaf_nodes)}",
-    ]
-    if in_progress:
-        lines.append("进行中叶子任务:")
-        for node in [item for item in leaf_nodes if item.status == TaskStatus.in_progress][:6]:
-            lines.append(
-                f"- {node.key} | {node.title} | attempts={node.attempt_count} | summary={_excerpt(node.latest_summary, limit=100)}"
-            )
-    if failed:
-        lines.append("近期失败任务:")
-        for node in failed[-6:]:
-            lines.append(f"- {node.key} | {node.title} | summary={_excerpt(node.latest_summary, limit=120)}")
-    if completed:
-        lines.append("近期完成任务:")
-        for node in completed[-4:]:
-            lines.append(f"- {node.key} | {node.title} | summary={_excerpt(node.latest_summary, limit=100)}")
-    return "\n".join(lines)
 
 
 def _failure_patterns_summary(reflection_history: list[ReflectionHistoryEntry]) -> str:
@@ -2349,98 +2072,6 @@ def _contest_control_tools() -> list[AvailableTool]:
     ]
 
 
-def _task_tree_focus(snapshot: TaskTreeSnapshot, task_key: str, *, limit: int) -> TaskTreeSnapshot:
-    nodes_by_key = {node.key: node for node in snapshot.nodes}
-    if task_key not in nodes_by_key:
-        return TaskTreeSnapshot(nodes=[])
-
-    selected: list[str] = []
-    current = nodes_by_key[task_key]
-    selected.append(current.key)
-    cursor = current
-    while cursor.parent_key and cursor.parent_key in nodes_by_key:
-        cursor = nodes_by_key[cursor.parent_key]
-        if cursor.key not in selected:
-            selected.append(cursor.key)
-
-    current_parent = current.parent_key
-    if current_parent:
-        siblings = [
-            node for node in snapshot.nodes
-            if node.parent_key == current_parent and node.key != task_key
-            and (node.latest_findings or node.status != TaskStatus.completed or node.latest_summary)
-        ]
-        for sibling in siblings:
-            if sibling.key not in selected:
-                selected.append(sibling.key)
-            if len(selected) >= limit:
-                break
-
-    if len(selected) < limit:
-        for node in snapshot.nodes:
-            if node.status == TaskStatus.in_progress and node.key not in selected:
-                selected.append(node.key)
-            if len(selected) >= limit:
-                break
-
-    ordered = [node.model_copy(deep=True) for node in snapshot.nodes if node.key in set(selected[:limit])]
-    return TaskTreeSnapshot(nodes=ordered)
-
-
-def _dependency_context(
-    snapshot: TaskTreeSnapshot,
-    task_key: str,
-    available_artifacts: list[ArtifactRef],
-    *,
-    limit: int,
-) -> list[TaskDependencyContext]:
-    nodes_by_key = {node.key: node for node in snapshot.nodes}
-    if task_key not in nodes_by_key:
-        return []
-
-    candidates: list[TaskNodeSnapshot] = []
-    cursor = nodes_by_key[task_key]
-    while cursor.parent_key and cursor.parent_key in nodes_by_key:
-        cursor = nodes_by_key[cursor.parent_key]
-        candidates.append(cursor)
-
-    parent_key = nodes_by_key[task_key].parent_key
-    if parent_key:
-        for node in snapshot.nodes:
-            if node.parent_key != parent_key or node.key == task_key:
-                continue
-            if node.latest_findings or node.status != TaskStatus.in_progress or node.latest_summary:
-                candidates.append(node)
-
-    artifacts = filter_available_artifacts(available_artifacts)
-    seen: set[str] = set()
-    context: list[TaskDependencyContext] = []
-    for node in candidates:
-        if node.key in seen:
-            continue
-        seen.add(node.key)
-        related_artifacts = [
-            item.model_copy(deep=True)
-            for item in artifacts
-            if item.producer_task_key == node.key
-        ][:3]
-        failure_reason = node.latest_summary if node.status == TaskStatus.failed else ""
-        context.append(
-            TaskDependencyContext(
-                task_key=node.key,
-                title=node.title,
-                status=node.status,
-                latest_summary=node.latest_summary,
-                latest_findings=list(node.latest_findings),
-                failure_reason=failure_reason,
-                artifacts=related_artifacts,
-            )
-        )
-        if len(context) >= limit:
-            break
-    return context
-
-
 def _render_tool_schema_text(name: str, schema: dict[str, Any]) -> str:
     lines = [f"name: {name}"]
     properties = schema.get("properties") or {}
@@ -2473,6 +2104,14 @@ def _shared_bulletin_entry_id(
         ]
     )
     return hashlib.sha1(payload.encode("utf-8", errors="ignore")).hexdigest()[:16]
+
+
+def _dedup_signature(text: str) -> str:
+    """Generate a normalized signature for near-duplicate detection on bulletin findings."""
+    raw = " ".join(text.strip().lower().split())
+    if len(raw) <= 80:
+        return hashlib.sha1(raw.encode("utf-8", errors="ignore")).hexdigest()[:12]
+    return hashlib.sha1((raw[:80] + raw[-80:]).encode("utf-8", errors="ignore")).hexdigest()[:12]
 
 
 def _shared_bulletin_matches(

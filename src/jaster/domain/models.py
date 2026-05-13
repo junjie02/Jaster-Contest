@@ -398,6 +398,7 @@ class StrategyTaskResult(BaseModel):
     completed: bool = False
     rounds_used: int = 0
     termination_reason: str = ""
+    stop_reason: str = ""
     phase_summary: str = ""
     task_summary: str = ""
     task_findings: list[str] = Field(default_factory=list)
@@ -469,25 +470,19 @@ class ReflectionHistoryEntry(BaseModel):
 
 class PlanInput(BaseModel):
     objective: str
-    task_tree: TaskTreeSnapshot
     challenge_context: str = ""
-    bootstrap_execution: LatestExecutionResult | None = None
+    available_control_tools: list[AvailableTool] = Field(default_factory=list)
     planner_context: PlannerContext | None = None
-    task_status_summary: str = ""
+    task_tree: TaskTreeSnapshot
+    compression_notes: list[CompressionNote] = Field(default_factory=list)
     failure_patterns_summary: str = ""
-    task_status_digest: TaskStatusDigest | None = None
     failure_patterns_digest: list[FailurePattern] = Field(default_factory=list)
-    reflection_digest: str = ""
-    discoveries_digest: str = ""
+    latest_discoveries: list[TaskDiscovery] = Field(default_factory=list)
     candidate_flags: list[str] = Field(default_factory=list)
     submitted_flags: list[str] = Field(default_factory=list)
     incorrect_flags: list[str] = Field(default_factory=list)
     submission_history: list[SubmissionAttempt] = Field(default_factory=list)
-    reflection_history: list[ReflectionHistoryEntry] = Field(default_factory=list)
-    latest_discoveries: list[TaskDiscovery] = Field(default_factory=list)
     available_artifacts: list[ArtifactRef] = Field(default_factory=list)
-    available_control_tools: list[AvailableTool] = Field(default_factory=list)
-    compression_notes: list[CompressionNote] = Field(default_factory=list)
 
 
 class PlanOutput(BaseModel):
@@ -513,28 +508,23 @@ class TeamManagerOutput(BaseModel):
 
 class StrategyInput(BaseModel):
     objective: str
-    assigned_task: TaskNodeSnapshot
-    task_tree: TaskTreeSnapshot
-    task_tree_focus: TaskTreeSnapshot = Field(default_factory=TaskTreeSnapshot)
     challenge_context: str = ""
+    assigned_task: TaskNodeSnapshot
     assigned_skill: InjectedSkill | None = None
-    recent_observations: list[RecentObservationRound] = Field(default_factory=list)
-    observation_digest: str = ""
-    latest_execution: LatestExecutionResult | None = None
-    reflection_history: list[ReflectionHistoryEntry] = Field(default_factory=list)
-    reflection_digest: str = ""
-    dependency_context: list[TaskDependencyContext] = Field(default_factory=list)
+    task_tree: TaskTreeSnapshot
     persistent_code_evidence: list[PersistentCodeEvidence] = Field(default_factory=list)
+    compression_notes: list[CompressionNote] = Field(default_factory=list)
     available_artifacts: list[ArtifactRef] = Field(default_factory=list)
     available_tools: list[AvailableTool] = Field(default_factory=list)
     shared_bulletin: SharedBulletinDigest = Field(default_factory=SharedBulletinDigest)
-    bulletin_digest: str = ""
-    compression_notes: list[CompressionNote] = Field(default_factory=list)
+    recent_observations: list[RecentObservationRound] = Field(default_factory=list)
+    latest_execution: LatestExecutionResult | None = None
 
 
 class StrategyOutput(BaseModel):
     phase_summary: str
     is_complete: bool = False
+    stop_reason: str = ""
     task_summary: str = ""
     task_findings: list[str] = Field(default_factory=list)
     actions: list[ActionPlan] = Field(default_factory=list)
@@ -547,17 +537,11 @@ class StrategyOutput(BaseModel):
 
 class ReflectionInput(BaseModel):
     objective: str
-    task_tree: TaskTreeSnapshot
     challenge_context: str = ""
-    strategy_results: list[StrategyTaskResult] = Field(default_factory=list)
-    candidate_flags: list[str] = Field(default_factory=list)
-    submitted_flags: list[str] = Field(default_factory=list)
-    incorrect_flags: list[str] = Field(default_factory=list)
-    submission_history: list[SubmissionAttempt] = Field(default_factory=list)
+    task_tree: TaskTreeSnapshot
     reflection_history: list[ReflectionHistoryEntry] = Field(default_factory=list)
+    strategy_results: list[StrategyTaskResult] = Field(default_factory=list)
     latest_discoveries: list[TaskDiscovery] = Field(default_factory=list)
-    available_artifacts: list[ArtifactRef] = Field(default_factory=list)
-    available_control_tools: list[AvailableTool] = Field(default_factory=list)
 
 
 class ReflectionOutput(BaseModel):
@@ -567,9 +551,6 @@ class ReflectionOutput(BaseModel):
     failure_patterns: list[FailurePattern] = Field(default_factory=list)
     strategic_rejections: list[StrategicRejection] = Field(default_factory=list)
     critical_findings: list[str] = Field(default_factory=list)
-    flag_candidates: list[str] = Field(default_factory=list)
-    credentials: list[str] = Field(default_factory=list)
-    control_actions: list[ContestControlAction] = Field(default_factory=list)
 
 
 class SubmissionInput(BaseModel):

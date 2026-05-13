@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 import json
+import logging
 import sys
 from typing import Generic, TypeVar
 
 from pydantic import BaseModel
 
 from jaster.runtime.prompts import PromptLibrary
+
+logger = logging.getLogger(__name__)
 
 InputModel = TypeVar("InputModel", bound=BaseModel)
 OutputModel = TypeVar("OutputModel", bound=BaseModel)
@@ -112,6 +115,7 @@ def _normalize_agent_response(role: str, payload: dict) -> dict:
     elif role == "strategy":
         normalized.setdefault("phase_summary", str(normalized.get("phase_summary") or normalized.get("summary") or ""))
         normalized["is_complete"] = bool(normalized.get("is_complete", normalized.get("completed", False)))
+        normalized["stop_reason"] = str(normalized.get("stop_reason") or "").strip()
         normalized.setdefault("task_summary", str(normalized.get("task_summary") or normalized.get("summary") or ""))
         normalized["task_findings"] = _string_list(
             normalized.get("task_findings") or normalized.get("findings") or []
@@ -345,9 +349,13 @@ def _normalize_task_tree_patch(payload: dict) -> dict:
         title = str(item.get("title") or "").strip()
         if not title:
             continue
+        parent_key = str(item.get("parent_key", "") or "").strip()
+        if not parent_key:
+            logger.warning("add_node skipped: parent_key is empty (title=%r). Must be an existing node key from task_tree.", title[:80])
+            continue
         add_nodes.append(
             {
-                "parent_key": str(item.get("parent_key") or ""),
+                "parent_key": parent_key,
                 "title": title,
                 "reason": str(item.get("reason") or ""),
                 "completion_criteria": str(item.get("completion_criteria") or item.get("done_when") or ""),

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import logging
 from collections import defaultdict
 
 from .models import (
@@ -11,6 +12,8 @@ from .models import (
     TaskTreePatch,
     TaskTreeSnapshot,
 )
+
+logger = logging.getLogger(__name__)
 
 
 def _stable_key(parent_key: str, title: str, completion_criteria: str) -> str:
@@ -62,6 +65,15 @@ class TaskTree:
 
     def apply_patch(self, patch: TaskTreePatch) -> TaskTreeSnapshot:
         for add in patch.add_nodes:
+            if not add.parent_key:
+                logger.warning("add_node skipped: parent_key is empty (title=%r)", add.title)
+                continue
+            if add.parent_key not in self._nodes:
+                logger.warning(
+                    "add_node skipped: parent_key %r not found in tree (title=%r, existing_keys=%s)",
+                    add.parent_key, add.title, sorted(self._nodes.keys())[:10],
+                )
+                continue
             key = _stable_key(add.parent_key, add.title, add.completion_criteria)
             if key in self._nodes:
                 existing = self._nodes[key]

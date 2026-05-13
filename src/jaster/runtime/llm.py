@@ -36,6 +36,11 @@ class OpenAIChatClient:
         self.timeout = timeout if timeout is not None else _env_float("JASTER_HTTP_TIMEOUT", 120.0)
         self.max_retries = max_retries if max_retries is not None else _env_int("JASTER_LLM_MAX_RETRIES", 3)
         self.reasoning_split = _env_bool("OPENAI_REASONING_SPLIT", False)
+        self.reasoning_effort = os.environ.get("OPENAI_REASONING_EFFORT", "").strip() or None
+        self.thinking_enabled = _env_bool("OPENAI_THINKING_ENABLED", False)
+        self.response_format = os.environ.get("OPENAI_RESPONSE_FORMAT", "").strip() or None
+        self.stream = os.environ.get("OPENAI_STREAM", "").strip().lower()
+        self.stream = None if not self.stream else self.stream in {"1", "true", "yes", "on"}
 
         # HTTP retry settings
         self.http_max_retries = _env_int("JASTER_LLM_HTTP_MAX_RETRIES", 3)
@@ -250,6 +255,14 @@ class OpenAIChatClient:
         }
         if self.reasoning_split:
             body["reasoning_split"] = True
+        if self.reasoning_effort:
+            body["reasoning_effort"] = self.reasoning_effort
+        if self.thinking_enabled:
+            body["thinking"] = {"type": "enabled"}
+        if self.response_format:
+            body["response_format"] = {"type": self.response_format}
+        if self.stream is not None:
+            body["stream"] = self.stream
         return body
 
     def _log_request(self, mode: str, *, body: dict | None = None, tool_choice: str = "") -> None:

